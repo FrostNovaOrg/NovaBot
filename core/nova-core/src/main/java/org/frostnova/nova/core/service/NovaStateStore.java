@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.service;
 
+import org.frostnova.nova.core.util.IntervalTask;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
@@ -44,6 +45,14 @@ public class NovaStateStore {
     private final NovaCoreProperties properties;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+
+    /**
+     * 定时存盘。调度池只有一条线程：换间隔重排时正在写的那一趟照常写完，两趟不会同时写
+     */
+    private final IntervalTask autoSaveTask = new IntervalTask(scheduler, () -> {
+        Thread.currentThread().setName("auto-save-state");
+        save();
+    });
 
     private JSONObject cache = new JSONObject();
 
@@ -126,11 +135,16 @@ public class NovaStateStore {
             remove(RETIRED_CHOICE_NAMESPACE);
         }
 
-        int interval = properties.getLive().getAutoSaveLiveDataInterval();
-        scheduler.scheduleWithFixedDelay(() -> {
-            Thread.currentThread().setName("auto-save-state");
-            save();
-        }, interval, interval, TimeUnit.SECONDS);
+        autoSaveTask.start(properties.getLive().getAutoSaveLiveDataInterval());
+    }
+
+    /**
+     * 设置页上改了保存间隔：运行状态的定时存盘与直播数据同一个间隔，一起按新间隔重排
+     * <p>
+     * 还没开始定时存盘的（状态文件读不了、这一轮不写）什么也不做。
+     */
+    public void rescheduleAutoSave() {
+        autoSaveTask.reschedule(properties.getLive().getAutoSaveLiveDataInterval());
     }
 
     /**

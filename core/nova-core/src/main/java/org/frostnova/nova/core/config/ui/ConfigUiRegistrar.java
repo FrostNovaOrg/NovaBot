@@ -8,7 +8,6 @@ import org.frostnova.nova.core.config.ui.auth.LoginThrottle;
 import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyService;
 import org.frostnova.nova.core.config.ui.auth.passkey.PasskeyStore;
 import org.frostnova.nova.core.service.NovaStateStore;
-import org.frostnova.nova.core.util.IpMatcher;
 import org.frostnova.nova.core.lang.SecureToken;
 import org.frostnova.nova.core.lang.StringUtil;
 import jakarta.servlet.ServletContext;
@@ -81,10 +80,11 @@ public class ConfigUiRegistrar {
      */
     @Bean
     public ConfigUiSessionStore configUiSessionStore() {
+        // 两个时长每次判断现读：设置页上改了，已登录的会话从下一个请求起就按新时长判
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
         return new ConfigUiSessionStore(
-                Duration.ofHours(Math.max(1, auth.getSessionHours())),
-                Duration.ofHours(Math.max(1, auth.getIdleHours())));
+                () -> Duration.ofHours(Math.max(1, auth.getSessionHours())),
+                () -> Duration.ofHours(Math.max(1, auth.getIdleHours())));
     }
 
     /**
@@ -92,8 +92,10 @@ public class ConfigUiRegistrar {
      */
     @Bean
     public LoginThrottle configUiLoginThrottle() {
+        // 阈值与时长每次失败现读：改了从下一次登录失败起生效，已累计的次数与锁定照旧
         NovaCoreProperties.ConfigUi.Auth auth = properties.getConfigUi().getAuth();
-        return new LoginThrottle(auth.getMaxFailures(), Duration.ofMinutes(Math.max(1, auth.getLockoutMinutes())));
+        return new LoginThrottle(auth::getMaxFailures,
+                () -> Duration.ofMinutes(Math.max(1, auth.getLockoutMinutes())));
     }
 
     /**
@@ -134,13 +136,14 @@ public class ConfigUiRegistrar {
     @Bean
     public FilterRegistrationBean<ConfigUiSecurityFilter> configUiSecurityFilterRegistration(
             ConfigUiAuthService authService, ConfigUiApiInterceptor interceptor) {
-        IpMatcher ipMatcher = new IpMatcher(properties.getConfigUi().getAllowIps());
-        if (ipMatcher.isEmpty()) {
+        // 名单每个请求现读：设置页上保存之后从下一个请求起按新名单放行
+        ConsoleAllowList allowList = new ConsoleAllowList(properties.getConfigUi());
+        if (allowList.get().isEmpty()) {
             log.error("配置界面的 IP 白名单为空, 所有访问都将被拒绝, 请检查 novabot.core.config-ui.allow-ips 配置");
         }
 
         FilterRegistrationBean<ConfigUiSecurityFilter> registration = new FilterRegistrationBean<>();
-        registration.setFilter(new ConfigUiSecurityFilter(token, ipMatcher, authService,
+        registration.setFilter(new ConfigUiSecurityFilter(token, allowList, authService,
                 properties.getConfigUi().getAuth(), properties.getConfigUi().getAgreement(), interceptor::recordSessionCheckUse));
         registration.addUrlPatterns(ConfigUiController.BASE_PATH, ConfigUiController.BASE_PATH + "/*");
         registration.setOrder(FILTER_ORDER);

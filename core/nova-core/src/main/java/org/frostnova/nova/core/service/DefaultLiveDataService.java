@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.service;
 
+import org.frostnova.nova.core.util.IntervalTask;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
@@ -56,6 +57,15 @@ public class DefaultLiveDataService implements LiveDataService {
     private volatile boolean dataSourceLoaded;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+
+    /**
+     * 定时存盘。调度池只有一条线程：设置页上换了间隔重排时，正在写的那一趟照常写完，
+     * 新排的那一趟要等它写完才轮得到，两趟不会同时写
+     */
+    private final IntervalTask autoSaveTask = new IntervalTask(scheduler, () -> {
+        Thread.currentThread().setName("auto-save-data");
+        saveNow(false);
+    });
 
     /** 单独使用直播数据服务时的写盘锁。运行中的 NovaBot 用数据源的锁。 */
     private final Object writeLock = new Object();
@@ -293,12 +303,19 @@ public class DefaultLiveDataService implements LiveDataService {
     }
 
     public void autoSave() {
-        int interval = properties.getLive().getAutoSaveLiveDataInterval();
+        autoSaveTask.start(properties.getLive().getAutoSaveLiveDataInterval());
+    }
 
-        scheduler.scheduleWithFixedDelay(() -> {
-            Thread.currentThread().setName("auto-save-data");
-            saveNow(false);
-        }, interval, interval, TimeUnit.SECONDS);
+    /**
+     * 设置页上改了保存间隔：按新间隔重排定时存盘，下一次在一个新间隔之后
+     * <p>
+     * 还没开始定时存盘的（数据还没读完、读盘出了错这一轮不写）什么也不做，到开始时按配置里的新值排。
+     */
+    public void rescheduleAutoSave() {
+        int interval = properties.getLive().getAutoSaveLiveDataInterval();
+        if (autoSaveTask.reschedule(interval)) {
+            log.info("直播数据保存间隔已改为 {} 秒", interval);
+        }
     }
 
     /**

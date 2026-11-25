@@ -63,10 +63,10 @@ class ConfigurationEffectResolverTest {
         try (AnnotationConfigApplicationContext context = context()) {
             ConfigurationEffectResolver resolver = new ConfigurationEffectResolver(context);
 
-            assertEquals(List.of("novabot.core.alert.retry-interval"),
+            assertEquals(List.of("novabot.core.exec.max-concurrent"),
                     resolver.restartRequired(List.of(
                             "novabot.core.push.enabled",
-                            "novabot.core.alert.retry-interval")));
+                            "novabot.core.exec.max-concurrent")));
         }
     }
 

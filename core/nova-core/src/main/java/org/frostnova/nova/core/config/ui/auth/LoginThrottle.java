@@ -7,6 +7,8 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
+import java.util.function.IntSupplier;
+import java.util.function.Supplier;
 
 /**
  * 登录尝试的限流与锁定
@@ -84,9 +86,14 @@ public class LoginThrottle {
      */
     private static final int MAX_ENTRIES = 1024;
 
-    private final int maxFailures;
+    /**
+     * 锁定阈值与首次锁定时长，每次失败现取
+     * <p>
+     * 设置页上改了，从下一次登录失败起按新值判；已经累计的失败次数与正在进行的锁定都照旧，不因保存清零。
+     */
+    private final IntSupplier maxFailures;
 
-    private final Duration baseLockout;
+    private final Supplier<Duration> baseLockout;
 
     private final Map<String, Attempts> byIp = new ConcurrentHashMap<>();
 
@@ -113,7 +120,11 @@ public class LoginThrottle {
     private final Object globalLock = new Object();
 
     public LoginThrottle(int maxFailures, Duration baseLockout) {
-        this.maxFailures = Math.max(1, maxFailures);
+        this(() -> maxFailures, () -> baseLockout);
+    }
+
+    public LoginThrottle(IntSupplier maxFailures, Supplier<Duration> baseLockout) {
+        this.maxFailures = maxFailures;
         this.baseLockout = baseLockout;
     }
 
@@ -149,12 +160,12 @@ public class LoginThrottle {
             attempts.lastFailureAt = now;
             attempts.failures++;
 
-            if (attempts.failures >= maxFailures) {
+            if (attempts.failures >= Math.max(1, maxFailures.getAsInt())) {
                 attempts.failures = 0;
                 attempts.lockouts++;
 
                 // 每再锁一次翻倍：第一次几分钟，反复来就变成几小时
-                Duration duration = baseLockout.multipliedBy(1L << Math.min(attempts.lockouts - 1, 10));
+                Duration duration = baseLockout.get().multipliedBy(1L << Math.min(attempts.lockouts - 1, 10));
                 if (duration.compareTo(MAX_LOCKOUT) > 0) {
                     duration = MAX_LOCKOUT;
                 }

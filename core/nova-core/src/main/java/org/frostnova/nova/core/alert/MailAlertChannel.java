@@ -44,9 +44,14 @@ public class MailAlertChannel implements AlertChannel {
         return "邮件收件人 " + properties.getMail().getDefaultTo();
     }
 
+    /**
+     * 设置页上改过发件服务器的，按改过之后的那个判；没改过的用启动时那一份，与发信同源
+     */
     @Override
     public boolean isAvailable() {
-        return AlertReadiness.mailConfigured(properties.getMail().getDefaultTo(), smtpHost);
+        String current = mailService.currentHost();
+        return AlertReadiness.mailConfigured(properties.getMail().getDefaultTo(),
+                current != null ? current : smtpHost);
     }
 
     @Override

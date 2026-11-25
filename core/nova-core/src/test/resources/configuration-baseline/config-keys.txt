@@ -66,7 +66,6 @@ novabot.core.event-stream.max-connections-per-source|java.lang.Integer|128|同�
 novabot.core.event-stream.max-connections|java.lang.Integer|256|同时保留的事件输出连接数，单位：个，默认 256，包含握手、等待首帧和收尾中的连接。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。
 novabot.core.event-stream.max-pending-connections|java.lang.Integer|128|等待首帧的连接数，单位：个，默认 128，包含握手中的连接。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。
 novabot.core.event-stream.path|java.lang.String|/nova/events|事件输出的路径，与配置界面共用服务端口。
-novabot.core.event-stream.require-token|java.lang.Boolean|true|事件输出始终要求只读访问令牌。此键保留兼容已有配置，填写 false 也按 true 运行。令牌由控制台签发，客户端在连接后的第一帧出示。
 novabot.core.exec.enabled|java.lang.Boolean|false|是否启用事件触发外部命令。
 novabot.core.exec.max-concurrent|java.lang.Integer|4|同时执行的命令数上限，单位：条，超出的直接丢弃；弹幕一秒能来几十条，没有上限一次刷屏就能拖垮机器。
 novabot.core.exec.rules|java.util.List<org.frostnova.nova.core.config.NovaCoreProperties$ExecRule>|<null>|事件触发外部命令的规则列表。

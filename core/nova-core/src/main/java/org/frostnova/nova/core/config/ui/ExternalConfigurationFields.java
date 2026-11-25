@@ -28,17 +28,17 @@ public final class ExternalConfigurationFields {
     static {
         // ---- 邮件告警的发件服务 ----
         // 收件人是 novabot.core.mail.default-to，在界面上找得到；
-        // 但没有下面这几项，那一项配了也发不出去
-        put("spring.mail.host", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.RESTART,
+        // 但没有下面这几项，那一项配了也发不出去。保存后由 NovaMailService 按新值重建发件器
+        put("spring.mail.host", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
                 "邮件告警 · SMTP 服务器",
                 "邮件告警的 SMTP 服务器地址，如 smtp.qq.com；不用邮件告警时留空。");
-        put("spring.mail.port", "java.lang.Integer", ConfigLevel.Level.COMMON, ConfigEffect.Effect.RESTART,
+        put("spring.mail.port", "java.lang.Integer", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
                 "邮件告警 · SMTP 端口",
                 "SMTP 端口，如 465（SSL）或 587（STARTTLS）。");
-        put("spring.mail.username", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.RESTART,
+        put("spring.mail.username", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
                 "邮件告警 · SMTP 账号",
                 "SMTP 登录账号，通常为发件邮箱地址。");
-        put("spring.mail.password", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.RESTART,
+        put("spring.mail.password", "java.lang.String", ConfigLevel.Level.COMMON, ConfigEffect.Effect.IMMEDIATE,
                 "邮件告警 · SMTP 密码／授权码",
                 "SMTP 密码或授权码；多数邮箱需要填写「授权码」，而非登录密码。");
 

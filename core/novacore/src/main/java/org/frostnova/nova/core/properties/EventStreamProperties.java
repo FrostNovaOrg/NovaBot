@@ -3,6 +3,7 @@ package org.frostnova.nova.core.properties;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.DeprecatedConfigurationProperty;
 
 import java.net.URI;
 import java.util.ArrayList;
@@ -49,10 +50,21 @@ public class EventStreamProperties {
     /**
      * 事件输出始终要求只读访问令牌。此键保留兼容已有配置，填写 false 也按 true 运行。令牌由控制台签发，客户端在连接后的第一帧出示。
      */
+    // 不在设置页上：填什么都按 true 运行，摆出来只会让人以为关得掉。配置文件里写着它照旧能启动，
+    // 读取方照旧按 true 走。设置页按元数据里的「已废弃」把它筛掉，见下面那个读取口上的标注
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     @ConfigLabel("事件输出要求只读访问令牌")
     @ConfigSummary("始终要求只读访问令牌；此键填写 false 也按 true 运行。客户端在连接后的第一帧出示令牌。")
     private boolean requireToken = true;
+
+    /**
+     * 配置文件里写的那个值，只为兼容旧配置而留；事件输出不看它，始终要求只读访问令牌
+     * @return 配置文件里写的值，没写时为 true
+     */
+    @DeprecatedConfigurationProperty(reason = "事件输出始终要求只读访问令牌，此键填写 false 也按 true 运行")
+    public boolean isRequireToken() {
+        return requireToken;
+    }
 
     /**
      * 浏览器页面来源列表。填写完整的 http 或 https 来源（协议、主机及可选端口），不带路径；默认空表。未携带 Origin 的本机程序照常连接。

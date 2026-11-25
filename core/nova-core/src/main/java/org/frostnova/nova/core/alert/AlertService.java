@@ -1,5 +1,7 @@
 package org.frostnova.nova.core.alert;
 
+import org.frostnova.nova.core.config.SettingsAppliedListener;
+import org.frostnova.nova.core.util.IntervalTask;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
@@ -28,6 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -73,7 +76,12 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 @Slf4j
 @Service
-public class AlertService {
+public class AlertService implements SettingsAppliedListener {
+    /**
+     * 失败重发间隔的配置项名
+     */
+    static final String RETRY_INTERVAL_KEY = "novabot.core.alert.retry-interval";
+
     /**
      * 测试告警的标题与正文
      * <p>
@@ -123,6 +131,11 @@ public class AlertService {
     });
 
     /**
+     * 定时重投。设置页上换了间隔时按新间隔重排：队列不动，正在重投的那一趟照常投完
+     */
+    private final IntervalTask retryTask = new IntervalTask(scheduler, this::retryPending);
+
+    /**
      * 已进入退出流程
      * <p>
      * 退出开始后失败回调不再往重投队列塞——那时已经没人报了，塞进去的只会凭空消失。
@@ -150,13 +163,41 @@ public class AlertService {
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReadyEvent() {
         int interval = properties.getAlert().getRetryInterval();
+        // 关着也先登记上：以后在设置页上改成正数，从那时起按新间隔重投
+        retryTask.start(interval);
         if (interval <= 0) {
             log.info("告警重投已关闭, 发送失败的告警只会写进日志");
             return;
         }
-
-        scheduler.scheduleWithFixedDelay(this::retryPending, interval, interval, TimeUnit.SECONDS);
         log.info("告警重投已启动, 间隔 {} 秒, 队列上限 {} 条", interval, properties.getAlert().getRetryQueueSize());
+    }
+
+    @Override
+    public Set<String> keys() {
+        return Set.of(RETRY_INTERVAL_KEY);
+    }
+
+    /**
+     * 设置页上改了重投间隔：按新间隔重排，下一趟在一个新间隔之后
+     * <p>
+     * 队列里排着的一条不动；改成 0 只是停排，它们留在队列里，改回正数后接着重投，退出时照旧逐条说明。
+     * @param changes 只有重投间隔这一项
+     */
+    @Override
+    public void applied(Map<String, String> changes) {
+        int interval = properties.getAlert().getRetryInterval();
+        if (!retryTask.reschedule(interval)) {
+            return;
+        }
+        int queued;
+        synchronized (pending) {
+            queued = pending.size();
+        }
+        if (interval <= 0) {
+            log.info("告警重投已关闭, 队列里的 {} 条留着, 改回正数后接着重投", queued);
+        } else {
+            log.info("告警重投间隔已改为 {} 秒, 队列里 {} 条照旧等待重投", interval, queued);
+        }
     }
 
     /**

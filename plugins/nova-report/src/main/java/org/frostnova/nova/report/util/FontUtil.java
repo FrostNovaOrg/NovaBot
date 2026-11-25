@@ -112,12 +112,19 @@ public class FontUtil {
 
     private Set<String> systemFonts = new HashSet<>();
 
-    private final List<Font> fonts = new ArrayList<>();
-
     /**
-     * 画 {@link #WESTERN_WIDTH_CHARACTERS} 用的字体；Windows、macOS 的默认表里没有「内置符号」，照样单独装上
+     * 照哪张字体表装好的一套字体
+     * <p>
+     * 设置页上换了字体表，配置对象里挑字用的那张会换成一个新对象；下一次画图时比一比对象，
+     * 不是同一张就照新表重装一套再画。装好之前整套换上，画到一半的那张图用的始终是同一套。
+     * @param chain 照着装的字体表
+     * @param fonts 装上了的字体，顺序即优先级
+     * @param westernWidthFont 画 {@link #WESTERN_WIDTH_CHARACTERS} 用的字体；Windows、macOS 的默认表里没有「内置符号」，照样单独装上
      */
-    private Font westernWidthFont;
+    private record Loaded(List<String> chain, List<Font> fonts, Font westernWidthFont) {
+    }
+
+    private volatile Loaded loaded;
 
     @Autowired
     public FontUtil(ResourceLoader resourceLoader, NovaCoreProperties properties) {
@@ -134,7 +141,17 @@ public class FontUtil {
 
         List<String> configured = properties.getPaint().fontChain();
         log.info("已指定使用字体列表: {}, 可使用配置项 novabot.core.paint.fonts 自定义字体列表", configured);
+        loaded = load(configured);
+    }
 
+    /**
+     * 照一张字体表装一套字体
+     * @param configured 字体表，顺序即优先级
+     * @return 装好的一套
+     */
+    private Loaded load(List<String> configured) {
+        List<Font> fonts = new ArrayList<>();
+        Font westernWidthFont = null;
         // 装不上的那一项直接跳过，不占位置：留个空位在表里，挑字体时会挑到一个 null
         for (String fontDefinition : configured) {
             Optional<Font> font = parseFont(fontDefinition);
@@ -145,6 +162,29 @@ public class FontUtil {
         }
         if (westernWidthFont == null && !configured.contains(BUNDLED_SYMBOL_FONT)) {
             westernWidthFont = parseFont(BUNDLED_SYMBOL_FONT).orElse(null);
+        }
+        return new Loaded(configured, List.copyOf(fonts), westernWidthFont);
+    }
+
+    /**
+     * 此刻该用的那一套字体：字体表换过就照新表重装
+     */
+    private Loaded current() {
+        List<String> chain = properties.getPaint().fontChain();
+        Loaded last = loaded;
+        if (last != null && last.chain() == chain) {
+            return last;
+        }
+        synchronized (this) {
+            last = loaded;
+            if (last == null || last.chain() != chain) {
+                if (last != null) {
+                    log.info("字体列表已改为: {}, 下一张图起按新列表画", chain);
+                }
+                last = load(chain);
+                loaded = last;
+            }
+            return last;
         }
     }
 
@@ -189,7 +229,7 @@ public class FontUtil {
      * @return 当前已加载的字体名称列表
      */
     public List<String> getFontNames() {
-        return fonts.stream()
+        return current().fonts().stream()
                 .map(Font::getName)
                 .collect(Collectors.toList());
     }
@@ -198,7 +238,7 @@ public class FontUtil {
      * 表里第一个字体：一行字的基线按它定
      */
     public Font primaryFont() {
-        return fonts.get(0);
+        return current().fonts().get(0);
     }
 
     /**
@@ -208,6 +248,9 @@ public class FontUtil {
      * @return 可以显示该字符的字体
      */
     public Font findFontForCharacter(int charCodePoint) {
+        Loaded set = current();
+        Font westernWidthFont = set.westernWidthFont();
+        List<Font> fonts = set.fonts();
         if (westernWidthFont != null && WESTERN_WIDTH_CHARACTERS.contains(charCodePoint)
                 && westernWidthFont.canDisplay(charCodePoint)) {
             return westernWidthFont;

@@ -99,7 +99,18 @@ class CoreSettingsSaveTest {
             change("novabot.core.log.network-log-suppress-window", "0", 0),
             change("novabot.core.timeline.retention-days", "30", 30),
             change("novabot.core.exec.enabled", "true", true),
-            change("novabot.core.exec.timeout", "5", 5));
+            change("novabot.core.exec.timeout", "5", 5),
+            change("novabot.core.log.console", "WARN", ch.qos.logback.classic.Level.WARN),
+            change("novabot.core.log.file", "debug", ch.qos.logback.classic.Level.DEBUG),
+            // 保存的人从本机来：新名单要留着本机，否则按设计拒收
+            change("novabot.core.config-ui.allow-ips", "127.0.0.1/32\n10.0.0.0/8", List.of("127.0.0.1/32", "10.0.0.0/8")),
+            change("novabot.core.config-ui.auth.session-hours", "24", 24),
+            change("novabot.core.config-ui.auth.idle-hours", "2", 2),
+            change("novabot.core.config-ui.auth.max-failures", "3", 3),
+            change("novabot.core.config-ui.auth.lockout-minutes", "5", 5),
+            change("novabot.core.paint.fonts", "Noto Serif CJK SC\n内置", List.of("Noto Serif CJK SC", "内置")),
+            change("novabot.core.live.auto-save-live-data-interval", "60", 60),
+            change("novabot.core.alert.retry-interval", "120", 120));
 
     @TempDir Path directory;
     private AnnotationConfigApplicationContext context;
@@ -198,7 +209,18 @@ class CoreSettingsSaveTest {
                 // 数字名单沿用写文件那一步的逐项检查：回包是 200 加 success=false，整批未写
                 Arguments.of("novabot.core.command.admins", "11\nabc", 200),
                 Arguments.of("novabot.core.paint.auto-expand-height", "0", 400),
-                Arguments.of("novabot.core.log.network-log-suppress-window", "1.5", 400));
+                Arguments.of("novabot.core.log.network-log-suppress-window", "1.5", 400),
+                Arguments.of("novabot.core.log.console", "LOUD", 400),
+                Arguments.of("novabot.core.log.file", "", 400),
+                Arguments.of("novabot.core.config-ui.allow-ips", "127.0.0.1/32\n10.0.0.300", 400),
+                Arguments.of("novabot.core.config-ui.allow-ips", "", 400),
+                Arguments.of("novabot.core.config-ui.auth.session-hours", "0", 400),
+                Arguments.of("novabot.core.config-ui.auth.idle-hours", "-1", 400),
+                Arguments.of("novabot.core.config-ui.auth.max-failures", "abc", 400),
+                Arguments.of("novabot.core.config-ui.auth.lockout-minutes", "", 400),
+                Arguments.of("novabot.core.live.auto-save-live-data-interval", "0", 400),
+                Arguments.of("novabot.core.alert.retry-interval", "-5", 400),
+                Arguments.of("novabot.core.config-ui.update.source", "ftp://mirror.example.invalid/latest", 400));
     }
 
     @Test
