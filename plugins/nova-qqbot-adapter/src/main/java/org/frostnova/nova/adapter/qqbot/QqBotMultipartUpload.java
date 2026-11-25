@@ -44,10 +44,9 @@ final class QqBotMultipartUpload {
             log.warn("QQ 图片预上传分片计划无效 {}", describePlan(response, bytes.length));
             throw e;
         }
-        for (int index = 0; index < plan.parts().length; index++) {
-            Part part = plan.parts()[index];
+        for (Part part : plan.parts()) {
             uploadPart(part, bytes, plan);
-            var finish = JSONObject.of("upload_id", plan.id(), "part_index", index,
+            var finish = JSONObject.of("upload_id", plan.id(), "part_index", part.index(),
                     "block_size", Integer.toString(part.size()), "md5", digest("MD5", bytes, part.offset(), part.size()));
             window.retryWhenLimited(() -> api.request("POST", groupPath + "/upload_part_finish", finish, appId));
         }
@@ -136,13 +135,14 @@ final class QqBotMultipartUpload {
 
     private record Block(URI url, int size) {}
 
-    private record Part(URI url, int offset, int size) {}
+    private record Part(int index, URI url, int offset, int size) {}
 
     private record Plan(String id, Part[] parts, long retryTimeoutMillis, long retryDelayMillis) {
         static Plan parse(Object response, int fileSize) {
             if (!(response instanceof JSONObject json) || !(json.get("upload_id") instanceof String id) || id.isBlank()
                     || !(json.get("parts") instanceof JSONArray items) || items.isEmpty()) throw invalidPlan();
-            Block[] blocks = new Block[items.size()];
+            // 按回包序号存放分片，多留一格以容纳从 1 开始的序号。
+            Block[] blocks = new Block[items.size() + 1];
             long totalSize = 0;
             boolean allSizesExplicit = true;
             for (Object item : items) {
@@ -164,14 +164,17 @@ final class QqBotMultipartUpload {
         }
 
         private static Part[] slice(Block[] blocks, int fileSize, boolean exactSizes) {
-            Part[] parts = new Part[blocks.length];
+            Part[] parts = new Part[blocks.length - 1];
+            int firstIndex = blocks[0] == null ? 1 : 0;
             int covered = 0;
-            for (int index = 0; index < blocks.length; index++) {
+            for (int position = 0; position < parts.length; position++) {
+                int index = firstIndex + position;
                 Block block = blocks[index];
-                long offset = exactSizes ? covered : (long) index * block.size();
+                if (block == null) throw invalidPlan();
+                long offset = exactSizes ? covered : (long) position * block.size();
                 if (offset != covered || covered >= fileSize) throw invalidPlan();
                 int size = Math.min(block.size(), fileSize - covered);
-                parts[index] = new Part(block.url(), covered, size);
+                parts[position] = new Part(index, block.url(), covered, size);
                 covered += size;
             }
             if (covered != fileSize) throw invalidPlan();
