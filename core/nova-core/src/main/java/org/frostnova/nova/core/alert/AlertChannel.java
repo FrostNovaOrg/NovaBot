@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.alert;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -33,6 +34,11 @@ public interface AlertChannel {
      * @return 是否可用
      */
     boolean isAvailable();
+
+    /** 主动停用期间的告警也不经本通道补发，其它通道仍可独立重投。 */
+    default boolean suppresses(Instant occurredAt) {
+        return false;
+    }
 
     /**
      * 发送告警

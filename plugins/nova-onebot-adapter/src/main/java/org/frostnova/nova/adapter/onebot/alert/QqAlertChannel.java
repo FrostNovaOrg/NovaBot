@@ -17,6 +17,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -81,6 +82,7 @@ public class QqAlertChannel implements AlertChannel {
     public boolean isAvailable() {
         OneBotAdapterPluginProperties.Alert alert = properties.getAlert();
 
+        if (disabled()) return false;
         if (StringUtil.isBlank(alert.getPlatform()) || alert.getNum() == null) {
             return false;
         }
@@ -98,7 +100,18 @@ public class QqAlertChannel implements AlertChannel {
     }
 
     @Override
+    public boolean suppresses(Instant occurredAt) {
+        return properties.routesQqAlerts()
+                && (properties.channelDisabled() || messageSender.platformBlock(properties.getAlert().getPlatform(), occurredAt) != null);
+    }
+
+    private boolean disabled() {
+        return properties.channelDisabled() && properties.routesQqAlerts();
+    }
+
+    @Override
     public void send(String subject, String content) {
+        if (disabled()) throw new AlertBlockedException(OneBotAdapterPluginProperties.NapCat.DISABLED_REASON);
         String cannotSend = validateCanSend();
         if (cannotSend != null) {
             throw new IllegalStateException(cannotSend);
@@ -120,6 +133,10 @@ public class QqAlertChannel implements AlertChannel {
      */
     @Override
     public void sendReporting(String subject, String content, Consumer<SendResult> callback) {
+        if (disabled()) {
+            callback.accept(SendResult.blocked(OneBotAdapterPluginProperties.NapCat.DISABLED_REASON));
+            return;
+        }
         String cannotSend = validateCanSend();
         if (cannotSend != null) {
             callback.accept(SendResult.failed(cannotSend));

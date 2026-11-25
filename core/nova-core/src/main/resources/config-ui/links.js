@@ -11,6 +11,7 @@
 
 import {$, api, el, esc, loadingHtml, phrase, say} from './core.js';
 import {cardAnchor, linksModel, resolveTarget, targetOptions} from './links-model.js';
+import {renderBotChannel} from './bot.js';
 import {renderStatus} from './overview.js';
 import {renderTokens} from './tokens.js';
 
@@ -95,6 +96,7 @@ export async function refreshLinks() {
       api('/status'), api('/login'), api('/event-tokens')]);
 
     renderStatus(status);
+    renderBotChannel('bot', status.botChannel, () => Promise.all([refreshLinks(), loadTargets(false)]));
     model = linksModel(status, login, linkCards, tokens.tokens || [],
       phrase('bot.impl', v => '机器人（' + v + ' 等）', '机器人'), tokens.stream);
     model.cards.forEach(paint);
@@ -232,6 +234,10 @@ function renderTestResult(res, targetText) {
   }
 
   box.className = 'issues';
+  if (res.raw?.platform_disabled) {
+    box.textContent = res.message;
+    return;
+  }
   box.innerHTML = '<b>' + esc(res.message) + '</b>'
     + (res.advice ? '<p class="tr-advice">' + esc(res.advice) + '</p>' : '')
     + '<ul>'

@@ -17,9 +17,50 @@ export function botFormHtml(p) {
 
 // 每张表单的参数改过几次。测试回包时与发出时的次数不同，说明那次测的不是此刻的参数
 const botFormEdits = {};
+let channel = null;
+
+export function renderBotChannel(p, value, refresh) {
+  const box = $('#bot-channel');
+  const toggle = $('#bot-channel-enabled');
+  if (!box || !toggle) return;
+  box.hidden = !value;
+  if (!value) return;
+  if (channel?.enabled !== value.enabled) {
+    botFormEdits[p] = (botFormEdits[p] || 0) + 1;
+    $('#' + p + '-test').disabled = !value.enabled;
+    $('#' + p + '-save').disabled = value.enabled;
+    $('#' + p + '-out').textContent = '';
+  }
+  channel = value;
+  toggle.checked = value.enabled;
+  $('#bot-channel-label').textContent = '启用 ' + value.name + ' 通道';
+  $('#bot-channel-alert').textContent = value.alertWarning;
+  $('#bot-channel-alert').hidden = !value.alertWarning;
+  toggle.onchange = async () => {
+    const enabled = toggle.checked;
+    toggle.disabled = true;
+    try {
+      const res = await api('/values', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({[value.key]: String(enabled)})});
+      if (!res.success || res.restartRequired?.length) throw new Error(res.message);
+      renderBotChannel(p, {...value, enabled}, refresh);
+      await refresh();
+    } catch (e) {
+      $('#' + p + '-out').textContent = '切换失败：' + e.message;
+      toggle.checked = channel.enabled;
+    } finally {
+      toggle.disabled = false;
+    }
+  };
+}
 
 function invalidateBotForm(p) {
   botFormEdits[p] = (botFormEdits[p] || 0) + 1;
+  if (p === 'bot' && channel?.enabled === false) {
+    $('#' + p + '-save').disabled = false;
+    $('#' + p + '-out').textContent = '连接参数已修改，启用通道后使用新配置';
+    return;
+  }
   $('#' + p + '-save').disabled = true;
   $('#' + p + '-out').textContent = '连接参数已修改，请重新测试连接';
   $('#' + p + '-out').className = 'out';
@@ -83,11 +124,11 @@ async function testBotConnection(p) {
     if (!stale()) {
       out.className = 'out err';
       out.textContent = '测试失败：' + e.message;
+      $('#' + p + '-save').disabled = true;
     }
-    $('#' + p + '-save').disabled = true;
   }
 
-  $('#' + p + '-test').disabled = false;
+  $('#' + p + '-test').disabled = p === 'bot' && channel?.enabled === false;
 }
 
 async function saveBotConnection(p) {

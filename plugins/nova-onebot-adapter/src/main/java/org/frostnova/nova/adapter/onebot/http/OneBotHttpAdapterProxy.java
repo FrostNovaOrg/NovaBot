@@ -11,6 +11,8 @@ import org.frostnova.nova.core.util.HttpUtil;
 import org.frostnova.nova.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 
+import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
+
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.util.HashMap;
@@ -25,7 +27,14 @@ public class OneBotHttpAdapterProxy implements InvocationHandler {
 
     private final OneBotConnectionState state;
 
+    private final OneBotAdapterPluginProperties properties;
+
     public OneBotHttpAdapterProxy(HttpUtil http, OneBotConnectionState state) {
+        this(http, state, new OneBotAdapterPluginProperties());
+    }
+
+    public OneBotHttpAdapterProxy(HttpUtil http, OneBotConnectionState state, OneBotAdapterPluginProperties properties) {
+        this.properties = properties;
         this.http = http;
         this.state = state;
     }
@@ -62,6 +71,7 @@ public class OneBotHttpAdapterProxy implements InvocationHandler {
                 // 耗时是一个健康维度：接口调得通但每次要好几秒时，图片推送会因为
                 // 没有工作线程去读那个大请求体而超时丢弃，而连通性检查全程看不出异常
                 long startTime = System.currentTimeMillis();
+                if (properties.channelDisabled()) throw new IllegalStateException(OneBotAdapterPluginProperties.NapCat.DISABLED_REASON);
                 JSONObject result = http.postJson(url, headers, params);
                 if (api.latency()) {
                     state.recordLatency(sender.getName(), System.currentTimeMillis() - startTime);

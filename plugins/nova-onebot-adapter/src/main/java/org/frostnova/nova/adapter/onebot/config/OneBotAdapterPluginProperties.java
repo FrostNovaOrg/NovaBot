@@ -24,6 +24,21 @@ import java.util.List;
 @NovaComponent
 @ConfigurationProperties(prefix = "novabot.adapter.onebot")
 public class OneBotAdapterPluginProperties {
+    public static final String DEFAULT_PLATFORM = "qq-onebot";
+
+    public boolean channelDisabled() {
+        return !napcat.isEnabled();
+    }
+
+    public boolean ownsPlatform(String platform) {
+        return DEFAULT_PLATFORM.equals(platform) || platform != null && senders.stream()
+                .anyMatch(sender -> platform.equals(sender.getName()));
+    }
+
+    public boolean routesQqAlerts() {
+        return alert.getNum() != null && ownsPlatform(alert.getPlatform());
+    }
+
     /**
      * OneBot 推送接口的统一路径前缀。
      */
@@ -291,6 +306,15 @@ public class OneBotAdapterPluginProperties {
     @Getter
     @Setter
     public static class NapCat {
+        public static final String ENABLED_KEY = "novabot.adapter.onebot.napcat.enabled";
+        public static final String DISABLED_REASON = "NapCat 通道已停用";
+
+        /** 是否通过 NapCat 收发消息。关闭后保留连接配置，重新启用时立即连接。 */
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
+        @ConfigLabel("NapCat 通道")
+        @ConfigSummary("关闭后停止收发、体检和发往此通道的 QQ 告警。")
+        private volatile boolean enabled = true;
+
         /**
          * NapCat WebUI 的令牌，填明文即可，启动时自动换成哈希写回、明文不留盘。哈希与令牌权限等同，别当成了加密就放松保管。
          */

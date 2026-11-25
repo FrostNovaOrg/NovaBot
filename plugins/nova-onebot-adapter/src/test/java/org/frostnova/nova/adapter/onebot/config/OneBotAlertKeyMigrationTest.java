@@ -29,15 +29,15 @@ class OneBotAlertKeyMigrationTest {
     private static final String CURRENT_NUM = "novabot.adapter.onebot.alert.num";
 
     @Test
-    @DisplayName("适配器申报三条应用器与九条分组")
+    @DisplayName("适配器申报告警、通道开关与九条分组")
     void adapterDeclaresThreeAliasesAndThreeAppliers() {
         List<String> red = new ArrayList<>();
 
         try {
             OneBotAdapterPluginProperties properties = new OneBotAdapterPluginProperties();
             OneBotRuntimeAppliers appliers = new OneBotRuntimeAppliers(properties);
-            assertEquals(List.of(CURRENT_PLATFORM, CURRENT_TYPE, CURRENT_NUM),
-                    List.copyOf(appliers.appliers().keySet()), "须申报三条应用器且顺序为 platform／type／num");
+            assertEquals(List.of(CURRENT_PLATFORM, CURRENT_TYPE, CURRENT_NUM, OneBotAdapterPluginProperties.NapCat.ENABLED_KEY),
+                    List.copyOf(appliers.appliers().keySet()), "告警三项与通道开关均应即时生效");
             appliers.appliers().get(CURRENT_PLATFORM).accept("onebot");
             appliers.appliers().get(CURRENT_TYPE).accept("1");
             appliers.appliers().get(CURRENT_NUM).accept("10001");

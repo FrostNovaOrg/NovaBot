@@ -164,6 +164,8 @@ function botCard(status, title, officialTitle) {
   const base = {key: BOT_KEY, kind: 'bot', title: title || '机器人',
     show: true, level: 'off', caption: '', note: '', advice: ''};
 
+  if (status.botChannel?.enabled === false) return Object.assign(base, {caption: '已停用'});
+
   const senders = status.senders || [];
   const bots = probesIn(status, 'BOT');
   const adapter = bots.filter(item => !item.card);

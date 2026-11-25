@@ -94,6 +94,7 @@ public class OneBotTargetDirectory implements PushTargetDirectory {
      */
     @Override
     public List<Snapshot> snapshots(boolean force) {
+        if (properties.channelDisabled()) return List.of();
         List<Snapshot> result = new ArrayList<>();
 
         for (OneBotSender configured : properties.getSenders()) {
@@ -105,12 +106,18 @@ public class OneBotTargetDirectory implements PushTargetDirectory {
             result.add(snapshotOf(sender, force));
         }
 
-        return result;
+        return properties.channelDisabled() ? List.of() : result;
     }
 
     public boolean supports(String platform) {
-        return platform != null && properties.getSenders().stream().anyMatch(sender -> platform.equals(sender.getName()))
-                && httpService.getSender(platform) != null;
+        return configuredSender(platform) != null;
+    }
+
+    private OneBotSender configuredSender(String platform) {
+        if (platform == null || properties.getSenders().stream().noneMatch(sender -> platform.equals(sender.getName()))) {
+            return null;
+        }
+        return httpService.getSender(platform);
     }
 
     /** Read without causing network access, including when the cached entry has expired. */
@@ -120,7 +127,8 @@ public class OneBotTargetDirectory implements PushTargetDirectory {
     }
 
     public Snapshot snapshot(String platform, boolean force) {
-        return supports(platform) ? snapshotOf(httpService.getSender(platform), force) : null;
+        OneBotSender sender = configuredSender(platform);
+        return sender == null ? null : snapshotOf(sender, force);
     }
 
     /**

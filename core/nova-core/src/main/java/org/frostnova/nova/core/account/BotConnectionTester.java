@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.account;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -58,11 +59,16 @@ public interface BotConnectionTester {
      * 一台还没有任何机器人的机器上，这份映射是<b>整条元素</b>（含平台名与接口路径）——
      * 只写地址与端口的话，文件里会落下一条没有名字的连接，而它在下次启动时直接让程序起不来。
      *
-     * @param live 这条连接现在是不是已经接上了；false 表示仍要重启一次才生效
+     * @param live 这条连接现在是不是已经接上了
+     * @param disabled 保存时整个通道是否已被主动停用
      * @param detail 一句话说明，界面直接显示给使用者
      * @param configuration 配置文件里这条连接该有的全部字段，键为列表元素内部的键，顺序即写入顺序
      */
-    record Applied(boolean live, String detail, Map<String, String> configuration) {}
+    record Applied(boolean live, String detail, Map<String, String> configuration, boolean disabled) {
+        public Applied(boolean live, String detail, Map<String, String> configuration) {
+            this(live, detail, configuration, false);
+        }
+    }
 
     /**
      * 当前已配置的连接信息，供界面回填
@@ -71,6 +77,11 @@ public interface BotConnectionTester {
     default Optional<Connection> current() {
         return Optional.empty();
     }
+
+    /** 连接卡上的通道开关。未提供开关的适配器沿用原有连接表单。 */
+    default Optional<ChannelSwitch> channelSwitch() { return Optional.empty(); }
+
+    record ChannelSwitch(String key, String name, boolean enabled, String alertWarning, List<String> platforms) {}
 
     /**
      * 已配置的连接信息

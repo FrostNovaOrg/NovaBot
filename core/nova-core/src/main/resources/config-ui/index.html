@@ -349,6 +349,11 @@
         <div class="lc-body">
           <p class="hint">机器人负责将消息发送到聊天平台。
             两个 Token 留空时<b>保留原值</b>，不会被清空。</p>
+          <div id="bot-channel" hidden>
+            <label class="switch"><input type="checkbox" role="switch" id="bot-channel-enabled" aria-describedby="bot-channel-alert">
+              <span id="bot-channel-label"></span></label>
+            <p class="hint" id="bot-channel-alert" hidden></p>
+          </div>
           <div class="fbox" id="bot-form"></div>
 
           <!--

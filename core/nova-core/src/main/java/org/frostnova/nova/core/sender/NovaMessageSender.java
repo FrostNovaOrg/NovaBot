@@ -18,6 +18,7 @@ import org.frostnova.nova.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PreDestroy;
@@ -63,6 +64,26 @@ public class NovaMessageSender {
     private final TimelineWriter timeline;
 
     private final AtAllQuotaService atAllQuota;
+
+    private List<PlatformDeliveryGate> platformGates = List.of();
+
+    @Autowired(required = false)
+    public void setPlatformGates(@Lazy List<PlatformDeliveryGate> gates) {
+        platformGates = gates;
+    }
+
+    private String platformBlock(Message message) {
+        return platformBlock(message.getPlatform(), message.getCreateTime());
+    }
+
+    /** 重投按原消息或告警的发生时间判定，避免重开通道后补发旧消息。 */
+    public String platformBlock(String platform, Instant createdAt) {
+        for (PlatformDeliveryGate gate : platformGates) {
+            String reason = gate.blockedReason(platform, createdAt);
+            if (reason != null) return reason;
+        }
+        return null;
+    }
 
     /**
      * 首次推送后的用法提示
@@ -132,6 +153,7 @@ public class NovaMessageSender {
      * @param message 消息
      */
     public void send(Message message) {
+        if (discardIfPlatformBlocked(message) != null) return;
         // 按这条消息发往的会话判：会话可以有自己的静音时段或不静音
         if (!pushGate.allowedFor(message)) {
             PushGate.Block block = pushGate.blockedBy();
@@ -159,6 +181,7 @@ public class NovaMessageSender {
 
     /** 周报仅在过闸时入队；被静音拦下时交还调度器顺延，不丢弃。 */
     public PushGate.Block sendWeeklyReport(Message message) {
+        if (discardIfPlatformBlocked(message) != null) return null;
         if (!pushGate.allowedFor(message)) {
             return pushGate.blockedBy();
         }
@@ -183,6 +206,8 @@ public class NovaMessageSender {
      * @param message 告警消息
      */
     public void sendAlert(Message message) {
+        String reason = platformBlock(message);
+        if (reason != null) throw new AlertBlockedException(reason);
         if (!pushGate.alertsAllowed()) {
             throw new AlertBlockedException(pushGate.blockReason() + "，这条告警没有发出");
         }
@@ -219,16 +244,21 @@ public class NovaMessageSender {
                 continue;
             }
 
-            long total = droppedCount.incrementAndGet();
-            dropped.setFailureReason("队列已满, 被挤掉");
+            String pause = platformBlock(dropped);
+            if (pause == null) {
+                dropped.setFailureReason("队列已满, 被挤掉");
+                log.warn("{} 平台的发送队列已满({} 条), 丢弃最旧的一条消息: [{}] {}: {}（累计丢弃 {} 条）",
+                        message.getPlatform(), QUEUE_CAPACITY, dropped.getType().getStr(),
+                        dropped.getNum(), dropped.getDisplay(), droppedCount.incrementAndGet());
+            }
             try {
-                droppedCallbacks.execute(() -> runEach(dropped.markFailed(), dropped, "发送失败"));
+                droppedCallbacks.execute(() -> {
+                    if (pause == null) runEach(dropped.markFailed(), dropped, "发送失败");
+                    else discardForPlatform(dropped, pause);
+                });
             } catch (RejectedExecutionException e) {
                 log.warn("停机时丢弃被挤掉消息的失败回调: [{}]{}", dropped.getSequence(), dropped.getDisplay());
             }
-            log.warn("{} 平台的发送队列已满({} 条), 丢弃最旧的一条消息: [{}] {}: {}（累计丢弃 {} 条）",
-                    message.getPlatform(), QUEUE_CAPACITY, dropped.getType().getStr(),
-                    dropped.getNum(), dropped.getDisplay(), total);
         }
     }
 
@@ -258,6 +288,8 @@ public class NovaMessageSender {
      * @return 推送接口的原始响应
      */
     public JSONObject sendNow(Message message) {
+        JSONObject blocked = discardIfPlatformBlocked(message);
+        if (blocked != null) return blocked;
         Sender sender = senderService.getSender(message.getPlatform())
                 .orElseThrow(() -> new IllegalArgumentException("未找到推送平台 " + message.getPlatform()));
 
@@ -401,6 +433,8 @@ public class NovaMessageSender {
         RuntimeException last = null;
 
         for (int attempt = 1; attempt <= SEND_MAX_ATTEMPTS; attempt++) {
+            String reason = platformBlock(message);
+            if (reason != null) return PlatformDeliveryGate.blockedResponse(reason);
             try {
                 // 适配器与核心同进程时直接交过去，不绕本机 HTTP。
                 // 绕一圈的代价不是那点开销，而是把投递压在自己服务端口的几个工作线程上：
@@ -448,7 +482,8 @@ public class NovaMessageSender {
                 try {
                     Message message = queue.take();
                     try {
-                        // 出队只复查总开关，静音仍只在入队时判断。
+                        // 出队复查平台和全局开关，静音仍只在入队时判断。
+                        if (discardIfPlatformBlocked(message) != null) continue;
                         if (!pushGate.alertsAllowed()) {
                             discardQueuedMessage(message);
                             continue;
@@ -488,10 +523,34 @@ public class NovaMessageSender {
                     .detail("platform", message.getPlatform())
                     .build());
         }
+        finishBlocked(message, block.getDescription() + (message.isAlert() ? "，这条告警没有发出" : "，这条消息没有发出"));
+    }
+
+    private JSONObject discardIfPlatformBlocked(Message message) {
+        String reason = platformBlock(message);
+        if (reason == null) return null;
+        discardForPlatform(message, reason);
+        return PlatformDeliveryGate.blockedResponse(reason);
+    }
+
+    private void discardForPlatform(Message message, String reason) {
+        if (!message.isAlert()) {
+            recordPlatformPause(message.getPlatform(), message.getType(), message.getNum(), message.getDisplay(), reason);
+        }
+        finishBlocked(message, reason);
+    }
+
+    /** 计划中的推送也可能在生成消息前被停用，和队列中的消息记在同一类时间线里。 */
+    public void recordPlatformPause(String platform, PushTargetType type, Long num, String summary, String reason) {
+        timeline.record(TimelineEvent.of(TimelineEventType.PUSH_PAUSED, TimelineEvent.Level.WARN)
+                .channel(type.getStr() + " " + num).text(reason + "，没有发出")
+                .detail("summary", summary).detail("platform", platform).build());
+    }
+
+    private void finishBlocked(Message message, String reason) {
         // 告警由通道回报 BLOCKED，告警服务只记失败及原因，不入重投队列。
         message.setBlockedByPushSwitch(true);
-        message.setFailureReason(block.getDescription()
-                + (message.isAlert() ? "，这条告警没有发出" : "，这条消息没有发出"));
+        message.setFailureReason(reason);
         message.setCompleteTime(Instant.now());
         runEach(message.markFailed(), message, "发送失败");
         runEach(message.getOnCompleteCallbacks(), message, "发送完毕");
@@ -611,6 +670,11 @@ public class NovaMessageSender {
         long startedAt = System.nanoTime();
         JSONObject result = postWithRetry(sender, headers, params, message);
         long elapsedMillis = elapsedMillisSince(startedAt);
+        if (result.getBooleanValue(PlatformDeliveryGate.BLOCKED)) {
+            releaseOnce(message, chargedOn);
+            discardForPlatform(message, result.getString("message"));
+            return result;
+        }
         message.setCompleteTime(Instant.now());
 
         for (Runnable callback : message.getOnCompleteCallbacks()) {
@@ -717,7 +781,7 @@ public class NovaMessageSender {
      */
     private FallbackOutcome fallbackWithoutImages(Sender sender, Map<String, String> headers, Map<String, Object> params,
                                                   Message message, JSONObject failure) {
-        if (Boolean.TRUE.equals(failure.get(Sender.LocalDelivery.SKIP_IMAGE_FALLBACK))
+        if (platformBlock(message) != null || Boolean.TRUE.equals(failure.get(Sender.LocalDelivery.SKIP_IMAGE_FALLBACK))
                 || !MessagePlaceholders.containsImage(message.getContent())) {
             return FallbackOutcome.FAILED;
         }
@@ -852,7 +916,7 @@ public class NovaMessageSender {
         if (!firstPushTip.enabled()) {
             return;
         }
-        if (!pushGate.allowedFor(message)) return;
+        if (!pushGate.allowedFor(message) || platformBlock(message) != null) return;
         if (!firstPushTip.claim(message.getPlatform(), message.getType(), message.getNum())) {
             return;
         }

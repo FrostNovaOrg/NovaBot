@@ -530,7 +530,9 @@ export function homeModel(status, login, timeline, pages, pluginDone, terms) {
   const self = probesIn(state, 'SYSTEM');
   const bot = probesIn(state, 'BOT');
   // 官方连接探针在凭据保存后启用，推送平台尚未登记时也应显示连接状态。
-  const fresh = (state.senders || []).length === 0 && (state.users || []).length === 0
+  const disabled = state.botChannel?.enabled === false ? state.botChannel : null;
+  const senders = (state.senders || []).filter(name => !disabled?.platforms.includes(name));
+  const fresh = senders.length === 0 && (state.users || []).length === 0
     && !bot.some(item => item.card === OFFICIAL_BOT_CARD);
 
   const chain = {
@@ -551,7 +553,10 @@ export function homeModel(status, login, timeline, pages, pluginDone, terms) {
   chain.bot.advice = (bot.find(item => item.lamp === chain.bot.level) || {}).advice || '';
 
   // 待办看探针原级：暂停／静音会把这一段改成熄灯，真掉线时待办仍要出
-  const botFailure = bot.find(item => item.lamp === 'err');
+  const missingBot = disabled && !bot.length && !senders.length;
+  const botFailure = bot.find(item => item.lamp === 'err') || (missingBot ? {reason: 'unconfigured'} : null);
+  if (disabled) chain.bot.channelNote = disabled.name + ' 已停用';
+  if (missingBot) chain.bot.stateText = '尚未连接机器人';
 
   if (fresh) {
     // 什么都还没配的时候，三段一律熄灯：此时报红是在说「坏了」，而它没坏，是还没开始

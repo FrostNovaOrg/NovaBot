@@ -473,9 +473,18 @@ public class AlertService {
      * 重投途中已报出、被拦下、送达不明照旧记，并标明第几次。
      */
     private Delivery deliver(PendingAlert alert, String sendContent) {
-        List<AlertChannel> available = channels.orderedStream().filter(AlertChannel::isAvailable).toList();
+        List<AlertChannel> available = new ArrayList<>();
+        boolean suppressed = false;
+        for (AlertChannel channel : channels.orderedStream().toList()) {
+            if (channel.suppresses(alert.occurredAt())) {
+                suppressed = true;
+            } else if (channel.isAvailable()) {
+                available.add(channel);
+            }
+        }
 
         if (available.isEmpty()) {
+            if (suppressed) return new Delivery(true, false, true, false);
             // 标题不截断：这一条是「压根没发出去」，看的人要照着它去查那条告警说的是哪件事；
             // 截成前二十几个字的话，几条不同的告警在时间线里长得一模一样。
             // 只有首投进时间线。重投再撞上没通道只写工程日志，放弃时另记一条。

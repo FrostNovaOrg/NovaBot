@@ -132,6 +132,7 @@ public class OneBotWebsocketService {
         // 界面上写着未启用而消息照收，那是最难看出来的一种不一致
         stop(sender.getName());
 
+        if (properties.channelDisabled()) return;
         if (!sender.isWebsocket()) {
             state.websocketDisabled(sender.getName());
             return;
@@ -642,6 +643,7 @@ public class OneBotWebsocketService {
          */
         @Override
         public void handleMessage(@NonNull WebSocketSession session, @NonNull WebSocketMessage<?> webSocketRawMessage) {
+            if (connection.retired || service.properties.channelDisabled()) return;
             // 收到任何东西都说明链路是通的，因此在解析之前就先计时：内容能不能解析、是不是聊天消息，
             // 与「连接还活着吗」是两个问题
             liveness.frameReceived(Instant.now());
@@ -674,7 +676,7 @@ public class OneBotWebsocketService {
                         executor.submit(() -> {
                             // 排队期间这一代可能已被换掉或停用：那之后它的消息一概不处理，
                             // 否则旧连接里排着的一条会被当成指令执行，或把新连接的状态改掉
-                            if (connection.retired) {
+                            if (connection.retired || service.properties.channelDisabled()) {
                                 return;
                             }
                             try {

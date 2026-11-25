@@ -165,6 +165,7 @@ public class BackupAtAllAspect {
      * 挂群待办。失败只记一行警告，不带着堆栈往外抛，免得这次推送被它打断
      */
     private void attachTodo(OneBotSender sender, JSONObject todoParams, String messageId) {
+        if (!holder.isNapcat(sender.getName())) return;
         todoParams.put("message_id", messageId);
         try {
             http.setGroupTodo(sender, todoParams);

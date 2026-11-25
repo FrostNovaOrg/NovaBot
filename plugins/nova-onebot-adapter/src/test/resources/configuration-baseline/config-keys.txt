@@ -8,6 +8,7 @@ novabot.adapter.onebot.detect.http-detect-interval|java.lang.Integer|300|隔多�
 novabot.adapter.onebot.detect.slow-threshold-millis|java.lang.Integer|2000|OneBot 接口调用超过多少毫秒判定为「慢」，单位：毫秒。只判通不通会漏掉一类故障：接口不报错但每次要几秒，带图的推送会超时被丢。设 0 或负数关闭这项判定。
 novabot.adapter.onebot.detect.websocket-silence-timeout|java.lang.Integer|120|长连接静默多少秒判定为失效，单位：秒。判据是心跳、与群里有没有人说话无关，配得比心跳间隔短也不会误报：实际不短于三个心跳周期；对方关了心跳时本项不生效。
 novabot.adapter.onebot.napcat.address|java.lang.String|http://127.0.0.1:6099|NapCat WebUI 的地址，默认本机回环；代登录要拿凭据去换凭据，别改成离开本机的地址。
+novabot.adapter.onebot.napcat.enabled|java.lang.Boolean|true|是否通过 NapCat 收发消息。关闭后保留连接配置，重新启用时立即连接。
 novabot.adapter.onebot.napcat.token-hash|java.lang.String||上一项换算出的哈希，程序自动写回，不必手填；NapCat 的登录接口收的就是这个形态。
 novabot.adapter.onebot.napcat.token|java.lang.String||NapCat WebUI 的令牌，填明文即可，启动时自动换成哈希写回、明文不留盘。哈希与令牌权限等同，别当成了加密就放松保管。
 novabot.adapter.onebot.napcat.totp-secret|java.lang.String||NapCat WebUI 的二次验证密钥（Base32），它开了 2FA 才需要填；只能明文保存，配置文件权限要收紧到仅属主可读。

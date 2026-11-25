@@ -380,6 +380,16 @@ const botPage = {id: 'qqbot', displayName: 'QQ 官方机器人', slot: 'links', 
 const napOk = OK_PROBES().find(p => p.scope === 'BOT');
 const napDown = probe(napOk.name, 'BOT', 'DOWN', '默认：账号已掉线', '', false, 'account');
 const officialOk = {...probe(botPage.displayName, 'BOT', 'OK', '已连接 · 小助手'), card: botPage.id};
+const pausedChannel = {name: 'NapCat', enabled: false, platforms: ['qq-onebot']};
+for (const officialHealth of [[], [officialOk], [{...officialOk, level: 'DOWN'}]]) {
+  const home = homeModel({...freshStatus, senders: ['qq-onebot'], health: officialHealth, botChannel: pausedChannel}, login(), timeline());
+  same(home.chain.bot.channelNote, 'NapCat 已停用', '首页明示主动停用');
+  same(home.chain.bot.level, !officialHealth.length ? 'off' : officialHealth[0].level === 'OK' ? 'ok' : 'err',
+    '停用后机器人状态跟随官方连接');
+  same(home.fresh, !officialHealth.length, '保留的 NapCat 平台名不会遮掉未配置机器人的提示');
+}
+const existingSetup = homeModel(status({senders: ['qq-onebot'], health: [], botChannel: pausedChannel}), login(), timeline());
+same(existingSetup.todos.find(item => item.key === 'bot')?.title, '连接机器人', '已有主播时仍提示连接机器人');
 const officialDown = {...officialOk, level: 'DOWN', summary: 'AppID 或 AppSecret 不对'};
 const nonBotProbes = OK_PROBES().filter(p => p.scope !== 'BOT');
 const botCases = [

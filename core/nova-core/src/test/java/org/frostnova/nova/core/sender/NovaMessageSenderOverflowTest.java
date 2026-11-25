@@ -27,6 +27,24 @@ import static org.mockito.Mockito.*;
 
 class NovaMessageSenderOverflowTest {
     @Test
+    @DisplayName("通道重开时满队列挤出的旧消息按暂停结算")
+    void expiredMessagesEvictedOnResumeArePaused() throws Exception {
+        try (BlockedPlatform platform = new BlockedPlatform()) {
+            Message oldest = message();
+            CountDownLatch done = new CountDownLatch(1);
+            oldest.addOnFailureCallback(done::countDown);
+            platform.fill(oldest, message());
+            var lastExpired = oldest.getCreateTime();
+            platform.sender.setPlatformGates(java.util.List.of((name, createdAt) ->
+                    !createdAt.isAfter(lastExpired) ? "通道已停用" : null));
+            platform.sender.send(message());
+            assertTrue(done.await(10, TimeUnit.SECONDS));
+            assertTrue(oldest.isBlockedByPushSwitch());
+            assertEquals(0, platform.sender.getDroppedCount());
+        }
+    }
+
+    @Test
     @DisplayName("掉线积压满队列后，周报与通知持锁发送仍能结束，无需重启恢复")
     void overflowDoesNotDeadlockDeliveryServices() throws Exception {
         try (BlockedPlatform platform = new BlockedPlatform()) {

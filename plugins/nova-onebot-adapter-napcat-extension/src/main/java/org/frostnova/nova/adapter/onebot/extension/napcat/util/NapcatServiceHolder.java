@@ -3,7 +3,10 @@ package org.frostnova.nova.adapter.onebot.extension.napcat.util;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
 import org.frostnova.nova.core.plugin.NovaComponent;
 
-import java.util.HashMap;
+import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
+import org.springframework.beans.factory.annotation.Autowired;
+
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
@@ -20,7 +23,17 @@ import java.util.NoSuchElementException;
  */
 @NovaComponent
 public class NapcatServiceHolder {
-    private final Map<String, OneBotSender> senders = new HashMap<>();
+    private final Map<String, OneBotSender> senders = new ConcurrentHashMap<>();
+    private final OneBotAdapterPluginProperties properties;
+
+    public NapcatServiceHolder() {
+        this(new OneBotAdapterPluginProperties());
+    }
+
+    @Autowired
+    public NapcatServiceHolder(OneBotAdapterPluginProperties properties) {
+        this.properties = properties;
+    }
 
     /**
      * 记下一个已认出的 NapCat 推送平台
@@ -38,7 +51,7 @@ public class NapcatServiceHolder {
      * @return 是否为 Napcat 服务
      */
     public boolean isNapcat(String senderName) {
-        return senders.containsKey(senderName);
+        return !properties.channelDisabled() && senderName != null && senders.containsKey(senderName);
     }
 
     /**
