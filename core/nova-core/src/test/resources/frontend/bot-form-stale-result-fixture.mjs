@@ -1,136 +1,92 @@
-/**
- * 连接页机器人表单：测试连接还没回来时改了参数，旧结果不得放行改过的参数
- *
- * 用户故障：点了测试连接，回包前把地址改错；旧的成功结果一回来就解开保存，
- * 点下去存的是没测过的错地址。
- * 整个 bot.js 去掉 import 后真执行：点「测试连接」、改格子、让接口回包都真走一遍，
- * 量保存按钮的状态与提示。对照：回包前没改，测通照旧解开保存，存的是测过的那一套。
- *
- * 由 BotFormStaleResultTest 拉起。量的是源码树里那一份，不是构建产物里的副本。
- */
+import assert from 'node:assert/strict';
+import './layout-dom.mjs';
+import {bindBotForm, botFormHtml} from '../../../main/resources/config-ui/bot.js';
 
-import {readFileSync} from 'node:fs';
-import {dirname, join} from 'node:path';
-import {fileURLToPath} from 'node:url';
+const form = document.createElement('div');
+form.innerHTML = botFormHtml('bot') + '<input type="checkbox" id="bot-channel-enabled">';
+document.body.appendChild(form);
 
-const ui = join(dirname(fileURLToPath(import.meta.url)), '../../../main/resources/config-ui');
-const src = readFileSync(join(ui, 'bot.js'), 'utf8');
+const fieldKeys = ['addr', 'hport', 'htoken', 'wport', 'wtoken'];
+const node = key => form.querySelector('#bot-' + key);
+for (const key of fieldKeys) node(key).value = node(key).getAttribute('value');
+const initialAddress = node('addr').value;
 
-const failures = [];
-let checks = 0;
-
-function eq(actual, expected, what) {
-  checks++;
-  const a = JSON.stringify(actual);
-  const b = JSON.stringify(expected);
-  if (a !== b) failures.push(what + '：得到 ' + a + '，应为 ' + b);
-}
-
-function fakeDom() {
-  const byId = {};
-  function el() {
-    return {
-      disabled: false,
-      value: '',
-      textContent: '',
-      className: '',
-      listeners: {},
-      addEventListener(type, fn) {
-        if (!this.listeners[type]) this.listeners[type] = [];
-        this.listeners[type].push(fn);
-      }
-    };
+const response = data => ({status: 200, json: async () => data});
+const tested = [];
+const saved = [];
+let pendingReply;
+globalThis.fetch = async (path, options) => {
+  const {address} = JSON.parse(options.body);
+  if (path === '/config/api/setup/test-bot') {
+    tested.push(address);
+    pendingReply = Promise.withResolvers();
+    return response(await pendingReply.promise);
   }
-  function $(sel) {
-    const id = String(sel).replace(/^#/, '');
-    if (!byId[id]) byId[id] = el();
-    return byId[id];
+  assert.equal(path, '/config/api/setup/bot');
+  saved.push(address);
+  return response({success: true, message: '已保存'});
+};
+bindBotForm('bot');
+
+function edit(key, value) {
+  const input = node(key);
+  input.value = value;
+  input.dispatchEvent({type: 'input'});
+}
+
+function click(key) {
+  const button = node(key);
+  assert.equal(button.disabled, false, key + ' 按钮未启用');
+  const [handler] = button.listeners.click || [];
+  assert.ok(handler, key + ' 按钮没有绑定点击处理');
+  return handler();
+}
+
+function beginTest() {
+  pendingReply = undefined;
+  const done = click('test');
+  assert.ok(pendingReply, '点击测试连接没有发送请求');
+  return {...pendingReply, done};
+}
+
+async function testSuccessfully() {
+  const request = beginTest();
+  request.resolve({success: true, message: '连接正常'});
+  await request.done;
+  assert.equal(node('save').disabled, false, '测通后仍不能保存');
+}
+
+if (process.argv[2] === 'retest') {
+  // 测通后改任一字段，都必须阻止保存没测过的参数。
+  for (const key of fieldKeys) {
+    await testSuccessfully();
+    edit(key, node(key).value + '1');
+    assert.equal(node('save').disabled, true, '修改 ' + key + ' 后仍可保存');
   }
-  return {$, byId};
+  assert.match(node('test-result').textContent, /重新测试连接/);
+
+  await testSuccessfully();
+  const failed = beginTest();
+  failed.reject(new Error('连接不可用'));
+  await failed.done;
+  assert.equal(node('save').disabled, true, '重测失败后仍可保存');
+  console.log('跑了 3 格：修改任一字段锁定保存、提示重测、测试失败后锁定保存');
+} else {
+  // 回包前修改地址，先前发出的测试即使通过也不得放行。
+  const request = beginTest();
+  const changedAddress = '127.0.0.2';
+  edit('addr', changedAddress);
+  request.resolve({success: true, message: '连接正常'});
+  await request.done;
+  assert.deepEqual(tested, [initialAddress]);
+  assert.equal(node('save').disabled, true, '旧回包放行了没有测试的地址');
+  assert.match(node('test-result').textContent, /重新测试连接/);
+
+  // 新地址测通后，保存请求只写入真正测过的地址。
+  await testSuccessfully();
+  assert.deepEqual(tested, [initialAddress, changedAddress]);
+  await click('save');
+  assert.deepEqual(saved, [changedAddress]);
+  assert.match(node('save-result').textContent, /已保存/);
+  console.log('跑了 2 格：回包前改地址仍需重测，回包前未改时测通可保存');
 }
-
-/** 接口桩：测试请求挂着，等手动回包；保存请求记下来并当场回成功 */
-function fakeApi() {
-  const calls = [];
-  let release = null;
-  async function api(path, opts) {
-    calls.push({path, body: opts && opts.body ? JSON.parse(opts.body) : null});
-    if (path === '/setup/test-bot') {
-      return new Promise(resolve => { release = resolve; });
-    }
-    return {success: true, message: '已保存'};
-  }
-  return {api, calls, answer: res => release(res)};
-}
-
-/** 去掉 import 与 export 后整份执行，拿到绑定好的一张表单 */
-function loadForm() {
-  const body = src.replace(/^import .*$/gm, '').replace(/^export /gm, '');
-  const {$, byId} = fakeDom();
-  const fake = fakeApi();
-  const mod = new Function('$', 'api', 'term', body + '\nreturn {bindBotForm};')(
-    $, fake.api, (key, fallback) => fallback);
-  ['addr', 'hport', 'htoken', 'wport', 'wtoken', 'test', 'save', 'out'].forEach(k => $('#bot-' + k));
-  byId['bot-addr'].value = '10.0.0.1';
-  byId['bot-hport'].value = '3000';
-  byId['bot-wport'].value = '3001';
-  byId['bot-save'].disabled = true;
-  mod.bindBotForm('bot');
-  return {byId, fake};
-}
-
-function click(node) {
-  return Promise.all((node.listeners.click || []).map(fn => fn()));
-}
-
-function type(node, value) {
-  node.value = value;
-  (node.listeners.input || []).forEach(fn => fn());
-}
-
-const flush = () => new Promise(resolve => setTimeout(resolve, 0));
-
-// ① 回包前改了地址，旧的成功回包不得解开保存，提示仍要求重测
-let stale = 'missing';
-try {
-  const {byId, fake} = loadForm();
-  const pending = click(byId['bot-test']);
-  await flush();
-  type(byId['bot-addr'], '10.0.0.99');
-  fake.answer({success: true, message: '连接正常', advice: ''});
-  await pending;
-  stale = {
-    saveDisabled: byId['bot-save'].disabled,
-    out: byId['bot-out'].textContent,
-    tested: fake.calls.filter(c => c.path === '/setup/test-bot').map(c => c.body.address),
-  };
-} catch (e) {
-  stale = 'error:' + e.message;
-}
-eq(stale, {saveDisabled: true, out: '连接参数已修改，请重新测试连接', tested: ['10.0.0.1']},
-  '① 测试挂着时改地址、再回成功：保存仍禁用，提示仍是重新测试');
-
-// ② 对照：回包前没动，测通照旧解开保存，点保存发出去的是测过的那一套
-let fresh = 'missing';
-try {
-  const {byId, fake} = loadForm();
-  const pending = click(byId['bot-test']);
-  await flush();
-  fake.answer({success: true, message: '连接正常', advice: ''});
-  await pending;
-  const saveDisabled = byId['bot-save'].disabled;
-  await click(byId['bot-save']);
-  fresh = {
-    saveDisabled,
-    out: byId['bot-out'].textContent,
-    saved: fake.calls.filter(c => c.path === '/setup/bot').map(c => c.body.address),
-  };
-} catch (e) {
-  fresh = 'error:' + e.message;
-}
-eq(fresh, {saveDisabled: false, out: '已保存', saved: ['10.0.0.1']},
-  '② 对照：回包前没改，测通解开保存，存的是测过的地址');
-
-console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
-for (const line of failures) console.log('  红：' + line);
-process.exit(failures.length ? 1 : 0);

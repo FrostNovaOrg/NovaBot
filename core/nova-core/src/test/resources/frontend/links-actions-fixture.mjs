@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import './layout-dom.mjs';
 
 const ui = new URL('../../../main/resources/config-ui/', import.meta.url);
 const encodeModule = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
@@ -9,31 +10,19 @@ function loadModule(name, replacements) {
   return import(encodeModule(source));
 }
 
-class Node {
-  children = [];
-  value = '';
-  textContent = '';
-  innerHTML = '';
-  dataset = {};
-  style = {};
-
-
-  appendChild(child) { this.children.push(child); }
-  setAttribute() {}
-}
-
 const ids = ['test-target', 'test-hint', 'test-refresh', 'test-refresh-result', 'test-send', 'test-result',
   'bot-channel', 'bot-channel-enabled', 'bot-channel-label', 'bot-channel-alert', 'bot-channel-result',
   'bot-test', 'bot-save', 'bot-out', 'bot-test-result', 'bot-save-result', 'bot-settings', 'bot-intro', 'bot-toggle-settings'];
-const nodes = Object.fromEntries(ids.map(id => ['#' + id, new Node()]));
-globalThis.document = {
-  querySelector: selector => nodes[selector],
-  createElement: () => new Node()
-};
+const nodes = Object.fromEntries(ids.map(id => {
+  const node = document.createElement('div');
+  node.id = id;
+  document.body.appendChild(node);
+  return ['#' + id, node];
+}));
 const response = data => ({status: 200, json: async () => data});
 
 if (process.argv[2] === 'send') {
-  // 两个群名不同且回包交错。早发往 NapCat 群的成功不能覆盖后发往官方群的失败。
+  // 后发的官方群先返回失败。早发的成功即使此时选中官方群，也必须显示 NapCat 群名。
   const replies = new Map();
   globalThis.fetch = async (path, opts) => {
     if (path.endsWith('/status')) return response({});
@@ -65,11 +54,13 @@ if (process.argv[2] === 'send') {
   await first;
 
   const boxes = nodes['#test-result'].children;
-  const content = box => box.textContent + box.innerHTML;
-  assert.ok(boxes.some(box => /演示官方群/.test(content(box)) && /主动发言未开/.test(content(box))),
-    'NapCat 群的成功盖掉了官方群的失败');
-  assert.ok(boxes.some(box => /演示 NapCat 群/.test(content(box)) && /已发送/.test(content(box))),
+  assert.equal(boxes.length, 2, '两次试发没有各自保留一条结果');
+  // 有详细说明时，第一项是完整结果标题，其余子节点显示说明。
+  const resultLine = box => box.children[0]?.textContent ?? box.textContent;
+  assert.equal(resultLine(boxes[0]), '群 · 演示 NapCat 群（901） · 已发送',
     '先发的成功没有归到 NapCat 群');
+  assert.equal(resultLine(boxes[1]), '群 · 演示官方群（902） · 发送失败：主动发言未开',
+    '后发的失败没有归到官方群');
   assert.ok(canSendToSecond, '另一笔发送中，无法给不同的群试发');
   console.log('跑了 1 格：NapCat 群和官方群交错返回，结果分别显示');
 } else {
