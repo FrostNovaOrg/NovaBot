@@ -868,6 +868,18 @@ function loadGroupList() {
   return groupListLoad;
 }
 
+async function refreshPushPlatforms() {
+  try {
+    const status = await api('/status', {cache: 'no-store'});
+    if (Array.isArray(status?.senders)) {
+      store.senderList = status.senders;
+      store.senderAdapters = status.senderAdapters || {};
+    }
+  } catch (e) {
+    // 状态暂时取不到时，继续用上次取得的平台资料。
+  }
+}
+
 /**
  * 取这一页要用的几份数据
  *
@@ -878,6 +890,7 @@ function loadGroupList() {
  * 也照样改得动——整趟判失败的话，屏幕上会只剩一句「载入失败」，配好的东西一个也看不见。
  */
 export async function loadPushPage() {
+  const loadingPlatforms = refreshPushPlatforms();
   const loadingGroups = isMember() ? null : loadGroupList();
   try {
     const listed = await api('/report/palettes');
@@ -929,6 +942,7 @@ export async function loadPushPage() {
     directory = {};
   }
 
+  await loadingPlatforms;
   renderStreamers();
   await decoratePushData();
 }
@@ -2770,7 +2784,13 @@ function lookupTarget(platform, type, num) {
 }
 
 /** 成员只查询输入的完整号码，不读取或展示机器人会话名单。 */
-function pickMemberTarget(opts) {
+async function pickMemberTarget(opts) {
+  const body = $('#push-drawer-body');
+  openDrawer(opts.title, '', content => { content.innerHTML = loadingHtml('正在读取推送平台…'); });
+  const loading = body.children[0];
+  await refreshPushPlatforms();
+  if (body.children[0] !== loading) return;
+
   const platformNames = [...new Set([
     ...(opts.user.targets || []).map(target => target.platform),
     ...pushData.flatMap(user => user.targets || []).map(target => target.platform),
@@ -2878,7 +2898,7 @@ function addChannel(user) {
   const taken = (user.targets || [])
     .map(item => item.platform + '|' + Number(item.type) + '|' + item.num);
 
-  (isMember() ? pickMemberTarget : pickTarget)({
+  return (isMember() ? pickMemberTarget : pickTarget)({
     title: '给「' + streamerName(user) + '」添加通道',
     lead: '从机器人已加入的群和已添加的好友中选择，已添加为通道的显示为灰色。通道设置（金额可见、问数开关、静音时段、报告图配色和命令开关）每条通道各一份，不影响同群的其他主播。',
     user,

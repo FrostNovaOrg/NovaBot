@@ -51,6 +51,8 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     private static final BigInteger NUMBER_RANGE = BigInteger.valueOf((1L << 53) - NUMBER_BASE);
     private static final DateTimeFormatter JOIN_TIME = DateTimeFormatter.ofPattern("MM-dd HH:mm", Locale.ROOT)
             .withZone(ZoneOffset.ofHours(8));
+    private static final Duration INFO_TTL = Duration.ofHours(24);
+    private static final Duration INFO_REFRESH_TTL = Duration.ofMinutes(10);
     private static final Duration ROLE_TTL = Duration.ofMinutes(10);
     private static final Duration ROLE_WAIT = Duration.ofSeconds(3);
     private static final Duration PROACTIVE_REFRESH_TTL = Duration.ofMinutes(1);
@@ -273,7 +275,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     synchronized void recheckProactiveAfterJoin() {
         if (bots == null) return;
         var config = settings.snapshot();
-        if (config.configured()) scheduleGroupStates(config.appId(), FetchReason.AFTER_JOIN);
+        if (config.configured()) scheduleGroups(config.appId(), FetchReason.AFTER_JOIN);
     }
 
     private static boolean awaitingProactiveConfirmation(GroupEntry group) {
@@ -290,11 +292,11 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         requireReadable();
         String appId = settings.snapshot().appId();
         // 普通页面读取沿用原来的查询节奏。轮询只读取当前结果。
-        if (refresh == null) scheduleGroupStates(appId, FetchReason.REGULAR);
-        else if (refresh) scheduleGroupStates(appId, FetchReason.CONSOLE_REFRESH);
+        if (refresh == null) scheduleGroups(appId, FetchReason.REGULAR);
+        else if (refresh) scheduleGroups(appId, FetchReason.CONSOLE_REFRESH);
         BotEntries bot = entries(appId);
         boolean refreshing = pending.keySet().stream()
-                .anyMatch(key -> key.appId().equals(appId) && key.endpoint() != Endpoint.INFO);
+                .anyMatch(key -> key.appId().equals(appId));
         return new ConsoleGroups(consoleGroupInfo(bot), refreshing);
     }
 
@@ -379,7 +381,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     public synchronized List<Snapshot> snapshots(boolean force) {
         requireReadable();
         String appId = settings.snapshot().appId();
-        if (force) scheduleGroupStates(appId, FetchReason.REGULAR);
+        if (force) scheduleGroups(appId, FetchReason.REGULAR);
         BotEntries bot = entries(appId);
         Instant now = clock.instant();
         List<Group> groups = bot.groups().values().stream()
@@ -390,12 +392,13 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         return List.of(new Snapshot(id(), groups, List.of(), now, now, false, null));
     }
 
-    private void scheduleGroupStates(String appId, FetchReason reason) {
+    private void scheduleGroups(String appId, FetchReason reason) {
         for (GroupEntry group : entries(appId).groups().values()) {
             if (group.removed()) continue;
             boolean proactiveOnly = reason == FetchReason.AFTER_JOIN
                     || (reason == FetchReason.CONSOLE_REFRESH && group.proactive().status() != ProactiveStatus.ENABLED);
             schedule(appId, group, proactiveOnly ? Endpoint.PROACTIVE_STATE : Endpoint.BOT_STATE, reason);
+            if (reason == FetchReason.CONSOLE_REFRESH) schedule(appId, group, Endpoint.INFO, reason);
         }
     }
 
@@ -496,7 +499,8 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
 
     private boolean canFetch(BotEntries bot, GroupEntry group, Endpoint endpoint, FetchReason reason) {
         Instant now = clock.instant();
-        if (endpoint == Endpoint.PROACTIVE_STATE || reason == FetchReason.CONSOLE_REFRESH) {
+        if (endpoint == Endpoint.PROACTIVE_STATE
+                || (endpoint == Endpoint.BOT_STATE && reason == FetchReason.CONSOLE_REFRESH)) {
             if (!canFetchProactive(bot, group, reason, now)) return false;
             if (endpoint == Endpoint.PROACTIVE_STATE) return true;
         }
@@ -504,7 +508,9 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         if (coolingDown(bot.unavailableUntil().get(endpoint), now)) return false;
         if (previous == null) return true;
         if (previous.retryAt() != null) return !coolingDown(previous.retryAt(), now);
-        return endpoint == Endpoint.BOT_STATE && !now.isBefore(previous.attemptedAt().plus(ROLE_TTL));
+        Duration ttl = endpoint == Endpoint.INFO
+                ? (reason == FetchReason.CONSOLE_REFRESH ? INFO_REFRESH_TTL : INFO_TTL) : ROLE_TTL;
+        return !now.isBefore(previous.attemptedAt().plus(ttl));
     }
 
     private static boolean canFetchProactive(BotEntries bot, GroupEntry group, FetchReason reason, Instant now) {

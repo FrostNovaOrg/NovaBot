@@ -258,6 +258,7 @@ class QqBotDirectoryTest {
 
         rig.clock.advance(Duration.ofMinutes(59));
         dir.groupSeen(GROUP_A, rig.clock.instant());
+        dir.consoleGroups(true);
         rig.drain();
         assertEquals(1, rig.infoCalls());
         rig.clock.advance(Duration.ofMinutes(1));
@@ -273,6 +274,54 @@ class QqBotDirectoryTest {
         assertEquals(new PushTargetDirectory.Group(number, "网上的群名", 32, true, "站内通知"),
                 rig.directory().snapshots(true).get(0).groups().get(0));
         assertEquals("网上的群名（站内通知）", dir.lookup(PLATFORM, PushTargetType.GROUP, number, null).name());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void refreshesAGroupNameThatQqHadAlreadyReturned(boolean manual) {
+        var name = new AtomicReference<>("原群名");
+        var count = new AtomicReference<>(31);
+        var rig = new Rig(uri -> isInfo(uri)
+                ? json("group_name", name.get(), "group_member_num", count.get())
+                : manual ? json("code", 50001) : json("member_role", "owner"));
+        var directory = rig.directory();
+        long number = directory.groupJoined(GROUP_A, JOINED);
+        rig.drain();
+        directory.saveGroupRemark(number, "节目组");
+        name.set("QQ 新群名");
+        count.set(32);
+        Duration interval = manual ? Duration.ofMinutes(10) : Duration.ofHours(24);
+
+        // 群主在 QQ 改名后，已成功取名的群也应更新，备注仍留在控制台。
+        rig.clock.advance(interval.minusSeconds(1));
+        if (manual) {
+            assertFalse(directory.consoleGroups(true).refreshing());
+        } else {
+            directory.groupSeen(GROUP_A, rig.clock.instant());
+        }
+        rig.drain();
+        assertEquals(1, rig.infoCalls());
+        assertEquals("原群名", directory.consoleGroups(false).groups().get(0).name());
+
+        rig.clock.advance(Duration.ofSeconds(1));
+        for (int i = 0; i < 2; i++) {
+            if (manual) {
+                directory.consoleGroups(true);
+            } else {
+                directory.groupSeen(GROUP_A, rig.clock.instant());
+            }
+        }
+        boolean refreshing = directory.consoleGroups(false).refreshing();
+        rig.drain();
+        var result = directory.consoleGroups(false);
+        assertEquals("QQ 新群名", result.groups().get(0).name());
+        assertEquals("节目组", result.groups().get(0).remark());
+        assertEquals(32, result.groups().get(0).memberCount());
+        assertEquals(2, rig.infoCalls());
+        assertEquals(1, rig.botStateCalls());
+        assertTrue(refreshing, "连接页应报告尚未完成的群信息查询");
+        assertFalse(result.refreshing());
+        assertEquals("QQ 新群名（节目组）", rig.directory().lookup(PLATFORM, PushTargetType.GROUP, number, null).name());
     }
 
     @Test
@@ -431,8 +480,10 @@ class QqBotDirectoryTest {
         assertEquals(BotRole.MEMBER, group(directory, number).role());
 
         rig.clock.advance(Duration.ofSeconds(1));
-        console.perform(refresh).andExpect(status().isOk()).andExpect(jsonPath("$.refreshing").value(false));
-        assertTrue(rig.tasks.isEmpty(), "已开启的群在十分钟内不应手动重查");
+        console.perform(refresh).andExpect(status().isOk()).andExpect(jsonPath("$.refreshing").value(true));
+        rig.drain();
+        assertEquals(2, rig.infoCalls());
+        assertEquals(3, rig.botStateCalls(), "已开启的群在十分钟内不应手动重查主动发言");
         var callers = Executors.newSingleThreadExecutor();
         try {
             var mention = callers.submit(() -> directory.canAtAll(PLATFORM, number));
@@ -548,9 +599,10 @@ class QqBotDirectoryTest {
         allowed.set(true);
         Duration cooldown = Duration.ofHours(errorCode == 11253 || errorCode == 40012010 ? 24 : 1);
         rig.clock.advance(cooldown.minusSeconds(1));
-        assertFalse(directory.consoleGroups(true).refreshing());
+        assertTrue(directory.consoleGroups(true).refreshing());
         assertEquals(HealthStatus.Level.OK, probe.check().level());
         rig.drain();
+        assertEquals(2, rig.infoCalls(), "主动发言查询失败后仍可刷新群信息");
         assertEquals(3, rig.botStateCalls());
 
         rig.clock.advance(Duration.ofSeconds(1));
