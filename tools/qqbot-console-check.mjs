@@ -40,6 +40,14 @@ const {render, refresh} = await import(encodeModule(source
   .replace("'./link-feedback.js'", JSON.stringify(new URL('link-feedback.js', ui).href))));
 
 const state = {success: true, configured: false, intervalMillis: 2000, groups: []};
+const refreshId = 'fixture-refresh';
+const retryAt = '2026-11-24T10:19:00Z';
+const refreshResults = [
+  {num: groupNumber, state: {status: 'RECENT', retryAfterSeconds: 18}, info: {status: 'QUERIED'}},
+  {num: 3, state: {status: 'QUERIED'}, info: {status: 'RECENT', retryAfterSeconds: 59}},
+  {num: 4, state: {status: 'COOLDOWN', retryAt}, info: {status: 'IN_PROGRESS'}},
+  {num: 5, state: {status: 'IN_PROGRESS'}, info: {status: 'RECENT', retryAfterSeconds: 59}},
+];
 let welcomeEnabled = true;
 let rejectWelcome = false;
 const prefix = '/test/config/api/qqbot/';
@@ -51,6 +59,14 @@ globalThis.fetch = async (path, options) => {
   let response;
   if (reached === 'state') {
     assert.equal(options.cache, 'no-store');
+    response = state;
+  } else if (reached === 'state?refresh=true') {
+    response = {...state, refreshId, refreshing: true, refreshResults: refreshResults.map(group => ({
+      ...group, state: group.state.status === 'QUERIED' ? {status: 'QUEUED'} : group.state
+    }))};
+  } else if (reached === 'state?refresh=false&refreshId=' + refreshId) {
+    response = {...state, refreshId, refreshing: false, refreshResults};
+  } else if (reached === 'state?refresh=false') {
     response = state;
   } else if (reached === 'welcome' && options.method !== 'POST') {
     assert.equal(options.cache, 'no-store');
@@ -220,10 +236,26 @@ groupInput.value = '';
 await submit(groups, groupForm);
 assert.deepEqual(posted[3], ['groups/' + groupNumber + '/remark', {remark: ''}]);
 assert.match(groups.innerHTML, /aria-label="备注" value=""/);
+state.groups[0].proactiveSource = 'GROUP_STATE_API';
+state.groups[0].proactiveAt = claimTime;
+state.groups.push(
+  {num: 3, name: '节目群', proactive: 'ENABLED', proactiveSource: 'SEND_SUCCESS', proactiveAt: claimTime},
+  {num: 4, name: '活动群', proactive: 'DISABLED', proactiveSource: 'SEND_ERROR', proactiveAt: claimTime},
+  {num: 5, name: '聊天群', proactive: 'ENABLED', proactiveSource: 'EVENT', proactiveAt: claimTime});
 await reload.listeners.get('click')();
 assert.equal(linkRefreshes, 2);
 assert.equal(password.value, '');
+assert.match(elements['refresh-result'].textContent, /问了 1 个群.*1 个刚查过.*1 个接口冷却中.*1 个已经在查/);
+assert.match(groups.innerHTML, /<th>群名<\/th><th>主动发言<\/th>/);
+assert.match(groups.innerHTML, /QQ 群状态接口 <time[^>]*datetime="2026-11-24T10:00:00Z"[^>]*>[^<]+<\/time> 回的/);
+assert.match(groups.innerHTML, /<\/time> 发消息成功/);
+assert.match(groups.innerHTML, /<\/time> 发消息被 QQ 拒（错误码 40034105）/);
+assert.match(groups.innerHTML, /群主 <time[^>]*>[^<]+<\/time> 打开开关/);
+assert.match(groups.innerHTML, /刚查过，约 18 秒后可再查/);
+assert.match(groups.innerHTML, /QQ 接口冷却中，[^<]+ 后再查/);
+assert.match(groups.innerHTML, /已经在查/);
 console.log('官方机器人卡：空态、密码遮罩与清空、群名只读与转义、间隔提醒、备注保存与清空、状态刷新通过');
+console.log('群状态刷新：汇总实际查询和跳过原因，四种主动发言记录显示来源和时间');
 
 assert.match(section.innerHTML, /超级管理员/);
 assert.match(elements['claim-status'].textContent, /没有有效的认领码/);

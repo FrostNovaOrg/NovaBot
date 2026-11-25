@@ -45,6 +45,7 @@ export function render(container, {onConnectionChange} = {}) {
 
   const find = id => container.querySelector('#' + prefix + id);
   const view = {appId: find('app-id'), secret: find('secret'), interval: find('millis'), groups: find('groups'),
+    refreshButton: find('refresh'), refreshResult: find('refresh-result'),
     welcome: find('welcome-enabled'), welcomeResult: find('welcome-result'), welcomeRevision: 0,
     claimStatus: find('claim-status'), claimResult: find('claim-result'),
     issued: find('issued'), claimCommand: find('claim-command'),
@@ -111,14 +112,13 @@ export function render(container, {onConnectionChange} = {}) {
       });
     if (result) submitButton(event).hidden = true;
   });
-  const refreshButton = find('refresh');
-  const refreshResult = find('refresh-result');
+  const {refreshButton, refreshResult} = view;
   refreshButton.addEventListener('click', async () => {
     refreshButton.disabled = true;
     showLinkResult(refreshResult, '正在刷新…');
     try {
       const error = await refresh(true);
-      showLinkResult(refreshResult, error || '已刷新', error ? 'err' : 'ok');
+      if (error) showLinkResult(refreshResult, error, 'err');
       if (card === view && store.tab === 'bot') await refreshLinks();
     } finally {
       refreshButton.disabled = false;
@@ -208,12 +208,18 @@ async function refreshView(view, refreshGroups = false) {
   try {
     if (refreshGroups) view.load.textContent = '正在刷新群状态…';
     let state = await readState(refreshGroups ? '?refresh=true' : '');
+    const refreshId = state.refreshId;
+    const poll = '?refresh=false' + (refreshId ? '&refreshId=' + encodeURIComponent(refreshId) : '');
     while (refreshGroups && state.refreshing && request === view.request && store.tab === 'bot') {
       await new Promise(resolve => setTimeout(resolve, 500));
       if (request !== view.request || store.tab !== 'bot') break;
-      state = await readState('?refresh=false');
+      state = await readState(poll);
     }
-    if (request !== view.request) return;
+    if (request !== view.request) return refreshGroups ? '刷新已中断，请重试。' : undefined;
+    if (refreshGroups && store.tab !== 'bot') {
+      view.load.textContent = '';
+      return '刷新已中断，请重试。';
+    }
     setSavedValue(view.appId, state.appId || '');
     view.updateCredentials();
     view.secret.placeholder = state.secretMasked ? '已保存：' + state.secretMasked : '';
@@ -225,7 +231,14 @@ async function refreshView(view, refreshGroups = false) {
       if (expiresAt !== view.issuedExpiry) clearIssuedCode(view);
       showClaimStatus(view, expiresAt);
       renderClaimedAdmins(view.claimedAdmins, state.claimedAdmins || []);
-      renderGroups(view.groups, state.groups || []);
+      renderGroups(view.groups, state.groups || [], state.refreshResults || []);
+      if (refreshGroups) {
+        const expired = refreshId && state.refreshId !== refreshId;
+        showLinkResult(view.refreshResult, expired ? '本次刷新结果已失效，请重试。' : refreshSummary(state.refreshResults),
+          expired ? 'warn' : 'ok');
+      } else if (!view.refreshButton.disabled) {
+        showLinkResult(view.refreshResult);
+      }
     }
     view.load.textContent = '';
   } catch (error) {
@@ -362,16 +375,67 @@ function setSavedValue(input, value, replace = false) {
   input.value = draft;
 }
 
-function renderGroups(container, groups) {
+function refreshSummary(results) {
+  if (!results) return '已刷新';
+  if (!results.length) return '没有可刷新的群。';
+  const count = (key, status) => results.filter(group => group[key]?.status === status).length;
+  const parts = [`主动发言问了 ${count('state', 'QUERIED')} 个群`];
+  for (const [status, label] of [['RECENT', '刚查过'], ['COOLDOWN', '接口冷却中'],
+    ['IN_PROGRESS', '已经在查'], ['UNAVAILABLE', '未能查询']]) {
+    const total = count('state', status);
+    if (total) parts.push(`${total} 个${label}`);
+  }
+  const info = count('info', 'QUERIED');
+  return parts.join('，') + '。' + (info ? `群资料问了 ${info} 个群。` : '');
+}
+
+function groupTime(value) {
+  const at = new Date(value);
+  const time = at.toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit', hourCycle: 'h23'});
+  return at.toDateString() === new Date().toDateString() ? time : at.toLocaleDateString('zh-CN') + ' ' + time;
+}
+
+function refreshNote(result, label) {
+  let detail;
+  switch (result?.status) {
+    case 'QUERIED': detail = '问了 QQ'; break;
+    case 'RECENT': detail = result.retryAfterSeconds > 0
+      ? `刚查过，约 ${result.retryAfterSeconds} 秒后可再查` : '刚查过，现在可再查'; break;
+    case 'COOLDOWN': detail = result.retryAfterSeconds === 0 ? 'QQ 接口冷却已结束，可以再查'
+      : `QQ 接口冷却中，${groupTime(result.retryAt)} 后再查`; break;
+    case 'IN_PROGRESS': detail = '已经在查'; break;
+    case 'QUEUED': detail = '等待查询'; break;
+    case 'UNAVAILABLE': detail = '未能查询，请重试'; break;
+    default: return '';
+  }
+  return `<div class="dim"><small>${label}：${esc(detail)}</small></div>`;
+}
+
+function proactiveSource(group) {
+  if (!group.proactiveAt) return '';
+  const time = `<time datetime="${esc(group.proactiveAt)}" title="${esc(displayTime(group.proactiveAt))}">`
+    + `${esc(groupTime(group.proactiveAt))}</time>`;
+  switch (group.proactiveSource) {
+    case 'GROUP_STATE_API': return `QQ 群状态接口 ${time} 回的`;
+    case 'SEND_SUCCESS': return `${time} 发消息成功`;
+    case 'SEND_ERROR': return `${time} 发消息被 QQ 拒（错误码 40034105）`;
+    case 'EVENT': return `群主 ${time} ${group.proactive === 'ENABLED' ? '打开' : '关闭'}开关`;
+    case 'MANUAL': return `${time} 手动记录`;
+    default: return '';
+  }
+}
+
+function renderGroups(container, groups, refreshResults) {
   const previous = formsByKey(container, 'group-number', 'groupNumber');
   if (!groups.length) {
     container.innerHTML = '<p class="hint">机器人尚未加入群。</p>';
     return;
   }
+  const results = new Map(refreshResults.map(group => [String(group.num), group]));
   container.innerHTML = `<table aria-label="已加入的群">
-    <thead><tr><th>群名</th><th>备注</th><th>人数</th><th>机器人是管理员</th>
-      <th>主动发言</th><th>最近失败原因</th></tr></thead>
-    <tbody>${groups.map(groupRow).join('')}</tbody></table>`;
+    <thead><tr><th>群名</th><th>主动发言</th><th>备注</th><th>人数</th><th>机器人是管理员</th>
+      <th>最近失败原因</th></tr></thead>
+    <tbody>${groups.map(group => groupRow(group, results.get(String(group.num)))).join('')}</tbody></table>`;
   for (const form of container.querySelectorAll('[data-group-number]')) {
     const input = form.querySelector('input');
     const old = previous.get(form.dataset.groupNumber);
@@ -385,20 +449,21 @@ function renderGroups(container, groups) {
   }
 }
 
-function groupRow(group) {
+function groupRow(group, refreshResult) {
   const admin = group.role == null ? '不知道' : group.role === 'MEMBER' ? '否' : '是';
-  const proactive = group.proactive === 'ENABLED' ? '开' : group.proactive === 'DISABLED' ? '未开' : '不知道';
+  const proactive = group.proactive === 'ENABLED' ? '已开' : group.proactive === 'DISABLED' ? '未开' : '不知道';
+  const source = proactiveSource(group);
   const help = group.proactive === 'DISABLED'
     ? '<div class="hint">手机 QQ 进群 → 群成员里点机器人 → 右上角设置 → 打开『机器人主动在群聊内发言』</div>'
     : '';
   return `<tr${group.removed ? ' class="dim"' : ''}>
-    <td>${esc(group.name)}${group.removed ? '<div>已移出</div>' : ''}</td>
+    <td>${esc(group.name)}${group.removed ? '<div>已移出</div>' : ''}${refreshNote(refreshResult?.info, '本次群资料')}</td>
+    <td>${proactive}${source ? `<span class="dim"> · ${source}</span>` : ''}${refreshNote(refreshResult?.state, '本次')}${help}</td>
     <td><form class="lc-remark" data-group-number="${esc(group.num)}">
       <div class="lc-field"><input type="text" aria-label="备注" value="${esc(group.remark ?? '')}"></div>
       <div class="lc-actions"><button type="submit" class="ghost sm">保存备注</button>
         <span class="lc-unsaved" hidden>未保存</span><span class="lc-result" role="status" hidden></span></div>
     </form></td>
-    <td>${esc(group.memberCount ?? '—')}</td><td>${admin}</td>
-    <td>${proactive}${help}</td><td>${esc(group.lastFailure || '—')}</td>
+    <td>${esc(group.memberCount ?? '—')}</td><td>${admin}</td><td>${esc(group.lastFailure || '—')}</td>
   </tr>`;
 }

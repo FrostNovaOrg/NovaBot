@@ -21,6 +21,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.io.IOException;
@@ -436,6 +437,63 @@ class QqBotDirectoryTest {
     }
 
     @Test
+    void clickingRefreshWithinOneMinuteExplainsTheSkipAndRemainingWait() throws Exception {
+        var rig = new Rig(uri -> isInfo(uri) ? json() : json("allow_proactive_msg", false));
+        var directory = rig.directory();
+        long number = directory.groupJoined(GROUP_A, JOINED);
+        rig.drain();
+        var console = rig.console(directory, number);
+
+        rig.clock.advance(Duration.ofMillis(42_250));
+        console.perform(get("/config/api/qqbot/state").param("refresh", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.refreshResults[0].num").value(number))
+                .andExpect(jsonPath("$.refreshResults[0].state.status").value("RECENT"))
+                .andExpect(jsonPath("$.refreshResults[0].state.retryAfterSeconds").value(18))
+                .andExpect(jsonPath("$.refreshResults[0].state.retryAt").value(JOINED.plusSeconds(60).toString()));
+        rig.drain();
+        assertEquals(1, rig.botStateCalls());
+    }
+
+    @Test
+    void consoleShowsWhenAndHowEachProactiveStatusWasRecorded() throws Exception {
+        var rig = new Rig(uri -> isInfo(uri) ? json() : json("allow_proactive_msg", false));
+        var directory = rig.directory();
+        long number = directory.groupJoined(GROUP_A, JOINED);
+        rig.drain();
+        var state = get("/config/api/qqbot/state").param("refresh", "false");
+
+        rig.console(rig.directory(), number).perform(state)
+                .andExpect(jsonPath("$.groups[0].proactive").value("DISABLED"))
+                .andExpect(jsonPath("$.groups[0].proactiveSource").value("GROUP_STATE_API"))
+                .andExpect(jsonPath("$.groups[0].proactiveAt").value(JOINED.toString()));
+
+        Instant sentAt = JOINED.plusSeconds(10);
+        directory.recordSendResult(APP_ID, number, new Proactive(ProactiveStatus.ENABLED, SwitchSource.SEND_SUCCESS,
+                sentAt), null);
+        rig.console(rig.directory(), number).perform(state)
+                .andExpect(jsonPath("$.groups[0].proactive").value("ENABLED"))
+                .andExpect(jsonPath("$.groups[0].proactiveSource").value("SEND_SUCCESS"))
+                .andExpect(jsonPath("$.groups[0].proactiveAt").value(sentAt.toString()));
+
+        Instant deniedAt = JOINED.plusSeconds(20);
+        directory.recordSendResult(APP_ID, number, new Proactive(ProactiveStatus.DISABLED, SwitchSource.SEND_ERROR,
+                deniedAt), new Failure("群发言被拒", deniedAt));
+        directory.recordFailure(number, "后来查询群资料失败", deniedAt.plusSeconds(1));
+        rig.console(rig.directory(), number).perform(state)
+                .andExpect(jsonPath("$.groups[0].proactive").value("DISABLED"))
+                .andExpect(jsonPath("$.groups[0].proactiveSource").value("SEND_ERROR"))
+                .andExpect(jsonPath("$.groups[0].proactiveAt").value(deniedAt.toString()));
+
+        Instant openedAt = JOINED.plusSeconds(30);
+        directory.recordProactive(number, ProactiveStatus.ENABLED, SwitchSource.EVENT, openedAt);
+        rig.console(rig.directory(), number).perform(state)
+                .andExpect(jsonPath("$.groups[0].proactive").value("ENABLED"))
+                .andExpect(jsonPath("$.groups[0].proactiveSource").value("EVENT"))
+                .andExpect(jsonPath("$.groups[0].proactiveAt").value(openedAt.toString()));
+    }
+
+    @Test
     void manualConsoleRefreshFindsAnOpenedSwitchBeforeTheRoleCacheExpires() throws Exception {
         var allowed = new AtomicBoolean();
         var role = new AtomicReference<>("member");
@@ -445,10 +503,7 @@ class QqBotDirectoryTest {
         long number = directory.groupJoined(GROUP_A, JOINED);
         rig.drain();
         var probe = rig.probe(directory, number);
-        var members = mock(QqBotMembers.class);
-        when(members.claimState()).thenReturn(new QqBotMembers.ClaimState(null, Map.of()));
-        var console = MockMvcBuilders.standaloneSetup(new QqBotConsoleController(
-                rig.credentials, rig.settings, probe, directory, members)).build();
+        var console = rig.console(directory, probe);
         var state = get("/config/api/qqbot/state");
         console.perform(state).andExpect(jsonPath("$.groups[0].proactive").value("DISABLED"));
 
@@ -463,12 +518,19 @@ class QqBotDirectoryTest {
         console.perform(state);
         assertTrue(rig.tasks.isEmpty());
         var refresh = get("/config/api/qqbot/state").param("refresh", "true");
-        console.perform(refresh).andExpect(status().isOk()).andExpect(jsonPath("$.refreshing").value(true));
-        console.perform(refresh).andExpect(jsonPath("$.refreshing").value(true));
+        var queued = console.perform(refresh).andExpect(status().isOk())
+                .andExpect(jsonPath("$.refreshing").value(true))
+                .andExpect(jsonPath("$.refreshResults[0].state.status").value("QUEUED"))
+                .andReturn().getResponse().getContentAsString();
+        String refreshId = JSON.parseObject(queued).getString("refreshId");
+        console.perform(refresh).andExpect(jsonPath("$.refreshing").value(true))
+                .andExpect(jsonPath("$.refreshResults[0].state.status").value("IN_PROGRESS"));
         assertEquals(1, rig.tasks.size());
         rig.drain();
-        console.perform(get("/config/api/qqbot/state").param("refresh", "false"))
+        console.perform(get("/config/api/qqbot/state").param("refresh", "false").param("refreshId", refreshId))
                 .andExpect(jsonPath("$.refreshing").value(false))
+                .andExpect(jsonPath("$.refreshId").value(refreshId))
+                .andExpect(jsonPath("$.refreshResults[0].state.status").value("QUERIED"))
                 .andExpect(jsonPath("$.groups[0].proactive").value("ENABLED"))
                 .andExpect(jsonPath("$.groups[0].role").value("MEMBER"));
         assertEquals(HealthStatus.Level.OK, probe.check().level());
@@ -495,6 +557,35 @@ class QqBotDirectoryTest {
             callers.shutdownNow();
         }
         assertEquals(4, rig.botStateCalls());
+    }
+
+    @Test
+    void queuedGroupIsReportedAsSkippedIfAnotherGroupTriggersBotCooldown() throws Exception {
+        var unavailable = new AtomicBoolean();
+        var rig = new Rig(uri -> isInfo(uri) ? json()
+                : unavailable.get() ? json("code", 11253) : json("allow_proactive_msg", false));
+        var directory = rig.directory();
+        long number = directory.groupJoined(GROUP_A, JOINED);
+        directory.groupJoined(GROUP_B, JOINED);
+        rig.drain();
+        var console = rig.console(directory, number);
+        rig.clock.advance(Duration.ofMinutes(1));
+        unavailable.set(true);
+
+        var queued = console.perform(get("/config/api/qqbot/state").param("refresh", "true"))
+                .andExpect(jsonPath("$.refreshResults[0].state.status").value("QUEUED"))
+                .andExpect(jsonPath("$.refreshResults[1].state.status").value("QUEUED"))
+                .andReturn().getResponse().getContentAsString();
+        String refreshId = JSON.parseObject(queued).getString("refreshId");
+        rig.drain();
+
+        console.perform(get("/config/api/qqbot/state").param("refresh", "false").param("refreshId", refreshId))
+                .andExpect(jsonPath("$.refreshing").value(false))
+                .andExpect(jsonPath("$.refreshResults[0].state.status").value("QUERIED"))
+                .andExpect(jsonPath("$.refreshResults[1].state.status").value("COOLDOWN"))
+                .andExpect(jsonPath("$.refreshResults[1].state.retryAt")
+                        .value(rig.clock.instant().plus(Duration.ofDays(1)).toString()));
+        assertEquals(3, rig.botStateCalls());
     }
 
     @Test
@@ -599,7 +690,11 @@ class QqBotDirectoryTest {
         allowed.set(true);
         Duration cooldown = Duration.ofHours(errorCode == 11253 || errorCode == 40012010 ? 24 : 1);
         rig.clock.advance(cooldown.minusSeconds(1));
-        assertTrue(directory.consoleGroups(true).refreshing());
+        var refresh = directory.consoleGroups(true);
+        assertTrue(refresh.refreshing());
+        var state = refresh.refreshResults().get(0).state();
+        assertEquals(RefreshStatus.COOLDOWN, state.status());
+        assertEquals(rig.clock.instant().plusSeconds(1).toString(), state.retryAt());
         assertEquals(HealthStatus.Level.OK, probe.check().level());
         rig.drain();
         assertEquals(2, rig.infoCalls(), "主动发言查询失败后仍可刷新群信息");
@@ -854,6 +949,17 @@ class QqBotDirectoryTest {
 
         QqBotDirectory directory() {
             return new QqBotDirectory(settings, api, clock, tasks::add, hash);
+        }
+
+        MockMvc console(QqBotDirectory directory, long groupNumber) {
+            return console(directory, probe(directory, groupNumber));
+        }
+
+        MockMvc console(QqBotDirectory directory, QqBotHealthProbe probe) {
+            var members = mock(QqBotMembers.class);
+            when(members.claimState()).thenReturn(new QqBotMembers.ClaimState(null, Map.of()));
+            return MockMvcBuilders.standaloneSetup(new QqBotConsoleController(
+                    credentials, settings, probe, directory, members)).build();
         }
 
         QqBotHealthProbe probe(QqBotDirectory directory, long groupNumber) {

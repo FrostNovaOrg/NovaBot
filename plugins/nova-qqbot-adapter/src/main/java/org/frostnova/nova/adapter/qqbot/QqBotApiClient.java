@@ -38,6 +38,10 @@ public class QqBotApiClient {
         return request(method, path, body, appId, ResultType.MASKED_JSON);
     }
 
+    Object queryGroup(String path, String appId, Runnable onRequest) {
+        return request("GET", path, null, appId, ResultType.MASKED_JSON, onRequest);
+    }
+
     Object prepareUpload(String path, JSONObject body, String appId) {
         return request("POST", path, body, appId, ResultType.UPLOAD_PLAN);
     }
@@ -47,8 +51,14 @@ public class QqBotApiClient {
     }
 
     private Object request(String method, String path, JSONObject body, String appId, ResultType resultType) {
+        return request(method, path, body, appId, resultType, null);
+    }
+
+    private Object request(String method, String path, JSONObject body, String appId, ResultType resultType,
+                           Runnable onRequest) {
         URI uri = officialUri(path);
         var token = tokenFor(appId);
+        if (onRequest != null) onRequest.run();
         QqBotResponse response = send(method, uri, body, token);
         boolean rejected = rejectsToken(response);
         if (!rejected && !response.hasCode(11242)) {
