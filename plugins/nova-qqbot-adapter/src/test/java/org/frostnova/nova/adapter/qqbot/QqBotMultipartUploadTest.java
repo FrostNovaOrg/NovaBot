@@ -13,6 +13,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 
@@ -73,6 +75,65 @@ class QqBotMultipartUploadTest {
     }
 
     @Test
+    @DisplayName("QQ 给整图一片编号 1 时，大图随正文送达，群里不会只收到文字")
+    void deliversSinglePartImageWithOneBasedIndex() {
+        byte[] image = image(7_684_003);
+        String size = Integer.toString(image.length);
+        var prepared = JSONObject.of("upload_id", UPLOAD_ID, "block_size", size, "parts", List.of(part(1, image.length)),
+                "upload_config", JSONObject.of("concurrency", 1, "retry_timeout", 300, "retry_delay", 1));
+        try (var rig = new Rig(dataDirectory, prepared)) {
+            var message = Message.create(PLATFORM, PushTargetType.GROUP, rig.number, content(image)).get(0);
+            var result = rig.core.sendNow(message);
+
+            List<JSONObject> messages = rig.bodies("messages");
+            assertEquals(1, messages.size());
+            assertEquals("动态配图", messages.get(0).getString("content"));
+            assertEquals(7, messages.get(0).getIntValue("msg_type"), "群里应收到图片消息");
+            assertEquals(0, result.getIntValue("code"));
+            assertEquals(FILE_INFO, messages.get(0).getJSONObject("media").getString("file_info"));
+            assertEquals(List.of("upload_prepare", "put-1", "upload_part_finish", "files", "messages"), rig.endpoints);
+            assertEquals(image.length, rig.puts.get(0).size());
+            assertPart(1, image.length, md5(image, 0, image.length), rig.puts.get(0), rig.bodies("upload_part_finish").get(0));
+        }
+    }
+
+    @Test
+    @DisplayName("QQ 给两片编号 1 和 2 时，大图的首块和尾块按原序号上传，群里收到配图")
+    void deliversTwoPartImageWithOneBasedIndices() {
+        byte[] image = image();
+        try (var rig = new Rig(dataDirectory, prepare(part(2), part(1)))) {
+            var message = Message.create(PLATFORM, PushTargetType.GROUP, rig.number, content(image)).get(0);
+            var result = rig.core.sendNow(message);
+
+            assertEquals(List.of("upload_prepare", "put-1", "upload_part_finish", "put-2", "upload_part_finish",
+                    "files", "messages"), rig.endpoints);
+            assertEquals(0, result.getIntValue("code"));
+            assertEquals(7, rig.bodies("messages").get(0).getIntValue("msg_type"));
+            int tailSize = image.length - BLOCK_SIZE;
+            assertEquals(List.of(BLOCK_SIZE, tailSize), rig.puts.stream().map(Put::size).toList());
+            List<JSONObject> finishes = rig.bodies("upload_part_finish");
+            assertPart(1, BLOCK_SIZE, md5(image, 0, BLOCK_SIZE), rig.puts.get(0), finishes.get(0));
+            assertPart(2, tailSize, md5(image, BLOCK_SIZE, tailSize), rig.puts.get(1), finishes.get(1));
+        }
+    }
+
+    @ParameterizedTest(name = "坏分片计划 {0} 时拒绝上传并记告警")
+    @CsvSource({"起点不是 0 或 1,2,3", "混用起点,0,2", "序号有空缺,1,3", "序号重复,1,1"})
+    @ExtendWith(OutputCaptureExtension.class)
+    void rejectsInvalidPartIndices(String reason, int first, int second, CapturedOutput output) {
+        try (var rig = new Rig(dataDirectory, prepare(part(first), part(second)))) {
+            var result = rig.registry.getSender(PLATFORM).orElseThrow().getLocalDelivery().deliver(Map.of(),
+                    Map.of("type", PushTargetType.GROUP.getCode(), "num", rig.number, "content", content(image())));
+
+            assertEquals(-1, result.getIntValue("code"), reason);
+            assertTrue(result.getString("message").contains("分片信息"));
+            assertEquals(List.of("upload_prepare"), rig.endpoints);
+            assertEquals(1, output.getAll().lines().filter(line -> line.contains("WARN")
+                    && line.contains("QQ 图片预上传分片计划无效")).count());
+        }
+    }
+
+    @Test
     @ExtendWith(OutputCaptureExtension.class)
     @DisplayName("分片计划缺片时，告警能查到 QQ 返回的分片信息且隐藏签名和上传标识")
     void logsIncompletePlanWithoutSignedUrlOrUploadId(CapturedOutput output) {
@@ -119,11 +180,19 @@ class QqBotMultipartUploadTest {
     }
 
     private static JSONObject part(int index) {
-        return JSONObject.of("index", index, "block_size", Integer.toString(BLOCK_SIZE), "presigned_url", SIGNED_URL.formatted(index));
+        return part(index, BLOCK_SIZE);
+    }
+
+    private static JSONObject part(int index, int size) {
+        return JSONObject.of("index", index, "block_size", Integer.toString(size), "presigned_url", SIGNED_URL.formatted(index));
     }
 
     private static byte[] image() {
-        byte[] bytes = new byte[FILE_SIZE];
+        return image(FILE_SIZE);
+    }
+
+    private static byte[] image(int size) {
+        byte[] bytes = new byte[size];
         new Random(1234).nextBytes(bytes);
         byte[] png = Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+XzWQAAAAASUVORK5CYII=");
         System.arraycopy(png, 0, bytes, 0, png.length);
