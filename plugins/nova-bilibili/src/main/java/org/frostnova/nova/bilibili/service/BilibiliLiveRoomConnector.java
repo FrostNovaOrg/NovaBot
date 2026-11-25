@@ -788,6 +788,21 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
     }
 
     /**
+     * 这个数据包照用的两项解压上限，一次取一组
+     * <p>
+     * 设置页保存时这两项在配置对象那把锁下一起写回（{@code BilibiliRuntimeAppliers#apply}），
+     * 这里在同一把锁下一起读：分两次读的话，保存那一刻的包可能拿到新的字节上限配旧的层数。
+     * @return 解压上限
+     */
+    BilibiliPacketCodec.Limits decodeLimits() {
+        synchronized (properties) {
+            return new BilibiliPacketCodec.Limits(
+                    properties.getLive().getMaxDecompressedBytes(),
+                    properties.getLive().getMaxDecodeNestingDepth());
+        }
+    }
+
+    /**
      * 处理一条已经收下的二进制消息
      */
     private void acceptBinaryMessage(@NonNull WebSocketSession session, BinaryMessage message) {
@@ -801,9 +816,7 @@ public class BilibiliLiveRoomConnector extends BinaryWebSocketHandler {
         byte[] data = new byte[message.getPayload().remaining()];
         message.getPayload().get(data);
 
-        BilibiliPacketCodec.Limits limits = new BilibiliPacketCodec.Limits(
-                properties.getLive().getMaxDecompressedBytes(),
-                properties.getLive().getMaxDecodeNestingDepth());
+        BilibiliPacketCodec.Limits limits = decodeLimits();
 
         for (BilibiliPacket packet : BilibiliPacketCodec.decode(data, limits, version -> {
             // 是不是未知版本由解码器判定，这里只管记账与留一条人能看见的日志

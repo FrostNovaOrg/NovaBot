@@ -4,6 +4,7 @@ import org.frostnova.nova.adapter.onebot.service.OneBotConnectionManager;
 import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplierContributor;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.properties.NovaBotPrefixes;
+import org.frostnova.nova.core.util.IpMatcher;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.convert.ApplicationConversionService;
@@ -18,8 +19,9 @@ import java.util.function.Function;
 /**
  * OneBot 适配器申报的即时生效应用器：告警目标三项写回运行中的适配器属性
  * <p>
- * 推送接口安全三项与慢调用阈值走 {@link #batchApplier()}：读取方都是用到时现读——
- * {@code PushApiSecurityFilter} 每个请求开头取一份 {@link OneBotAdapterPluginProperties.Security#requestPolicy()}，
+ * 推送接口安全四项（来源 IP 名单、信任反向代理、审计日志、频率限制）与慢调用阈值走 {@link #batchApplier()}：
+ * 读取方都是用到时现读——{@code PushApiSecurityFilter} 每个请求开头取一份
+ * {@link OneBotAdapterPluginProperties.Security#requestPolicy()}（名单的匹配器也在里头），
  * {@code OneBotHealthProbe} 每次判慢现读阈值。一批先全部读懂、再在安全设置那把锁下一起写回，
  * 一个请求拿到的不会是半新半旧的一组，保存返回之后进来的请求全按新值办。
  * <p>
@@ -64,18 +66,20 @@ public class OneBotRuntimeAppliers implements RuntimeConfigurationApplierContrib
         return appliers;
     }
 
+    public static final String ALLOW_IPS_KEY = "novabot.adapter.onebot.security.allow-ips";
     public static final String TRUST_PROXY_KEY = "novabot.adapter.onebot.security.trust-proxy";
     public static final String AUDIT_LOG_KEY = "novabot.adapter.onebot.security.audit-log";
     public static final String RATE_LIMIT_KEY = "novabot.adapter.onebot.security.rate-limit.enabled";
     public static final String SLOW_THRESHOLD_KEY = "novabot.adapter.onebot.detect.slow-threshold-millis";
 
     /**
-     * 推送接口安全三项与慢调用阈值，键到它的名字
+     * 推送接口安全四项与慢调用阈值，键到它的名字
      */
     private static final Map<String, String> BATCH_LABELS = batchLabels();
 
     private static Map<String, String> batchLabels() {
         Map<String, String> labels = new LinkedHashMap<>();
+        labels.put(ALLOW_IPS_KEY, "推送接口 · 允许的来源 IP");
         labels.put(TRUST_PROXY_KEY, "推送接口 · 信任反向代理");
         labels.put(AUDIT_LOG_KEY, "推送接口 · 鉴权失败审计日志");
         labels.put(RATE_LIMIT_KEY, "推送接口 · 频率限制");
@@ -118,6 +122,9 @@ public class OneBotRuntimeAppliers implements RuntimeConfigurationApplierContrib
     private void applyBatch(Map<String, String> changes) {
         OneBotAdapterPluginProperties defaults = new OneBotAdapterPluginProperties();
         OneBotAdapterPluginProperties.Security security = properties.getSecurity();
+        @SuppressWarnings("unchecked")
+        List<String> allowIps = (List<String>) parsedOr(changes, ALLOW_IPS_KEY, security.getAllowIps(),
+                defaults.getSecurity().getAllowIps());
         boolean trustProxy = (Boolean) parsedOr(changes, TRUST_PROXY_KEY, security.isTrustProxy(),
                 defaults.getSecurity().isTrustProxy());
         boolean auditLog = (Boolean) parsedOr(changes, AUDIT_LOG_KEY, security.isAuditLog(),
@@ -126,8 +133,9 @@ public class OneBotRuntimeAppliers implements RuntimeConfigurationApplierContrib
                 defaults.getSecurity().getRateLimit().isEnabled());
         int slowThreshold = (Integer) parsedOr(changes, SLOW_THRESHOLD_KEY,
                 properties.getDetect().getSlowThresholdMillis(), defaults.getDetect().getSlowThresholdMillis());
-        // 读方 Security#requestPolicy 在同一把锁下一次取三项
+        // 读方 Security#requestPolicy 在同一把锁下一次取这几项
         synchronized (security) {
+            security.setAllowIps(allowIps);
             security.setTrustProxy(trustProxy);
             security.setAuditLog(auditLog);
             security.getRateLimit().setEnabled(rateLimited);
@@ -144,6 +152,9 @@ public class OneBotRuntimeAppliers implements RuntimeConfigurationApplierContrib
     }
 
     private static Object parse(String key, String value) {
+        if (ALLOW_IPS_KEY.equals(key)) {
+            return allowIps(value);
+        }
         Class<?> type = SLOW_THRESHOLD_KEY.equals(key) ? Integer.class : Boolean.class;
         Object result;
         try {
@@ -163,5 +174,26 @@ public class OneBotRuntimeAppliers implements RuntimeConfigurationApplierContrib
         elsewhere.put(NovaBotPrefixes.ADAPTER + ".senders",
                 "/api/setup/bot 保存时经 BotConnectionTester#apply 当场重建连接");
         return elsewhere;
+    }
+
+    /**
+     * 来源 IP 名单：每行一条精确 IP 或 CIDR 网段，空行跳过、各行去首尾空白（与写进配置文件的同一份）。
+     * 写错一条整份不收，并指出是哪一条
+     * <p>
+     * 启动时匹配器遇到写错的那条只记一笔日志、跳过它；保存时若也这么放过去，
+     * 管理员以为放行了的地址其实进不来，而他看不到那一笔日志。
+     */
+    private static List<String> allowIps(String value) {
+        List<String> entries = value.lines().map(String::strip).filter(line -> !line.isEmpty()).toList();
+        if (entries.isEmpty()) {
+            throw new IllegalArgumentException("名单不能为空，空名单会挡下所有调用，连本机发来的推送也进不来");
+        }
+        for (String entry : entries) {
+            String problem = IpMatcher.problemOf(entry);
+            if (problem != null) {
+                throw new IllegalArgumentException("「" + entry + "」不是有效的 IP 或网段（" + problem + "）");
+            }
+        }
+        return List.copyOf(entries);
     }
 }

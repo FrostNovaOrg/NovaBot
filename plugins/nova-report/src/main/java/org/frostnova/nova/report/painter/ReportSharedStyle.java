@@ -202,16 +202,21 @@ public final class ReportSharedStyle {
     /**
      * 底部自定义标识图片：读盘、按高度缩放、画在版心左缘
      * <p>
-     * 一个绘制器实例只读一次盘，读了失败也记为读过——路径写错时免得每张图
-     * 都重试一遍并刷一条警告。各报告图（下播报告、打赏播报）各持一个实例。
+     * 按路径缓存：同一个路径只读一次盘，读了失败也记为读过——路径写错时免得每张图
+     * 都重试一遍并刷一条警告。设置页上换了路径，下一张图看见路径变了就丢掉旧图、按新路径读，
+     * 不用重启。各报告图（下播报告、打赏播报）各持一个实例。
      * <p>
      * 读哪个路径由调用方传入：下播报告用「报告自定义标识图片」这一项，
      * 动态图是另一份配置、另一套画法，不在此列。
      */
     public static final class Logo {
-        private volatile boolean loaded;
+        /**
+         * 照哪个路径读的、读出来的图（读不到为 null）；还没读过时整份为 null
+         */
+        private volatile Loaded loaded;
 
-        private BufferedImage image;
+        private record Loaded(String path, BufferedImage image) {
+        }
 
         /**
          * 绘制底部标识，未配置或读取失败时跳过
@@ -228,35 +233,49 @@ public final class ReportSharedStyle {
         }
 
         /**
-         * 读取并缓存标识图片
+         * 读取并缓存标识图片；路径与上次读的不同时重读
          *
          * @return 标识图片，未配置或读取失败时为 {@code null}
          */
         private BufferedImage logo(NovaBilibiliProperties properties) {
-            if (loaded) {
-                return image;
+            String path = properties.getLive().getReportLogoPath();
+            String key = path == null ? "" : path;
+            Loaded last = loaded;
+            if (last != null && last.path().equals(key)) {
+                return last.image();
             }
 
             synchronized (this) {
-                if (!loaded) {
-                    String path = properties.getLive().getReportLogoPath();
-                    if (StringUtil.isNotBlank(path)) {
-                        try {
-                            Path file = Path.of(path);
-                            if (Files.isReadable(file)) {
-                                image = ImageUtil.resizeByHeight(ImageIO.read(file.toFile()), LOGO_HEIGHT);
-                            } else {
-                                log.warn("报告的标识图片 {} 不存在或不可读, 已跳过绘制", path);
-                            }
-                        } catch (Exception e) {
-                            log.warn("读取报告的标识图片 {} 失败, 已跳过绘制: {}", path, e.getMessage());
-                        }
-                    }
-                    loaded = true;
+                last = loaded;
+                if (last == null || !last.path().equals(key)) {
+                    last = new Loaded(key, read(key));
+                    loaded = last;
                 }
             }
 
-            return image;
+            return last.image();
+        }
+
+        private static BufferedImage read(String path) {
+            if (StringUtil.isBlank(path)) {
+                return null;
+            }
+            try {
+                Path file = Path.of(path);
+                if (!Files.isReadable(file)) {
+                    log.warn("报告的标识图片 {} 不存在或不可读, 已跳过绘制", path);
+                    return null;
+                }
+                BufferedImage source = ImageIO.read(file.toFile());
+                if (source == null) {
+                    log.warn("报告的标识图片 {} 不是能识别的图片, 已跳过绘制", path);
+                    return null;
+                }
+                return ImageUtil.resizeByHeight(source, LOGO_HEIGHT);
+            } catch (Exception e) {
+                log.warn("读取报告的标识图片 {} 失败, 已跳过绘制: {}", path, e.getMessage());
+                return null;
+            }
         }
     }
 }

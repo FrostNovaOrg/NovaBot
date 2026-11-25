@@ -26,7 +26,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 /**
@@ -124,6 +126,34 @@ public class BilibiliDynamicService {
      */
     private final AtomicBoolean followPausedForUnconfirmedLogin = new AtomicBoolean(false);
 
+    /**
+     * 最短轮询间隔，单位：秒。配得更短也按这个查：再密就容易被风控
+     */
+    public static final int MIN_POLL_INTERVAL_SECONDS = 5;
+
+    /**
+     * 一轮动态检测同一时刻只跑一轮
+     * <p>
+     * 换间隔是「先按新间隔排上、再撤掉旧的」，撤掉不打断正在跑的那一轮；新排的第一轮若赶上旧的那一轮还没跑完，
+     * 这把锁让它跳过这一次，不会两轮一起拉动态、一起推送。
+     */
+    private final ReentrantLock pollRun = new ReentrantLock();
+
+    /**
+     * 此刻排着的轮询，没开始时为空。换间隔与开始都在本对象的锁下
+     */
+    private ScheduledFuture<?> pollTask;
+
+    /**
+     * 此刻排着的轮询间隔，单位：秒；0 表示还没开始
+     */
+    private int pollSeconds;
+
+    /**
+     * 上一轮开始跑的时刻，换间隔时据此算下一轮：从上一轮起满一个新间隔就查，已经满了就马上查
+     */
+    private volatile Instant lastPollAt;
+
     @Autowired
     public BilibiliDynamicService(BilibiliApiUtil api,
                                   BilibiliAccountService accountService,
@@ -146,15 +176,70 @@ public class BilibiliDynamicService {
     public void start(AbstractDataSource dataSource) {
         this.dataSource = dataSource;
 
-        scheduler.scheduleAtFixedRate(this::poll,
-                Duration.ofSeconds(Math.max(5, properties.getDynamic().getApiRequestInterval())));
+        int seconds = pollInterval();
+        synchronized (this) {
+            pollTask = scheduler.scheduleAtFixedRate(this::pollOnce, Duration.ofSeconds(seconds));
+            pollSeconds = seconds;
+        }
 
         if (properties.getDynamic().isAutoFollow()) {
             scheduler.scheduleAtFixedRate(this::followConfiguredUps,
                     Duration.ofSeconds(Math.max(10, properties.getDynamic().getAutoFollowInterval())));
         }
 
-        log.info("动态推送已启动, 检测间隔 {} 秒", Math.max(5, properties.getDynamic().getApiRequestInterval()));
+        log.info("动态推送已启动, 检测间隔 {} 秒", seconds);
+    }
+
+    private int pollInterval() {
+        return Math.max(MIN_POLL_INTERVAL_SECONDS, properties.getDynamic().getApiRequestInterval());
+    }
+
+    /**
+     * 设置页改了动态轮询间隔：按新间隔重排
+     * <p>
+     * 先按新间隔排上、再撤掉旧的：排不上（调度池已关）时旧的照跑，轮询不会因为这一下停摆。
+     * 撤掉旧的不打断正在跑的那一轮，两轮也不会一起跑（见 {@link #pollRun}）。
+     * 下一轮在上一轮之后满一个新间隔时跑，已经满了就马上跑：从十分钟改成十秒，不用再干等完旧的十分钟。
+     * @return 重排了为 true；动态推送还没开始（没登录、没启用）时什么也不做，为 false，开始时自会按新值排
+     */
+    public synchronized boolean reschedulePoll() {
+        if (pollSeconds == 0) {
+            return false;
+        }
+        int seconds = pollInterval();
+        if (seconds == pollSeconds) {
+            return true;
+        }
+        Duration period = Duration.ofSeconds(seconds);
+        Instant last = lastPollAt;
+        Instant now = Instant.now();
+        Instant first = last == null ? now.plus(period) : last.plus(period);
+        if (first.isBefore(now)) {
+            first = now;
+        }
+        ScheduledFuture<?> previous = pollTask;
+        pollTask = scheduler.scheduleAtFixedRate(this::pollOnce, first, period);
+        pollSeconds = seconds;
+        if (previous != null) {
+            previous.cancel(false);
+        }
+        log.info("动态轮询间隔已改为 {} 秒", seconds);
+        return true;
+    }
+
+    /**
+     * 跑一轮动态检测；上一轮还没跑完（换间隔的那一下新旧两份排程赶在一起）时跳过这一次
+     */
+    private void pollOnce() {
+        if (!pollRun.tryLock()) {
+            return;
+        }
+        try {
+            lastPollAt = Instant.now();
+            poll();
+        } finally {
+            pollRun.unlock();
+        }
     }
 
     /**

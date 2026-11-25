@@ -1,6 +1,5 @@
 package org.frostnova.nova.adapter.onebot.security;
 
-import org.frostnova.nova.core.util.IpMatcher;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
 import org.frostnova.nova.adapter.onebot.enums.ResultCode;
@@ -35,21 +34,23 @@ public class PushApiSecurityFilter extends OncePerRequestFilter {
 
     private final PushApiTokenStore tokenStore;
 
-    private final IpMatcher ipMatcher;
-
     private final RateLimiter rateLimiter;
 
-    public PushApiSecurityFilter(OneBotAdapterPluginProperties.Security properties, PushApiTokenStore tokenStore, IpMatcher ipMatcher, RateLimiter rateLimiter) {
+    /**
+     * @param properties 安全设置，每个请求开头从这里取一份（含来源 IP 名单），保存后下一个请求就按新的办
+     * @param tokenStore Token 存储
+     * @param rateLimiter 频率限制器
+     */
+    public PushApiSecurityFilter(OneBotAdapterPluginProperties.Security properties, PushApiTokenStore tokenStore, RateLimiter rateLimiter) {
         this.properties = properties;
         this.tokenStore = tokenStore;
-        this.ipMatcher = ipMatcher;
         this.rateLimiter = rateLimiter;
     }
 
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull FilterChain chain) throws ServletException, IOException {
         String requestUri = request.getRequestURI();
-        // 这一个请求照用的那一组安全取值只取一次：保存时三项一起换，请求中途不会一半新一半旧
+        // 这一个请求照用的那一组安全取值只取一次（来源 IP 名单也在其中）：保存时几项一起换，请求中途不会一半新一半旧
         OneBotAdapterPluginProperties.Security.RequestPolicy policy = properties.requestPolicy();
         String registeredPath;
 
@@ -72,7 +73,7 @@ public class PushApiSecurityFilter extends OncePerRequestFilter {
 
         String clientIp = resolveClientIp(policy, request);
 
-        if (!ipMatcher.matches(clientIp)) {
+        if (!policy.allowed().matches(clientIp)) {
             audit(policy, requestUri, clientIp, "来源 IP 不在白名单内");
             reject(response, HttpStatus.FORBIDDEN, ResultCode.FORBIDDEN_ADDRESS);
             return;

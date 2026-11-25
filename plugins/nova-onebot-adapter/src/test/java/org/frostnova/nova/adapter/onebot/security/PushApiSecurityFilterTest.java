@@ -1,6 +1,5 @@
 package org.frostnova.nova.adapter.onebot.security;
 
-import org.frostnova.nova.core.util.IpMatcher;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
 import org.frostnova.nova.adapter.onebot.enums.ResultCode;
@@ -36,7 +35,6 @@ class PushApiSecurityFilterTest {
         return new PushApiSecurityFilter(
                 security,
                 tokenStore,
-                new IpMatcher(security.getAllowIps()),
                 new RateLimiter(security.getRateLimit().getPermitsPerMinute(), security.getRateLimit().getBurst())
         );
     }

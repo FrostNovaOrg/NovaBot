@@ -31,6 +31,17 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.scheduling.TaskScheduler;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
+
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -39,12 +50,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -63,6 +81,11 @@ class BilibiliSettingsSaveTest {
     private static final long UID = 10001L;
 
     /**
+     * 一张真能读出来的标识图：报告标识图片保存时要读一遍
+     */
+    private static final String LOGO = logoFile();
+
+    /**
      * 每个登记为当场生效的 B 站键：存什么、运行中该读到什么（与默认值不同，改没改看得出来）
      */
     private static final Map<String, Change> TABLE = table(
@@ -74,8 +97,10 @@ class BilibiliSettingsSaveTest {
             change("live.max-decompressed-bytes", "1048576", 1048576),
             change("live.max-decode-nesting-depth", "2", 2),
             change("live.complete-event", "true", true),
+            change("live.report-logo-path", LOGO, LOGO),
             change("live.word-cloud-exclude-uids", "1\n2", List.of("1", "2")),
             change("live.word-cloud-block-words", "甲\n乙", List.of("甲", "乙")),
+            change("dynamic.api-request-interval", "30", 30),
             change("dynamic.push-minutes", "30", 30),
             change("dynamic.push-live-dynamic", "true", true),
             change("dynamic.auto-save-image", "true", true),
@@ -184,6 +209,10 @@ class BilibiliSettingsSaveTest {
                 Arguments.of("live.live-room-connect-interval", "1.5"),
                 Arguments.of("live.max-decompressed-bytes", "ten"),
                 Arguments.of("dynamic.push-minutes", ""),
+                Arguments.of("dynamic.api-request-interval", "ten"),
+                Arguments.of("dynamic.api-request-interval", "3"),
+                Arguments.of("live.report-logo-path", "/nowhere/does-not-exist.png"),
+                Arguments.of("live.report-logo-path", notAnImage()),
                 Arguments.of("debug.dynamic-dedup-probe", "sometimes"),
                 Arguments.of("network.user-agent", " "),
                 Arguments.of("network.api-retry-interval", "3s"));
@@ -247,7 +276,157 @@ class BilibiliSettingsSaveTest {
         assertEquals(1, published.size(), "关掉之后的下一轮不应再推");
     }
 
+    @Test
+    @DisplayName("保存「动态轮询间隔」后不重启，轮询按新间隔重排：只留一套，不停摆")
+    void pollIntervalReschedulesTheRunningPoll() throws Exception {
+        // 抓的故障：轮询在启动时按旧间隔排好，改了以后不重启仍按旧间隔查
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        when(api.getDynamicUpdateList()).thenReturn(List.of());
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        ScheduledFuture<?> startup = mock(ScheduledFuture.class);
+        ScheduledFuture<?> rescheduled = mock(ScheduledFuture.class);
+        doReturn(startup).when(scheduler).scheduleAtFixedRate(any(Runnable.class), any(Duration.class));
+        doReturn(rescheduled).when(scheduler).scheduleAtFixedRate(any(Runnable.class), any(Instant.class), any(Duration.class));
+        BilibiliDynamicService service = startedService(api, scheduler);
+        RuntimeConfigurationApplier withPoll = applierWith(service);
+
+        ArgumentCaptor<Runnable> startupTask = ArgumentCaptor.forClass(Runnable.class);
+        verify(scheduler).scheduleAtFixedRate(startupTask.capture(), eq(Duration.ofSeconds(10)));
+        startupTask.getValue().run();
+
+        Instant saved = Instant.now();
+        assertEquals(List.of(), withPoll.validateValues(Map.of(PREFIX + "dynamic.api-request-interval", "60")));
+        assertEquals(List.of(), withPoll.applyAndTrack(Map.of(PREFIX + "dynamic.api-request-interval", "60")),
+                "保存后不该要重启");
+
+        ArgumentCaptor<Runnable> task = ArgumentCaptor.forClass(Runnable.class);
+        ArgumentCaptor<Instant> first = ArgumentCaptor.forClass(Instant.class);
+        verify(scheduler).scheduleAtFixedRate(task.capture(), first.capture(), eq(Duration.ofSeconds(60)));
+        verify(startup).cancel(false);
+        // 上一轮刚跑过：下一轮在它之后满 60 秒，不是马上，也不是再等一个旧间隔之外的更久
+        assertTrue(Duration.between(saved, first.getValue()).compareTo(Duration.ofSeconds(55)) > 0, first.getValue()::toString);
+        assertTrue(Duration.between(saved, first.getValue()).compareTo(Duration.ofSeconds(61)) <= 0, first.getValue()::toString);
+
+        task.getValue().run();
+        verify(api, org.mockito.Mockito.times(2)).getDynamicUpdateList();
+
+        // 同一个值再存一次不重排；没开始的服务存了也不排
+        withPoll.applyAndTrack(Map.of(PREFIX + "dynamic.api-request-interval", "60"));
+        verify(scheduler, org.mockito.Mockito.times(1))
+                .scheduleAtFixedRate(any(Runnable.class), any(Instant.class), any(Duration.class));
+        verify(rescheduled, never()).cancel(org.mockito.ArgumentMatchers.anyBoolean());
+    }
+
+    @Test
+    @DisplayName("重排那一下新旧两份排程赶在一起，也只有一轮在查动态")
+    void reschedulingNeverRunsTwoPollsAtOnce() throws Exception {
+        // 抓的故障：旧的那一轮还没跑完，新排的第一轮又开始，同一条动态拉两遍、推两遍
+        BilibiliApiUtil api = mock(BilibiliApiUtil.class);
+        CountDownLatch inside = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger calls = new AtomicInteger();
+        when(api.getDynamicUpdateList()).thenAnswer(invocation -> {
+            if (calls.incrementAndGet() == 1) {
+                inside.countDown();
+                release.await(30, TimeUnit.SECONDS);
+            }
+            return List.of();
+        });
+        TaskScheduler scheduler = mock(TaskScheduler.class);
+        doReturn(mock(ScheduledFuture.class)).when(scheduler).scheduleAtFixedRate(any(Runnable.class), any(Duration.class));
+        doReturn(mock(ScheduledFuture.class)).when(scheduler)
+                .scheduleAtFixedRate(any(Runnable.class), any(Instant.class), any(Duration.class));
+        BilibiliDynamicService service = startedService(api, scheduler);
+        RuntimeConfigurationApplier withPoll = applierWith(service);
+        ArgumentCaptor<Runnable> old = ArgumentCaptor.forClass(Runnable.class);
+        verify(scheduler).scheduleAtFixedRate(old.capture(), any(Duration.class));
+
+        Thread running = new Thread(old.getValue(), "old-poll");
+        running.start();
+        assertTrue(inside.await(30, TimeUnit.SECONDS), "旧的那一轮应在查动态");
+
+        withPoll.applyAndTrack(Map.of(PREFIX + "dynamic.api-request-interval", "5"));
+        ArgumentCaptor<Runnable> fresh = ArgumentCaptor.forClass(Runnable.class);
+        verify(scheduler).scheduleAtFixedRate(fresh.capture(), any(Instant.class), eq(Duration.ofSeconds(5)));
+        fresh.getValue().run();
+        assertEquals(1, calls.get(), "旧的那一轮没跑完，新排的这一轮不该再查一遍");
+
+        release.countDown();
+        running.join(30_000);
+        fresh.getValue().run();
+        assertEquals(2, calls.get(), "旧的跑完之后照常按新间隔查");
+    }
+
+    @Test
+    @DisplayName("设置页改了「登录凭据 · 自动续期」，日志里记一行新状态")
+    void autoRefreshSwitchIsLogged() {
+        // 抓的故障：开关只在启动时记一行，运行中改过以后查日志的人看不出它变过
+        Logger logger = (Logger) LoggerFactory.getLogger(BilibiliRuntimeAppliers.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            save(Map.of(PREFIX + "account.auto-refresh-cookie", "false"));
+            save(Map.of(PREFIX + "account.auto-refresh-cookie", "true"));
+            save(Map.of(PREFIX + "network.api-retry-max-times", "5"));
+        } finally {
+            logger.detachAppender(appender);
+        }
+        List<String> lines = appender.list.stream().map(ILoggingEvent::getFormattedMessage)
+                .filter(line -> line.contains("自动续期")).toList();
+        assertEquals(2, lines.size(), lines::toString);
+        assertTrue(lines.get(0).contains("已关闭"), lines::toString);
+        assertTrue(lines.get(1).contains("已启用"), lines::toString);
+    }
+
     // ============ 工具 ============
+
+    private BilibiliDynamicService startedService(BilibiliApiUtil api, TaskScheduler scheduler) {
+        properties.getDynamic().setAutoFollow(false);
+        BilibiliAccountService account = mock(BilibiliAccountService.class);
+        when(account.isLoggedIn()).thenReturn(true);
+        AbstractDataSource dataSource = mock(AbstractDataSource.class);
+        when(dataSource.getUsers(anyString())).thenReturn(List.of());
+        BilibiliDynamicService service = new BilibiliDynamicService(api, account, properties, event -> { },
+                scheduler, mock(BilibiliDynamicArchive.class));
+        service.start(dataSource);
+        return service;
+    }
+
+    /**
+     * 与运行时一样带上动态轮询的套用器：写回之后叫轮询重排
+     */
+    private RuntimeConfigurationApplier applierWith(BilibiliDynamicService service) {
+        GenericApplicationContext withPoll = new GenericApplicationContext();
+        withPoll.registerBean(BilibiliDynamicService.class, () -> service);
+        withPoll.registerBean(BilibiliRuntimeAppliers.class, () -> new BilibiliRuntimeAppliers(properties,
+                withPoll.getBeanProvider(BilibiliDynamicService.class)));
+        withPoll.refresh();
+        return new RuntimeConfigurationApplier(new NovaCoreProperties(),
+                withPoll.getBeanProvider(RuntimeConfigurationApplierContributor.class), TimelineWriter.NONE);
+    }
+
+    private static String logoFile() {
+        try {
+            Path file = Files.createTempFile("report-logo-", ".png");
+            file.toFile().deleteOnExit();
+            ImageIO.write(new BufferedImage(40, 20, BufferedImage.TYPE_INT_RGB), "png", file.toFile());
+            return file.toString();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private static String notAnImage() {
+        try {
+            Path file = Files.createTempFile("report-logo-", ".png");
+            file.toFile().deleteOnExit();
+            Files.writeString(file, "不是图片");
+            return file.toString();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
 
     private Runnable dynamicPoll(BilibiliApiUtil api, List<BilibiliDynamicUpdateEvent> published) {
         properties.getDynamic().setAutoFollow(false);

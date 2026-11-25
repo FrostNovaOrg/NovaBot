@@ -463,6 +463,74 @@ class BilibiliLiveReportPainterTest {
     }
 
     @Test
+    @DisplayName("设置页换了报告标识图片后不重启，下一张报告就用新图；读不到的、不是图片的不收，旧图照用")
+    void savedLogoPathTakesEffectOnTheNextReport(@TempDir Path directory) throws Exception {
+        // 抓的故障：绘制器第一次读到标识图后就缓存起来，以后不再看路径，改了不重启仍画旧图
+        Color first = new Color(3, 201, 7);
+        Color second = new Color(5, 9, 233);
+        Path firstFile = solidLogo(directory.resolve("first.png"), first);
+        Path secondFile = solidLogo(directory.resolve("second.png"), second);
+        Path notImage = Files.writeString(directory.resolve("notes.png"), "不是图片");
+
+        NovaBilibiliProperties properties = new NovaBilibiliProperties();
+        org.springframework.context.support.GenericApplicationContext context =
+                new org.springframework.context.support.GenericApplicationContext();
+        context.registerBean(org.frostnova.nova.bilibili.config.BilibiliRuntimeAppliers.class,
+                () -> new org.frostnova.nova.bilibili.config.BilibiliRuntimeAppliers(properties));
+        context.refresh();
+        org.frostnova.nova.core.config.ui.RuntimeConfigurationApplier applier =
+                new org.frostnova.nova.core.config.ui.RuntimeConfigurationApplier(new NovaCoreProperties(),
+                        context.getBeanProvider(org.frostnova.nova.core.config.ui.RuntimeConfigurationApplierContributor.class),
+                        org.frostnova.nova.core.timeline.TimelineWriter.NONE);
+        String key = "novabot.bilibili.live.report-logo-path";
+        BilibiliLiveReportPainter reports = new BilibiliLiveReportPainter(factory, api, liveDataService, fontUtil,
+                properties, roomInfoHistory);
+
+        assertEquals(List.of(), applier.validateValues(Map.of(key, firstFile.toString())));
+        assertEquals(List.of(), applier.applyAndTrack(Map.of(key, firstFile.toString())));
+        BufferedImage before = imageOf(reports.paint(PLATFORM, STREAMER).orElseThrow());
+        assertTrue(pixels(before, first) > 500, "先画的是第一张标识");
+
+        assertEquals(List.of(), applier.validateValues(Map.of(key, secondFile.toString())));
+        assertEquals(List.of(), applier.applyAndTrack(Map.of(key, secondFile.toString())), "保存后不该要重启");
+        BufferedImage after = imageOf(reports.paint(PLATFORM, STREAMER).orElseThrow());
+        assertTrue(pixels(after, second) > 500, "保存之后的下一张报告该换成新标识");
+        assertEquals(0, pixels(after, first), "旧标识不该再出现");
+
+        for (String wrong : List.of(directory.resolve("missing.png").toString(), notImage.toString())) {
+            List<String> problems = applier.validateValues(Map.of(key, wrong));
+            assertEquals(1, problems.size(), problems::toString);
+            assertTrue(problems.get(0).contains(key), problems::toString);
+        }
+        assertTrue(applier.validateValues(Map.of(key, notImage.toString())).get(0).contains("不是能识别的图片"));
+        assertTrue(applier.validateValues(Map.of(key, directory.resolve("missing.png").toString())).get(0)
+                .contains("读不到这个文件"));
+        assertEquals(secondFile.toString(), properties.getLive().getReportLogoPath(), "拒收后旧值照用");
+        context.close();
+    }
+
+    private static Path solidLogo(Path file, Color color) throws Exception {
+        BufferedImage mark = new BufferedImage(300, 90, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = mark.createGraphics();
+        g.setColor(color);
+        g.fillRect(0, 0, 300, 90);
+        g.dispose();
+        javax.imageio.ImageIO.write(mark, "png", file.toFile());
+        return file;
+    }
+
+    private static int pixels(BufferedImage image, Color color) {
+        int count = 0;
+        int rgb = color.getRGB() & 0xFFFFFF;
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                if ((image.getRGB(x, y) & 0xFFFFFF) == rgb) count++;
+            }
+        }
+        return count;
+    }
+
+    @Test
     @DisplayName("标识路径写错时应跳过绘制而非让整张报告失败")
     void survivesMissingLogo() {
         NovaBilibiliProperties badPath = new NovaBilibiliProperties();
