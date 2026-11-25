@@ -50,7 +50,7 @@ class LinksPageWordingTest {
 
         String index = Files.readString(ui.resolve("index.html"), StandardCharsets.UTF_8);
         int from = index.indexOf("<section class=\"page\" id=\"page-links\">");
-        int to = from < 0 ? -1 : index.indexOf("</section>", from);
+        int to = from < 0 ? -1 : index.indexOf("<section class=\"page\"", from + 1);
         assertTrue(from >= 0 && to > from, "index.html 里找不到连接页那一段，下面的查法量不到东西");
         collect("index.html", withoutHtmlComments(index.substring(0, to)),
                 index.substring(0, from).split("\n", -1).length, found, page);

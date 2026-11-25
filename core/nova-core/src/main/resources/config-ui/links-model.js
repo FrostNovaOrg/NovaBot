@@ -1,7 +1,7 @@
 /**
  * 连接页视图模型
  *
- * 把 /api/status、/api/login、/api/pages 与只读口令清单算成屏幕上那三张卡：
+ * 把 /api/status、/api/login、/api/pages 与只读口令清单算成连接页的状态卡：
  * 各自的灯色、那句状态说明、以及要人动手时该说的话。
  *
  * 刻意不碰 DOM，也不发请求。连接页要在「登录态 × 机器人态」九种组合下都说得对，
@@ -68,9 +68,7 @@ function platformCard(card, status, accounts) {
   }
 
   if (!account) {
-    // 登记了连接卡却没有登录能力：这一页仍然要出现（插件自有它要显示的东西），
-    // 只是核心这一侧没有登录态可说
-    return base;
+    return Object.assign(base, {caption: card.botLink ? '尚未配置' : '未获取到连接状态'});
   }
 
   // ⚠️ 探针不申报自己属于哪个平台，因此同时装两个直播平台时，这里可能取到另一个平台的探针，
@@ -171,8 +169,9 @@ function botCard(status, title, officialTitle) {
   const adapter = bots.filter(item => !item.card);
   const official = bots.find(item => item.card === OFFICIAL_BOT_CARD);
   const otherTitle = officialTitle || official?.name;
-  if (!adapter.length && otherTitle && (official || senders.includes('qq-official'))) {
-    return Object.assign(base, {caption: '未使用（已在用 ' + otherTitle + '）'});
+  const configured = status.botChannel?.platforms?.length ?? adapter.length;
+  if (!configured && otherTitle && ((official && official.lamp !== 'off') || senders.includes('qq-official'))) {
+    return Object.assign(base, {caption: '未使用（已在用 ' + otherTitle + '）', unused: true});
   }
 
   if (!senders.length) {
@@ -183,7 +182,10 @@ function botCard(status, title, officialTitle) {
   }
 
   const state = probeState(adapter);
-  return Object.assign(base, state, {note: queueText(status, state.level)});
+  return Object.assign(base, state, {
+    caption: state.caption || '未获取到连接状态',
+    note: queueText(status, state.level),
+  });
 }
 
 function probeState(probes) {

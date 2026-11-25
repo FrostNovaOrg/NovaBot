@@ -1,16 +1,8 @@
-/**
- * 连接页：三张卡与「发一条试试」
- *
- * 三张卡答的是同一个问题的三段——直播平台那一头连上了没有、机器人这一头连上了没有、
- * 事件往外送的那把口令签了没有。本文件只管把 links-model.js 算好的东西摆上屏幕：
- * 哪张卡该是什么颜色、该说哪句话一律在那边判，判断留在这里的话，十二档对照就只能靠人点开页面看。
- *
- * 本文件里没有任何一个直播平台的名字：平台卡的标题取自插件登记时报的显示名，
- * 卡里的内容由插件自己填。写死一个平台名，这一页就替一件可能没装的东西立了张卡。
- */
+/** 连接页的卡片、目标列表和测试消息。 */
 
-import {$, api, el, esc, loadingHtml, phrase, say} from './core.js';
+import {$, api, el, esc, loadingHtml, phrase} from './core.js';
 import {cardAnchor, linksModel, resolveTarget, targetOptions} from './links-model.js';
+import {showLinkResult} from './link-feedback.js';
 import {renderBotChannel} from './bot.js';
 import {renderStatus} from './overview.js';
 import {renderTokens} from './tokens.js';
@@ -22,6 +14,12 @@ import {renderTokens} from './tokens.js';
  * 装载与登记是同一件事的两半，各问一次的话，装不上的那一页会在卡的位置上留一张空壳
  */
 const linkCards = [];
+const pluginOrder = ['bilibili', 'qqbot'];
+
+function linkCardRank(card) {
+  const rank = pluginOrder.indexOf(card.id);
+  return rank === -1 ? pluginOrder.length : rank;
+}
 
 /**
  * 上一次算出来的视图模型
@@ -36,6 +34,7 @@ let model = {cards: []};
  * 地址栏里点名要看的那一站，画完之后滚过去
  */
 let wanted = '';
+let linksLoad = 0;
 
 /**
  * 建出一张插件连接卡的壳，返回给插件填内容的那块地方
@@ -46,14 +45,17 @@ let wanted = '';
  * @return {HTMLElement} 插件往里渲染的容器
  */
 export function mountLinkCard(meta) {
-  linkCards.push({id: meta.id, displayName: meta.displayName, botLink: meta.botLink});
+  const link = {id: meta.id, displayName: meta.displayName, botLink: meta.botLink};
+  linkCards.push(link);
+  linkCards.sort((a, b) => linkCardRank(a) - linkCardRank(b));
 
   const card = el('div', 'nv-card lcard');
   card.id = 'card-p-' + meta.id;
-  card.innerHTML = '<div class="lc-hd"><span class="lamp"></span><b></b><span class="lc-cap"></span></div>'
-    + '<div class="lc-note"></div><div class="lc-body"></div>';
+  card.innerHTML = '<div class="lc-hd"><span class="lamp" aria-hidden="true"></span><b></b><span class="lc-cap"></span></div>'
+    + '<div class="lc-body"></div>';
   card.querySelector('.lc-hd b').textContent = meta.displayName;
-  $('#link-cards').appendChild(card);
+  const host = $('#link-cards');
+  host.insertBefore(card, host.children[linkCards.indexOf(link)] || null);
 
   return card.querySelector('.lc-body');
 }
@@ -72,7 +74,14 @@ function paint(card) {
   box.querySelector('.lamp').className = 'lamp ' + card.level;
   box.querySelector('.lc-cap').textContent = card.caption;
 
-  const note = box.querySelector('.lc-note');
+  const body = box.querySelector('.lc-body');
+  let note = body.querySelector('.lc-note');
+  if (!note) {
+    note = el('div', 'lc-note');
+    const intro = body.querySelector('.lc-intro');
+    if (intro) intro.after(note);
+    else body.prepend(note);
+  }
   const lines = [card.note, card.advice].filter(Boolean);
   note.innerHTML = lines.map(text => '<div>' + esc(text) + '</div>').join('');
   if (card.action) {
@@ -81,7 +90,7 @@ function paint(card) {
     go.textContent = card.action.text;
     note.appendChild(go);
   }
-  note.style.display = lines.length || card.action ? '' : 'none';
+  note.hidden = !lines.length && !card.action;
 }
 
 /**
@@ -91,21 +100,25 @@ function paint(card) {
  * 而下面的清单还是上一份算出来的——两块说的是同一件事，屏幕上却互相矛盾。
  */
 export async function refreshLinks(withTargets = false) {
+  const request = ++linksLoad;
   const statusRequest = api('/status');
   const targets = withTargets ? loadTargets(false, statusRequest) : null;
   try {
     const [status, login, tokens] = await Promise.all([
       statusRequest, api('/login'), api('/event-tokens')]);
 
+    if (request !== linksLoad) return;
     renderStatus(status);
-    renderBotChannel('bot', status.botChannel, () => refreshLinks(true));
     model = linksModel(status, login, linkCards, tokens.tokens || [],
-      phrase('bot.impl', v => '机器人（' + v + ' 等）', '机器人'), tokens.stream);
+      phrase('bot.impl', v => '机器人（' + v + '）', '机器人'), tokens.stream);
+    renderBotChannel('bot', status.botChannel, () => refreshLinks(true),
+      model.cards.find(card => card.key === 'bot')?.unused);
     model.cards.forEach(paint);
+    showLinkResult($('#links-load-result'));
     renderTokens(tokens.tokens || []);
     scrollToWanted();
   } catch (e) {
-    say('连接页加载失败：' + e.message, 'err');
+    if (request === linksLoad) showLinkResult($('#links-load-result'), '连接页加载失败：' + e.message, 'err');
   }
   await targets;
 }
@@ -146,12 +159,22 @@ function scrollToWanted() {
  */
 let options = [];
 let targetLoad = 0;
+const pendingTargets = new Set();
+const testResults = new Map();
+
+function updateTestSend() {
+  const key = $('#test-target').value;
+  $('#test-send').disabled = !options.length || pendingTargets.has(key);
+}
 
 async function fetchTargetOptions(force) {
-  if (force) await api('/bot/targets/refresh', {method: 'POST'});
+  const refreshed = force ? await api('/bot/targets/refresh', {method: 'POST'}) : null;
+  if (refreshed?.success === false) throw new Error(refreshed.message || '无法刷新列表');
   const [groups, friends] = await Promise.all([
     api('/bot/targets?type=group'), api('/bot/targets?type=friend')]);
-  return targetOptions(groups, friends);
+  const failed = [groups, friends].find(result => result?.success === false);
+  if (failed) throw new Error(failed.message || '无法读取列表');
+  return {items: targetOptions(groups, friends), stale: refreshed?.stale || groups?.stale || friends?.stale};
 }
 
 /**
@@ -164,11 +187,25 @@ export async function loadTargets(force, statusRequest) {
   options = [];
   const pick = $('#test-target');
   const hint = $('#test-hint');
+  const refresh = $('#test-refresh');
+  const result = $('#test-refresh-result');
+  const selected = pick.value;
+  pick.onchange = updateTestSend;
+  if (force) {
+    refresh.disabled = true;
+    showLinkResult(result, '正在刷新…');
+  }
   pick.innerHTML = '<option value="">正在加载…</option>';
   hint.innerHTML = loadingHtml('正在加载…', true);
   $('#test-send').disabled = true;
 
   const [status, targets] = await Promise.allSettled([statusRequest || api('/status'), fetchTargetOptions(force)]);
+  if (force) {
+    refresh.disabled = false;
+    if (targets.status === 'rejected') showLinkResult(result, targets.reason.message, 'err');
+    else if (targets.value.stale) showLinkResult(result, '部分目标暂时无法刷新，仍显示可用的名单。', 'warn');
+    else showLinkResult(result, '列表已刷新', 'ok');
+  }
   if (current !== targetLoad) return;
   const channel = status.value?.botChannel;
   const disabledNotice = channel?.enabled === false ? channel.name + ' 通道已停用。' : '';
@@ -178,82 +215,73 @@ export async function loadTargets(force, statusRequest) {
     return;
   }
 
-  options = targets.value;
+  options = targets.value.items;
   if (options.length) {
     pick.innerHTML = options.map(item => '<option value="' + esc(item.key) + '">' + esc(item.text)
       + (item.configured ? ' · 已配置推送' : '') + '</option>').join('');
+    if (options.some(item => item.key === selected)) pick.value = selected;
   } else {
     const empty = disabledNotice ? '暂无可选目标' : '机器人尚未加入任何群组，也没有好友';
     pick.innerHTML = '<option value="">' + empty + '</option>';
   }
   hint.textContent = disabledNotice || (options.length ? '列表由机器人提供，不支持手动输入号码。'
     : '请先将机器人加入群组或添加为好友，然后点击「刷新列表」。');
-  $('#test-send').disabled = !options.length;
+  updateTestSend();
 }
 
-/**
- * 发一条真消息过去
- *
- * 群号填错、Token 不对、机器人不在群里、OneBot 没起——这四类错的表现完全一样：什么都不发生。
- * 发一条真消息是唯一能当场把它们分开的手段。
- */
+/** 同一个目标仅保留最近一次试发的结果，其他目标可以同时发送。 */
 export async function sendTestMessage() {
-  const box = $('#test-result');
-  const pick = $('#test-target');
-  const target = resolveTarget(options, pick.value);
+  const key = $('#test-target').value;
+  if (pendingTargets.has(key)) return;
+  const selected = options.find(item => item.key === key);
+  const target = resolveTarget(options, key);
+  const caption = selected?.text || '';
 
-  box.style.display = 'block';
+  let box = testResults.get(key);
+  if (!box) {
+    box = el('div', 'lc-result');
+    box.setAttribute('role', 'status');
+    $('#test-result').appendChild(box);
+    testResults.set(key, box);
+  }
   if (!target.ok) {
-    box.className = 'issues';
-    box.innerHTML = '<b>' + esc(target.reason) + '</b>';
+    showLinkResult(box, target.reason, 'err');
     return;
   }
 
-  $('#test-send').disabled = true;
-  box.className = 'issues';
-  box.innerHTML = '<b>发送中…</b>';
-
+  pendingTargets.add(key);
+  updateTestSend();
+  showLinkResult(box, caption + ' · 发送中…');
   try {
     const res = await api('/test-message', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({platform: target.platform, type: target.type, num: target.num}),
     });
-    renderTestResult(res, (options.find(item => item.key === pick.value) || {}).text || '');
+    renderTestResult(box, res, caption);
   } catch (e) {
-    box.className = 'issues';
-    box.innerHTML = '<b>发送失败：' + esc(e.message) + '</b>';
+    showLinkResult(box, caption + ' · 发送失败：' + e.message, 'err');
+  } finally {
+    pendingTargets.delete(key);
+    updateTestSend();
   }
-
-  $('#test-send').disabled = !options.length;
 }
 
-/**
- * 发出去之后屏幕上显示什么
- *
- * 成了就画一个气泡：使用者要确认的是「那边收到的是不是这句」，而一行「已发送」答不了这个问题。
- * 没成则列三条排查——服务端给的那句话是针对这一次失败的，三条是「还能自己查什么」，两者不重复。
- * @param res /api/test-message 回包
- * @param targetText 发给谁，取自名单上那一条的原文
- */
-function renderTestResult(res, targetText) {
-  const box = $('#test-result');
-
+function renderTestResult(box, res, caption) {
+  const message = caption + ' · ' + (res.message || (res.success ? '已发送' : '发送失败'));
   if (res.success) {
-    box.className = 'issues ok';
-    box.innerHTML = '<b>' + esc(res.message) + '</b>'
-      + '<div class="bubble"><div class="bb-to">发送目标：' + esc(targetText) + '</div>'
-      + '<div class="bb-body">这是一条来自 NovaBot 的测试消息，收到即表示推送链路正常。</div></div>';
+    showLinkResult(box, message, res.warning ? 'warn' : 'ok',
+      '<div class="bubble">这是一条来自 NovaBot 的测试消息，收到即表示推送链路正常。</div>'
+      + (res.warning ? '<p class="tr-advice">' + esc(res.warning) + '</p>' : ''));
     return;
   }
 
-  box.className = 'issues';
   if (res.raw?.platform_disabled) {
-    box.textContent = res.message;
+    showLinkResult(box, message, 'err');
     return;
   }
-  box.innerHTML = '<b>' + esc(res.message) + '</b>'
-    + (res.advice ? '<p class="tr-advice">' + esc(res.advice) + '</p>' : '')
+  showLinkResult(box, message, 'err',
+    (res.advice ? '<p class="tr-advice">' + esc(res.advice) + '</p>' : '')
     + '<ul>'
     + '<li>确认机器人账号是否在线：查看本页上方的机器人卡片。账号离线时接口仍可正常调用，但消息无人接收。</li>'
     + '<li>无需检查首页的「暂停全部推送」与静音时段：测试消息立即直接发送，不进入推送队列，'
@@ -261,5 +289,5 @@ function renderTestResult(res, targetText) {
     + '<li>' + phrase('bot.family', v => '查看 ' + esc(v) + ' 的运行日志', '查看机器人程序的运行日志')
     + '：地址与 Token 均正确但仍无法发送时，原因通常只记录在它自己的日志中。</li>'
     + '</ul>'
-    + (res.raw ? '<p class="tr-advice">接口原始响应：' + esc(JSON.stringify(res.raw)) + '</p>' : '');
+    + (res.raw ? '<p class="tr-advice">接口原始响应：' + esc(JSON.stringify(res.raw)) + '</p>' : ''));
 }

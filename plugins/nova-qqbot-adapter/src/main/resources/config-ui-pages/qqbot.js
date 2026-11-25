@@ -1,8 +1,11 @@
+import {ask} from './confirm.js';
 import {api, esc, loadingHtml} from './core.js';
+import {showLinkResult, trackLinkEdits} from './link-feedback.js';
 import {refreshLinks} from './links.js';
 import {store} from './store.js';
 
 const BASE = '/qqbot/';
+const groupEdits = new WeakMap();
 let card;
 
 export const alternateSetupLabel = 'NapCat（用 QQ 号登录）';
@@ -12,152 +15,186 @@ export function render(container, {onConnectionChange} = {}) {
   const prefix = inSetup ? 'setup-qqbot-' : 'qqbot-';
   const intro = inSetup
     ? '请先在 QQ 开放平台创建机器人，IP 白名单留空。个人主体的机器人只能加入你担任群主或管理员的群。'
-    : '请先在 QQ 开放平台创建机器人，再把 AppID 和 AppSecret 填在这里。开放平台后台的 IP 白名单留空。';
-  const loading = `<p class="dim" id="${prefix}load" role="status">${loadingHtml('正在加载…', true)}</p>`;
+    : '通过 QQ 开放平台连接机器人，向它加入的官方群发送消息。';
+  const loading = `<p class="hint" id="${prefix}load" role="status">${loadingHtml('正在加载…', true)}</p>`;
   container.innerHTML = `
-    <p class="hint">${intro}</p>
-    <form class="fbox" id="${prefix}credentials">
-      <div class="row">
-        <label for="${prefix}app-id">AppID</label>
-        <input id="${prefix}app-id" type="text" inputmode="numeric" autocomplete="off" required>
-      </div>
-      <div class="row">
-        <label for="${prefix}secret">AppSecret</label>
-        <input id="${prefix}secret" type="password" autocomplete="new-password">
-      </div>
-      <p class="hint" id="${prefix}unconfigured" hidden>请填写 AppID 和 AppSecret 后保存连接。</p>
-      <button type="submit" class="primary">保存并连接</button>
-    </form>
-    ${inSetup ? loading : linkSettingsHtml(loading)}
-    <p id="${prefix}result" class="hint" role="status" hidden></p>`;
+    <p class="hint lc-intro">${intro}</p>
+    <section class="${inSetup ? '' : 'lc-sub'}">
+      ${inSetup ? '' : '<h3 class="lc-h">凭据</h3><p class="hint">在 QQ 开放平台创建机器人后填写 AppID 和 AppSecret，平台后台的 IP 白名单留空。</p>'}
+      <form id="${prefix}credentials">
+        <div class="lc-fields">
+          <div class="lc-field">
+            <label for="${prefix}app-id">AppID</label>
+            <input id="${prefix}app-id" type="text" inputmode="numeric" autocomplete="off" required>
+          </div>
+          <div class="lc-field">
+            <label for="${prefix}secret">AppSecret</label>
+            <input id="${prefix}secret" type="password" autocomplete="new-password">
+          </div>
+          <p class="hint" id="${prefix}unconfigured" hidden>请填写 AppID 和 AppSecret 后保存连接。</p>
+        </div>
+        <div class="lc-actions">
+          <button type="submit" class="primary">保存并连接</button>
+          <span class="lc-unsaved" id="${prefix}credentials-unsaved" hidden>未保存</span>
+          <span class="lc-result" id="${prefix}result" role="status" hidden></span>
+        </div>
+      </form>
+      ${inSetup ? loading : ''}
+    </section>
+    ${inSetup ? '' : linkSettingsHtml(loading)}`;
 
   const find = id => container.querySelector('#' + prefix + id);
   const view = {appId: find('app-id'), secret: find('secret'), interval: find('millis'), groups: find('groups'),
-    welcome: find('welcome-enabled'), welcomeSave: find('welcome-save'), welcomeResult: find('welcome-result'),
-    welcomeLoaded: false,
+    welcome: find('welcome-enabled'), welcomeResult: find('welcome-result'), welcomeRevision: 0,
     claimStatus: find('claim-status'), claimResult: find('claim-result'),
     issued: find('issued'), claimCommand: find('claim-command'),
     claimedAdmins: find('claimed-admins'), issuedExpiry: null,
     unconfigured: find('unconfigured'), load: find('load'), result: find('result'), request: 0, saving: false};
+  view.updateCredentials = trackLinkEdits([view.appId, view.secret], find('credentials-unsaved'));
 
   find('credentials').addEventListener('submit', async event => {
+    event.preventDefault();
     if (view.saving) {
-      event.preventDefault();
+      showLinkResult(view.result, '请等当前操作完成后重试。', 'warn');
       return;
     }
     onConnectionChange?.(true);
-    const appId = view.appId.value.trim();
-    await save(view, event, 'credentials', {appId, appSecret: view.secret.value}, '凭据已保存', () => {
+    try {
+      const appId = view.appId.value.trim();
+      const result = await save(view, event, 'credentials', {appId, appSecret: view.secret.value}, view.result);
+      if (!result) return;
       view.secret.value = '';
       setSavedValue(view.appId, appId, true);
-      if (!inSetup) {
-        clearIssuedCode(view);
-        return refreshLinks();
-      }
-    });
-    await onConnectionChange?.(false);
+      view.updateCredentials();
+      if (!inSetup) clearIssuedCode(view);
+      await Promise.all([refreshView(view), inSetup ? undefined : refreshLinks(true)]);
+    } finally {
+      await onConnectionChange?.(false);
+    }
   });
 
   if (inSetup) {
     refreshView(view);
     return;
   }
+
   card = view;
-  find('interval').addEventListener('submit', event => {
-    return save(view, event, 'interval', {millis: view.interval.valueAsNumber}, '发送间隔已保存', result => {
-      setSavedValue(view.interval, String(result.intervalMillis), true);
-    });
+  const intervalResult = find('interval-result');
+  view.updateInterval = trackLinkEdits([view.interval], find('interval-unsaved'));
+  find('interval').addEventListener('submit', async event => {
+    const result = await save(view, event, 'interval', {millis: view.interval.valueAsNumber}, intervalResult);
+    if (!result) return;
+    setSavedValue(view.interval, String(result.intervalMillis), true);
+    view.updateInterval();
+    await refreshView(view);
   });
-  find('welcome').addEventListener('submit', event => {
-    if (!view.welcomeLoaded) {
-      event.preventDefault();
-      return;
-    }
-    return save(view, event, 'welcome', {enabled: view.welcome.checked}, '进群欢迎语已保存', result => {
-      setSavedWelcome(view.welcome, result.enabled, true);
-    }, view.welcomeResult);
-  });
-  find('claim-generate').addEventListener('submit', event => {
+  view.welcome.addEventListener('change', () => saveWelcome(view));
+  find('claim-generate').addEventListener('submit', async event => {
     if (!view.saving) clearIssuedCode(view);
-    return save(view, event, 'admin-claims/code', {}, '认领码已生成', result => {
-      view.issuedExpiry = result.expiresAt;
-      view.claimCommand.textContent = '认领 ' + result.code;
-      view.issued.hidden = false;
-      showClaimStatus(view, result.expiresAt);
-    }, view.claimResult);
+    const result = await save(view, event, 'admin-claims/code', {}, view.claimResult, '认领码已生成');
+    if (!result) return;
+    view.issuedExpiry = result.expiresAt;
+    view.claimCommand.textContent = '认领 ' + result.code;
+    view.issued.hidden = false;
+    showClaimStatus(view, result.expiresAt);
   });
-  view.claimedAdmins.addEventListener('submit', event => {
-    const member = event.target.dataset.memberNum;
-    return save(view, event, 'admin-claims/' + encodeURIComponent(member) + '/revoke', {}, '已撤销超级管理员',
-      undefined, view.claimResult);
+  view.claimedAdmins.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (view.saving) return;
+    const form = event.target;
+    if (!await ask({title: '撤销超级管理员？', body: '撤销后，该成员将失去在官方群中使用超级管理员命令的权限。'})) return;
+    const resultBox = form.querySelector('.lc-result');
+    const result = await save(view, event, 'admin-claims/' + encodeURIComponent(form.dataset.memberNum) + '/revoke',
+      {}, resultBox, '已撤销超级管理员', () => {
+        form.closest('[role="listitem"]')?.remove();
+        if (!view.claimedAdmins.querySelector('[role="listitem"]')) renderClaimedAdmins(view.claimedAdmins, []);
+      });
+    if (result) submitButton(event).hidden = true;
   });
   const refreshButton = find('refresh');
+  const refreshResult = find('refresh-result');
   refreshButton.addEventListener('click', async () => {
     refreshButton.disabled = true;
+    showLinkResult(refreshResult, '正在刷新…');
     try {
-      await refresh(true);
+      const error = await refresh(true);
+      showLinkResult(refreshResult, error || '已刷新', error ? 'err' : 'ok');
       if (card === view && store.tab === 'bot') await refreshLinks();
     } finally {
       refreshButton.disabled = false;
     }
   });
-  view.groups.addEventListener('submit', event => {
+  view.groups.addEventListener('submit', async event => {
     const form = event.target;
     const input = form.querySelector('input');
-    return save(view, event, 'groups/' + encodeURIComponent(form.dataset.groupNumber) + '/remark',
-      {remark: input.value}, '备注已保存', () => { input.defaultValue = input.value; });
+    const remark = input.value;
+    const result = await save(view, event, 'groups/' + encodeURIComponent(form.dataset.groupNumber) + '/remark',
+      {remark}, form.querySelector('.lc-result'), '备注已保存');
+    if (!result) return;
+    input.defaultValue = remark;
+    groupEdits.get(form)?.();
+    await refreshView(view);
   });
 }
 
 function linkSettingsHtml(loading) {
   return `
-    <form class="fbox lc-sub" id="qqbot-interval">
-      <div class="row">
-        <label for="qqbot-millis">发送间隔（毫秒）</label>
-        <input id="qqbot-millis" type="number" min="1000" max="60000" step="1" required>
-        <span class="dim">默认每 2 秒一条，即每分钟 30 条</span>
-      </div>
-      <button type="submit" class="ghost sm">保存间隔</button>
-    </form>
-    <form class="lc-sub" id="qqbot-welcome">
-      <label class="switch">
-        <input id="qqbot-welcome-enabled" type="checkbox" role="switch" aria-describedby="qqbot-welcome-help" disabled>
-        <span>机器人进群时发欢迎语</span>
-      </label>
-      <p class="hint" id="qqbot-welcome-help">关掉后，机器人进群时不会提醒群主打开主动发言，请自行告诉群主。</p>
-      <button type="submit" class="ghost sm" id="qqbot-welcome-save" disabled>保存欢迎语设置</button>
-      <p class="hint" id="qqbot-welcome-result" role="status" hidden></p>
-    </form>
-    <section class="lc-sub">
-      <h3 class="lc-h">官方机器人超级管理员</h3>
-      <form class="fbox" id="qqbot-claim-generate">
-        <button type="submit" class="ghost sm">生成超管认领码</button>
-      </form>
-      <p class="hint" id="qqbot-claim-status" role="status"></p>
-      <div class="issued" id="qqbot-issued" role="status" hidden>
-        <b>请本人在官方群里 @机器人，发送下面这条命令。</b>
-        <p><code id="qqbot-claim-command"></code></p>
-        <p>认领码只显示这一次，请勿转发。</p>
-      </div>
-      <h4 class="lc-h">已认领的超级管理员</h4>
-      <div id="qqbot-claimed-admins"></div>
-      <p class="hint" id="qqbot-claim-result" role="status" hidden></p>
-    </section>
     <section class="lc-sub">
       <h3 class="lc-h">已加入的群</h3>
       <p class="hint">把机器人拉进群（个人主体要求你是群主或管理员），请群主打开主动发言。然后就可以在推送页选择这个群。</p>
       <p class="hint">群名以 QQ 接口取到的为准，备注只在控制台里显示，方便认出是哪个群。</p>
-      <button type="button" class="ghost sm" id="qqbot-refresh">刷新状态和群列表</button>
+      <div class="lc-actions">
+        <button type="button" class="ghost" id="qqbot-refresh">刷新状态和群列表</button>
+        <span class="lc-result" id="qqbot-refresh-result" role="status" hidden></span>
+      </div>
       ${loading}
-      <div class="tblwrap" id="qqbot-groups"></div>
+      <div class="tblwrap lc-table" id="qqbot-groups" role="region" aria-label="QQ群列表" tabindex="0"></div>
+    </section>
+    <section class="lc-sub">
+      <h3 class="lc-h">超级管理员</h3>
+      <form class="lc-actions" id="qqbot-claim-generate">
+        <button type="submit" class="primary">生成超管认领码</button>
+        <span class="lc-result" id="qqbot-claim-result" role="status" hidden></span>
+      </form>
+      <p class="hint" id="qqbot-claim-status" role="status"></p>
+      <div class="issued" id="qqbot-issued" hidden>
+        <b>请本人在官方群里 @机器人，发送下面这条命令。</b>
+        <p><code id="qqbot-claim-command"></code></p>
+        <p>认领码只显示这一次，请勿转发。</p>
+      </div>
+      <div id="qqbot-claimed-admins"></div>
+    </section>
+    <section class="lc-sub">
+      <h3 class="lc-h">其他设置</h3>
+      <div class="lc-actions">
+        <label class="switch">
+          <input id="qqbot-welcome-enabled" type="checkbox" role="switch" aria-describedby="qqbot-welcome-help" disabled>
+          <span>机器人进群时发欢迎语</span>
+        </label>
+        <span class="lc-result" id="qqbot-welcome-result" role="status" hidden></span>
+      </div>
+      <p class="hint" id="qqbot-welcome-help">关掉后，机器人进群时不会提醒群主打开主动发言，请自行告诉群主。</p>
+      <form id="qqbot-interval">
+        <div class="lc-fields">
+          <div class="lc-field">
+            <label for="qqbot-millis">发送间隔（毫秒）</label>
+            <input id="qqbot-millis" type="number" min="1000" max="60000" step="1" required>
+            <p class="hint">默认每 2 秒一条，即每分钟 30 条</p>
+          </div>
+        </div>
+        <div class="lc-actions">
+          <button type="submit" class="primary">保存</button>
+          <span class="lc-result" id="qqbot-interval-result" role="status" hidden></span>
+          <span class="lc-unsaved" id="qqbot-interval-unsaved" hidden>未保存</span>
+        </div>
+      </form>
     </section>`;
 }
 
 export async function refresh(refreshGroups = false) {
   if (!card || store.tab !== 'bot') return;
   clearIssuedCode(card);
-  showResult(card.claimResult, '');
-  await refreshView(card, refreshGroups);
+  return refreshView(card, refreshGroups);
 }
 
 async function refreshView(view, refreshGroups = false) {
@@ -178,10 +215,12 @@ async function refreshView(view, refreshGroups = false) {
     }
     if (request !== view.request) return;
     setSavedValue(view.appId, state.appId || '');
+    view.updateCredentials();
     view.secret.placeholder = state.secretMasked ? '已保存：' + state.secretMasked : '';
     view.unconfigured.hidden = state.configured;
     if (view.groups) {
       setSavedValue(view.interval, String(state.intervalMillis));
+      view.updateInterval();
       const expiresAt = state.claimCodeActive ? state.claimCodeExpiresAt : null;
       if (expiresAt !== view.issuedExpiry) clearIssuedCode(view);
       showClaimStatus(view, expiresAt);
@@ -190,47 +229,81 @@ async function refreshView(view, refreshGroups = false) {
     }
     view.load.textContent = '';
   } catch (error) {
-    if (request === view.request) view.load.textContent = '加载失败：' + error.message;
+    const message = '加载失败：' + error.message;
+    if (request === view.request) view.load.textContent = refreshGroups ? '' : message;
+    return message;
   } finally {
     await welcome;
   }
 }
 
 async function refreshWelcome(view, request) {
+  const revision = view.welcomeRevision;
+  const current = () => request === view.request && revision === view.welcomeRevision && !view.welcomeSaving;
   try {
     const result = await api(BASE + 'welcome', {cache: 'no-store'});
-    if (request !== view.request) return;
+    if (!current()) return;
     if (!result.success || typeof result.enabled !== 'boolean') throw new Error(result.message || '无法读取设置');
-    setSavedWelcome(view.welcome, result.enabled);
-    if (!view.welcomeLoaded) {
-      showResult(view.welcomeResult, '');
-      view.welcomeLoaded = true;
+    view.welcome.checked = view.welcome.defaultChecked = result.enabled;
+    if (view.welcome.disabled) {
+      showLinkResult(view.welcomeResult);
       view.welcome.disabled = false;
-      view.welcomeSave.disabled = false;
     }
   } catch (error) {
-    if (request === view.request) showResult(view.welcomeResult, '读取欢迎语设置失败：' + error.message, true);
+    if (current()) showLinkResult(view.welcomeResult, '读取欢迎语设置失败：' + error.message, 'err');
   }
 }
 
-async function save(view, event, path, body, message, onSaved, resultBox = view.result) {
+async function saveWelcome(view) {
+  const toggle = view.welcome;
+  if (toggle.disabled) return;
+  view.welcomeRevision++;
+  view.welcomeSaving = true;
+  toggle.disabled = true;
+  showLinkResult(view.welcomeResult, '正在保存…');
+  try {
+    const result = await post('welcome', {enabled: toggle.checked});
+    toggle.checked = toggle.defaultChecked = result.enabled;
+    showLinkResult(view.welcomeResult, '已保存', 'ok');
+  } catch (error) {
+    toggle.checked = toggle.defaultChecked;
+    showLinkResult(view.welcomeResult, error.message, 'err');
+  } finally {
+    view.welcomeSaving = false;
+    toggle.disabled = false;
+  }
+}
+
+function submitButton(event) {
+  return event.submitter || event.target.querySelector('button[type="submit"]');
+}
+
+async function post(path, body) {
+  const result = await api(BASE + path, {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)});
+  if (!result.success) throw new Error(result.message || '保存失败');
+  return result;
+}
+
+async function save(view, event, path, body, resultBox, message = '已保存', onClear) {
   event.preventDefault();
-  if (view.saving) return;
-  const button = event.submitter || event.target.querySelector('button[type="submit"]');
+  if (view.saving) {
+    showLinkResult(resultBox, '请等当前操作完成后重试。', 'warn');
+    return;
+  }
+  const button = submitButton(event);
   const inputs = event.target.querySelectorAll('input');
   view.saving = true;
   button.disabled = true;
   inputs.forEach(input => { input.disabled = true; });
-  showResult(resultBox, '正在保存…');
+  showLinkResult(resultBox, '正在保存…');
   try {
-    const result = await api(BASE + path, {method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(body)});
-    if (!result.success) throw new Error(result.message || '保存失败');
-    const followUp = onSaved?.(result);
-    showResult(resultBox, result.warning || message, !!result.warning);
-    await Promise.all([refreshView(view), followUp]);
+    const result = await post(path, body);
+    showLinkResult(resultBox, result.warning ? message + ' · ' + result.warning : message,
+      result.warning ? 'warn' : 'ok', '', onClear);
+    return result;
   } catch (error) {
-    showResult(resultBox, error.message, true);
+    showLinkResult(resultBox, error.message, 'err');
   } finally {
     view.saving = false;
     button.disabled = false;
@@ -259,6 +332,7 @@ function renderClaimedAdmins(container, admins) {
     container.innerHTML = '<p class="hint">还没有人认领超级管理员。</p>';
     return;
   }
+  const previous = formsByKey(container, 'member-num', 'memberNum');
   container.innerHTML = `<div role="list" aria-label="已认领的超级管理员">
     ${admins.map(admin => `<div class="todo" role="listitem">
       <div class="tt">
@@ -266,16 +340,20 @@ function renderClaimedAdmins(container, admins) {
         <p>认领群：${esc(admin.groupName)}</p>
         <p>认领时间：<time datetime="${esc(admin.claimedAt)}">${esc(displayTime(admin.claimedAt))}</time></p>
       </div>
-      <form data-member-num="${esc(admin.memberNum)}">
-        <button type="submit" class="ghost sm danger">撤销</button>
+      <form class="lc-actions" data-member-num="${esc(admin.memberNum)}">
+        <button type="submit" class="danger sm">撤销</button>
+        <span class="lc-result" role="status" hidden></span>
       </form>
     </div>`).join('')}</div>`;
+  for (const form of container.querySelectorAll('[data-member-num]')) {
+    const old = previous.get(form.dataset.memberNum);
+    if (old) form.replaceWith(old);
+  }
 }
 
-function showResult(element, message, notice = false) {
-  element.hidden = !message;
-  element.className = notice ? 'notice' : 'hint';
-  element.textContent = message;
+function formsByKey(container, attribute, key) {
+  return new Map(Array.from(container.querySelectorAll('[data-' + attribute + ']'),
+    form => [form.dataset[key], form]));
 }
 
 function setSavedValue(input, value, replace = false) {
@@ -284,29 +362,26 @@ function setSavedValue(input, value, replace = false) {
   input.value = draft;
 }
 
-function setSavedWelcome(input, checked, replace = false) {
-  const draft = !replace && input.checked !== input.defaultChecked ? input.checked : checked;
-  input.defaultChecked = checked;
-  input.checked = draft;
-}
-
 function renderGroups(container, groups) {
-  const drafts = new Map();
-  for (const form of container.querySelectorAll('[data-group-number]')) {
-    const input = form.querySelector('input');
-    if (input.value !== input.defaultValue) drafts.set(form.dataset.groupNumber, input.value);
-  }
+  const previous = formsByKey(container, 'group-number', 'groupNumber');
   if (!groups.length) {
     container.innerHTML = '<p class="hint">机器人尚未加入群。</p>';
     return;
   }
   container.innerHTML = `<table aria-label="已加入的群">
-    <thead style="white-space:nowrap"><tr><th style="min-width:8em">群名</th><th>备注</th><th>人数</th><th>机器人是管理员</th>
-      <th style="min-width:10em">主动发言</th><th style="min-width:10em">最近失败原因</th></tr></thead>
+    <thead><tr><th>群名</th><th>备注</th><th>人数</th><th>机器人是管理员</th>
+      <th>主动发言</th><th>最近失败原因</th></tr></thead>
     <tbody>${groups.map(groupRow).join('')}</tbody></table>`;
   for (const form of container.querySelectorAll('[data-group-number]')) {
-    const value = drafts.get(form.dataset.groupNumber);
-    if (value !== undefined) form.querySelector('input').value = value;
+    const input = form.querySelector('input');
+    const old = previous.get(form.dataset.groupNumber);
+    if (old) {
+      setSavedValue(old.querySelector('input'), input.defaultValue);
+      form.replaceWith(old);
+      groupEdits.get(old)();
+    } else {
+      groupEdits.set(form, trackLinkEdits([input], form.querySelector('.lc-unsaved')));
+    }
   }
 }
 
@@ -318,9 +393,10 @@ function groupRow(group) {
     : '';
   return `<tr${group.removed ? ' class="dim"' : ''}>
     <td>${esc(group.name)}${group.removed ? '<div>已移出</div>' : ''}</td>
-    <td><form class="fbox" data-group-number="${esc(group.num)}">
-      <div class="row"><input type="text" aria-label="备注" value="${esc(group.remark ?? '')}" style="width:min(190px,36vw)">
-        <button type="submit" class="ghost sm">保存备注</button></div>
+    <td><form class="lc-remark" data-group-number="${esc(group.num)}">
+      <div class="lc-field"><input type="text" aria-label="备注" value="${esc(group.remark ?? '')}"></div>
+      <div class="lc-actions"><button type="submit" class="ghost sm">保存备注</button>
+        <span class="lc-unsaved" hidden>未保存</span><span class="lc-result" role="status" hidden></span></div>
     </form></td>
     <td>${esc(group.memberCount ?? '—')}</td><td>${admin}</td>
     <td>${proactive}${help}</td><td>${esc(group.lastFailure || '—')}</td>
