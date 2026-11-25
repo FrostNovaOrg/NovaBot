@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {MiniNode, bracedFrom} from './layout-dom.mjs';
-import {targetOptions} from '../../../main/resources/config-ui/links-model.js';
+import {resolveTarget, targetOptions} from '../../../main/resources/config-ui/links-model.js';
 
 const ui = new URL('../../../main/resources/config-ui/', import.meta.url);
 const plugin = new URL('../../../../../../plugins/nova-console/src/main/resources/config-ui-pages/', import.meta.url);
@@ -34,6 +34,12 @@ const root = new MiniNode('main');
 root.innerHTML = read('index.html').split('<main')[1]?.split('</main>')[0].replace(/^[^>]*>/, '') || '';
 const $ = selector => root.querySelector(selector);
 const hasLoading = node => assert.ok(node?.querySelector('.content-loading'), '内容区缺少加载占位');
+
+function testMessageCard(api) {
+  const script = read('links.js').replace(/^import .*;$/gm, '').replace(/^export /gm, '');
+  return new Function('$', 'api', 'esc', 'loadingHtml', 'targetOptions', 'resolveTarget',
+    script + '\nreturn {loadTargets, sendTestMessage};')($, api, esc, loadingHtml, targetOptions, resolveTarget);
+}
 
 if (process.argv[2] === 'cards') {
   for (const id of ['linkmap', 'now-box', 'home-health-summary', 'probe-list', 'home-timeline', 'cfg-path', 'setup-main']) {
@@ -75,14 +81,51 @@ if (process.argv[2] === 'cards') {
     if (error) { assert.equal(host.querySelector('.content-loading'), null); assert.match(host.textContent, /获取失败/); }
     else { hasLoading(host); assert.match(host.textContent, /正在加载直播平台列表/); }
   });
+} else if (process.argv[2] === 'test-targets') {
+  let enabled = true;
+  let official = false;
+  const sent = [];
+  const api = async (path, request) => {
+    switch (path) {
+      case '/status': return {botChannel: {name: 'NapCat', enabled}};
+      case '/bot/targets?type=group': return {items: [
+        ...(enabled ? [{sender: 'qq-onebot', num: 1001, name: '测试群'}] : []),
+        ...(official ? [{sender: 'qq-official', num: 2001, name: '官方群'}] : []),
+      ]};
+      case '/bot/targets?type=friend': return {items: enabled ? [{sender: 'qq-onebot', num: 1002, nickname: '测试好友'}] : []};
+      case '/test-message':
+        sent.push(JSON.parse(request.body));
+        return {success: true, message: '已发送'};
+      default: throw new Error(path);
+    }
+  };
+  const links = testMessageCard(api);
+  const pick = $('#test-target');
+  await links.loadTargets(false);
+  check('启用时有群和好友', () => {
+    assert.match(pick.textContent, /测试群/);
+    assert.match(pick.textContent, /测试好友/);
+  });
+  enabled = false;
+  for (official of [false, true]) {
+    await links.loadTargets(false);
+    check('停用后说明原因，按可用目标决定能否发送 ' + official, () => {
+      const panel = $('#card-test').textContent;
+      assert.match(panel, /NapCat 通道已停用/);
+      assert.doesNotMatch(panel, /尚未加入|加入群组|添加为好友|测试群|测试好友/);
+      assert.equal($('#test-send').disabled, !official);
+    });
+  }
+  check('官方机器人群仍可选', () => assert.match(pick.textContent, /官方群/));
+  pick.value = 'qq-official|1|2001';
+  await links.sendTestMessage();
+  check('测试消息发往选中的官方机器人群', () =>
+    assert.deepEqual(sent, [{platform: 'qq-official', type: 1, num: 2001}]));
 } else if (process.argv[2] === 'requests') {
   for (const fail of [false, true]) {
     let resolve, reject;
     const pending = new Promise((ok, no) => { resolve = ok; reject = no; });
-    const loadTargets = compile(read('links.js'), 'export async function loadTargets(', {
-      $, api: () => pending, options: [], targetOptions, esc, loadingHtml,
-    });
-    const task = loadTargets(false);
+    const task = testMessageCard(() => pending).loadTargets(false);
     check('目标名单等待中', () => hasLoading($('#test-hint')));
     if (fail) reject(new Error('断网')); else resolve({groups: [], friends: []});
     await task;

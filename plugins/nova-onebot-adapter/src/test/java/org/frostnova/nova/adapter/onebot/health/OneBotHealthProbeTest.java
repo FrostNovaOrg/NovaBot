@@ -47,6 +47,17 @@ class OneBotHealthProbeTest {
     }
 
     @Test
+    @DisplayName("停用时旧连接的故障不再触发健康告警")
+    void disabledConfigurationSuppressesProbe() {
+        properties.getNapcat().setEnabled(false);
+        var state = new OneBotConnectionState();
+        state.httpFailed("qq-onebot", OneBotConnectionState.Kind.UNREACHABLE, "连接失败");
+        var probe = probe(state);
+        assertFalse(probe.active(), "主动停用时应停止监视这条连接");
+        assertEquals(HealthStatus.Level.OK, probe.check().level());
+    }
+
+    @Test
     @DisplayName("未配置任何机器人应判定为不可用")
     void reportsDownWhenNoSenderConfigured() {
         HealthStatus status = probe(new OneBotConnectionState()).check();

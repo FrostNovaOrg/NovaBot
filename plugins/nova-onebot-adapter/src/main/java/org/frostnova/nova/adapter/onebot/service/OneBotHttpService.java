@@ -13,6 +13,7 @@ import org.frostnova.nova.adapter.onebot.dto.MessageDTO;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.Sender;
+import org.frostnova.nova.core.sender.PlatformDeliveryGate;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -89,7 +90,7 @@ public class OneBotHttpService {
      * @return 推送平台信息，不存在时返回 null
      */
     public OneBotSender getSender(String name) {
-        return senders.get(name);
+        return properties.channelDisabled() ? null : senders.get(name);
     }
 
     /**
@@ -111,6 +112,7 @@ public class OneBotHttpService {
      * @param sender OneBot 推送平台信息
      */
     public void check(OneBotSender sender) {
+        if (properties.channelDisabled()) return;
         String senderName = sender.getName();
 
         log.info("开始检测 {} 的 OneBot HTTP 服务可用性", senderName);
@@ -132,6 +134,7 @@ public class OneBotHttpService {
             log.error("{} 的 OneBot HTTP Token 配置不正确, 将无法推送消息, 请检查 Token 配置", senderName, e);
             state.httpFailed(senderName, OneBotConnectionState.Kind.TOKEN_INVALID, "Token 不正确");
         } catch (Exception e) {
+            if (properties.channelDisabled()) return;
             log.error("{} 的 OneBot HTTP 服务不可用, 请检查配置和服务状态", senderName, e);
             state.httpFailed(senderName, OneBotConnectionState.Kind.UNREACHABLE, e.getMessage());
         }
@@ -157,6 +160,9 @@ public class OneBotHttpService {
      * @param message 消息
      */
     public JSONObject send(MessageDTO message) {
+        if (properties.channelDisabled()) {
+            return PlatformDeliveryGate.blockedResponse(OneBotAdapterPluginProperties.NapCat.DISABLED_REASON);
+        }
         OneBotSender sender = senders.get(message.getPlatform());
         if (sender == null) {
             log.warn("推送平台 {} 未注册, 已注册: {}", message.getPlatform(), senders.keySet());
@@ -196,6 +202,7 @@ public class OneBotHttpService {
             log.warn("{} 的 OneBot HTTP Token 配置不正确, 请检查 Token 配置", message.getPlatform());
             return new JSONObject().fluentPut("code", ResultCode.UNAUTHORIZED.getCode()).fluentPut("message", "Token 配置不正确").fluentPut("id", null);
         } catch (Exception e) {
+            if (properties.channelDisabled()) return PlatformDeliveryGate.blockedResponse(OneBotAdapterPluginProperties.NapCat.DISABLED_REASON);
             // 没送到（连接被拒、连接超时、找不到主机）不能包成普通结果。
             // 核心只在抛异常或结果为空时才按原有次数重试；包成非空结果，
             // NapCat 重启那几秒发出的开播通知就丢了。
@@ -241,6 +248,7 @@ public class OneBotHttpService {
         firstParams.put("message", text);
         JSONObject first = http.sendGroupMsg(sender, firstParams);
 
+        if (properties.channelDisabled()) return first;
         JSONObject secondParams = new JSONObject(params);
         secondParams.put("message", images);
         try {
@@ -341,6 +349,7 @@ public class OneBotHttpService {
      * @param sender OneBot 推送平台信息
      */
     private synchronized void startDetect(OneBotSender sender) {
+        if (properties.channelDisabled()) return;
         String senderName = sender.getName();
         ScheduledFuture<?> existing = detectTasks.get(senderName);
         if (existing != null && !existing.isCancelled()) {
@@ -350,6 +359,7 @@ public class OneBotHttpService {
         int detectInterval = properties.getDetect().getHttpDetectInterval();
 
         ScheduledFuture<?> task = taskScheduler.scheduleAtFixedRate(() -> executor.submit(() -> {
+            if (properties.channelDisabled()) return;
             try {
                 JSONObject status = http.getStatus(sender, new JSONObject());
 
@@ -377,7 +387,7 @@ public class OneBotHttpService {
      * 停掉某推送平台的 HTTP 可用性检测
      * @param platformName 推送平台名
      */
-    private void stopDetect(String platformName) {
+    synchronized void stopDetect(String platformName) {
         ScheduledFuture<?> previous = detectTasks.remove(platformName);
         if (previous != null) {
             previous.cancel(false);

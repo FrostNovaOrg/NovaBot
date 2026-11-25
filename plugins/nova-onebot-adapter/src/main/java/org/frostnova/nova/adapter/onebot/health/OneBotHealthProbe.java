@@ -63,6 +63,7 @@ public class OneBotHealthProbe implements HealthProbe {
 
     @Override
     public boolean active() {
+        if (properties.channelDisabled()) return false;
         if (!properties.getSenders().isEmpty() || !state.senders().isEmpty()) {
             return true;
         }
@@ -73,6 +74,7 @@ public class OneBotHealthProbe implements HealthProbe {
 
     @Override
     public HealthStatus check() {
+        if (properties.channelDisabled()) return HealthStatus.ok(OneBotAdapterPluginProperties.NapCat.DISABLED_REASON);
         Map<String, OneBotConnectionState.Entry> all = state.all();
         if (all.isEmpty()) {
             // 旧配置升上来时一个都没有，多半是旧根键整棵没被读：只说「去填」，使用者会对着早就填过的配置找不出错

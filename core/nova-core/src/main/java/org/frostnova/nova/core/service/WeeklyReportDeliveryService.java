@@ -150,7 +150,12 @@ public class WeeklyReportDeliveryService {
                 continue;
             }
             var target = targets.get(record.subscription());
-            if (gate.blockedBy() == PushGate.Block.DISABLED) {
+            String pause = target == null ? null : sender.platformBlock(target.getPlatform(), Instant.ofEpochMilli(record.dueAt()));
+            if (pause != null) {
+                if (store.update(record, Status.NOT_SENT, pause, now)) {
+                    sender.recordPlatformPause(target.getPlatform(), target.getType(), target.getNum(), "运营周报", pause);
+                }
+            } else if (gate.blockedBy() == PushGate.Block.DISABLED) {
                 store.update(record, Status.NOT_SENT, "全局推送开关已关闭", now);
             } else if (target == null) {
                 store.update(record, Status.NOT_SENT, inactiveReason(record.subscription()), now);
@@ -189,7 +194,8 @@ public class WeeklyReportDeliveryService {
         var sending = store.records().stream().filter(r -> r.subscription().equals(record.subscription())
                 && r.dueAt() == record.dueAt()).findFirst().orElseThrow();
         message.addOnSuccessCallback(() -> result(sending, Status.SENT, ""));
-        message.addOnFailureCallback(() -> result(sending, Status.FAILED, message.getFailureReason()));
+        message.addOnFailureCallback(() -> result(sending,
+                message.isBlockedByPushSwitch() ? Status.NOT_SENT : Status.FAILED, message.getFailureReason()));
         message.addOnUncertainCallback(() -> result(sending, Status.UNCERTAIN, message.getFailureReason()));
         try {
             var blocked = sender.sendWeeklyReport(message);

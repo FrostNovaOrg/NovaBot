@@ -94,6 +94,8 @@ const FIELDS = ['addr', 'hport', 'htoken', 'wport', 'wtoken'];
 
 // 表单改动计数是模块级的一张表，切段执行时与函数一并带上
 const edits = bracedFrom(src, 'const botFormEdits');
+// 三项检查都在通道已启用时执行，切出的函数需显式传入页面的通道状态。
+const channel = {enabled: true};
 
 // ① 切出 invalidateBotForm 真执行：save.disabled 由 false→true 且 out 含「重新测试连接」
 let q1 = 'missing';
@@ -101,7 +103,7 @@ try {
   const body = bracedFrom(src, 'function invalidateBotForm');
   if (!body) throw new Error('no function');
   const {$, byId} = fakeDom();
-  const fn = new Function('$', edits + '\n' + body + '\nreturn invalidateBotForm;')($);
+  const fn = new Function('$', 'channel', edits + '\n' + body + '\nreturn invalidateBotForm;')($, channel);
   const save = $('#bot-save');
   save.disabled = false;
   fn('bot');
@@ -119,7 +121,7 @@ try {
   const bind = bracedFrom(src, 'function bindBotForm');
   if (!bind) throw new Error('no bindBotForm');
   const {$, byId} = fakeDom();
-  const fn = new Function('$', edits + '\n' + (inv || '') + '\n' + bind + '\nreturn bindBotForm;')($);
+  const fn = new Function('$', 'channel', edits + '\n' + (inv || '') + '\n' + bind + '\nreturn bindBotForm;')($, channel);
   fn('bot');
   const eachOne = FIELDS.every(k => (byId['bot-' + k]?.listeners?.input || []).length === 1);
   if (!eachOne) {
@@ -141,7 +143,7 @@ try {
   if (!body) throw new Error('no testBotConnection');
   const {$, byId} = fakeDom();
   const api = async () => { throw new Error('down'); };
-  const fn = new Function('$', 'api', edits + '\n' + body + '\nreturn testBotConnection;')($, api);
+  const fn = new Function('$', 'api', 'channel', edits + '\n' + body + '\nreturn testBotConnection;')($, api, channel);
   $('#bot-save').disabled = false;
   await fn('bot');
   q3 = byId['bot-save'].disabled === true;

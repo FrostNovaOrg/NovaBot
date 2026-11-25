@@ -399,6 +399,22 @@ class WeeklyReportDeliveryServiceTest {
         assertTrue(service.status(key()).contains("全局推送开关已关闭"));
         props.getPush().setEnabled(true); service.check(false); assertEquals(0, sent.size());
     }
+    @Test @DisplayName("平台停用期间到期的周报不会在静音结束后补发")
+    void platformPauseFinishesQuietReport() {
+        var due = clock.instant();
+        String platform = target().getPlatform();
+        when(sender.platformBlock(platform, due)).thenReturn("通道已停用");
+        quiet = true;
+        service.check(false);
+        assertEquals(Status.NOT_SENT, status());
+        assertTrue(service.status(key()).contains("通道已停用"));
+        verify(sender).recordPlatformPause(platform, target().getType(), target().getNum(), "运营周报", "通道已停用");
+        when(sender.platformBlock(platform, due)).thenReturn(null);
+        quiet = false;
+        service.check(false);
+        verify(sender, never()).sendWeeklyReport(any());
+    }
+
     @Test @DisplayName("静音待发跨到下一期，上一期过期") void expiresNextMonday() {
         quiet = true; service.check(false);
         clock.at("2026-10-19T09:59:00"); service.check(false); assertEquals(Status.QUIET, status());

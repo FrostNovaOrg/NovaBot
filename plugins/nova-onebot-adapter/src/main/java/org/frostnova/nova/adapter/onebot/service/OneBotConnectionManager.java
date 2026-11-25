@@ -6,11 +6,13 @@ import org.frostnova.nova.adapter.onebot.health.OneBotConnectionState;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
 import org.frostnova.nova.core.account.BotConnectionTester;
 import org.frostnova.nova.core.plugin.NovaComponent;
+import org.frostnova.nova.core.sender.PlatformDeliveryGate;
 import org.frostnova.nova.core.lang.StringUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -31,7 +33,35 @@ import java.util.Map;
  */
 @Slf4j
 @NovaComponent
-public class OneBotConnectionManager {
+public class OneBotConnectionManager implements PlatformDeliveryGate {
+    // 队列里可能还压着上次启用期间的消息。重开时只接收此后新建的消息。
+    private volatile Instant enabledSince = Instant.MIN;
+
+    @Override
+    public String blockedReason(String platform, Instant createdAt) {
+        boolean blocked = properties.channelDisabled() || createdAt != null && createdAt.isBefore(enabledSince);
+        return blocked && properties.ownsPlatform(platform)
+                ? OneBotAdapterPluginProperties.NapCat.DISABLED_REASON : null;
+    }
+
+    public synchronized void setChannelEnabled(boolean enabled) {
+        if (properties.getNapcat().isEnabled() == enabled) return;
+        if (enabled) enabledSince = Instant.now();
+        properties.getNapcat().setEnabled(enabled);
+        OneBotTargetDirectory targets = targetDirectory.getIfAvailable();
+        for (OneBotSender sender : properties.getSenders()) {
+            if (targets != null) targets.invalidate(sender.getName());
+            if (enabled) {
+                boolean registered = controller.register(sender);
+                websocketService.start(sender);
+                if (registered) httpService.check(sender);
+            } else {
+                websocketService.stop(sender.getName());
+                httpService.stopDetect(sender.getName());
+            }
+        }
+    }
+
     /**
      * 这台机器上第一台机器人的平台名
      * <p>
@@ -39,7 +69,7 @@ public class OneBotConnectionManager {
      * 与发行包里那份配置示例写的是同一个名字：照示例装的机器与从控制台配出来的机器，
      * 这一项必须一致，否则两台机器上同一份推送配置一台能用一台不能。
      */
-    static final String FIRST_SENDER_NAME = "qq-onebot";
+    static final String FIRST_SENDER_NAME = OneBotAdapterPluginProperties.DEFAULT_PLATFORM;
 
     /**
      * 这台机器上第一台机器人的推送接口路径
@@ -119,6 +149,11 @@ public class OneBotConnectionManager {
 
         Map<String, String> configuration = configurationOf(sender);
 
+        if (properties.channelDisabled()) {
+            controller.register(sender);
+            return new BotConnectionTester.Applied(false,
+                    OneBotAdapterPluginProperties.NapCat.DISABLED_REASON, configuration, true);
+        }
         if (!controller.register(sender)) {
             return new BotConnectionTester.Applied(false,
                     "还缺 OneBot HTTP Token，这条连接接不上；填好之后再存一次", configuration);

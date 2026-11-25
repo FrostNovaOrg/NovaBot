@@ -1,6 +1,7 @@
 package org.frostnova.nova.adapter.onebot.service;
 
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
 import org.frostnova.nova.core.event.remote.NovaRemoteMessageEvent;
 import org.junit.jupiter.api.BeforeEach;
@@ -36,6 +37,8 @@ import static org.mockito.Mockito.verify;
 class OneBotRawMessageReplyTest {
     private static final String SENDER_NAME = "测试机器人";
 
+    private final OneBotAdapterPluginProperties properties = new OneBotAdapterPluginProperties();
+
     private WebSocketSession session;
 
     private ApplicationEventPublisher publisher;
@@ -51,6 +54,17 @@ class OneBotRawMessageReplyTest {
         sender.setName(SENDER_NAME);
 
         handler = newHandler(newService(), sender);
+    }
+
+    @Test
+    @DisplayName("停用后旧连接收到群命令也不交给核心")
+    void disabledChannelIgnoresIncomingCommand() throws Exception {
+        properties.getNapcat().setEnabled(false);
+        handler.handleMessage(session, message("菜单"));
+        var privateMessage = JSONObject.of("post_type", "message", "message_type", "private",
+                "user_id", 2000000002L, "raw_message", "认领", "message", "认领");
+        handler.handleMessage(session, new TextMessage(privateMessage.toJSONString()));
+        verify(publisher, never()).publishEvent(any(NovaRemoteMessageEvent.class));
     }
 
     @Test
@@ -106,6 +120,8 @@ class OneBotRawMessageReplyTest {
         for (int i = 0; i < types.length; i++) {
             if (types[i] == ThreadPoolTaskExecutor.class) {
                 args[i] = inlineExecutor();
+            } else if (types[i].isInstance(properties)) {
+                args[i] = properties;
             } else if (types[i] == ApplicationEventPublisher.class) {
                 args[i] = publisher;
             } else {

@@ -39,6 +39,7 @@ import java.util.function.BooleanSupplier;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -224,6 +225,27 @@ class OneBotRuntimeConnectionTest {
 
         await("Websocket 该连上", () -> websocket.open() == 1);
         assertEquals(List.of("Bearer ws-token"), websocket.authorizations(), "握手该带上刚存下的 Token");
+    }
+
+    @Test
+    @DisplayName("停用后套接字断开，重开后重新握手并能投递群消息")
+    void channelSwitchReopensSocketAndGroupDelivery() {
+        save(websocket.port());
+        await("首次连接已建立", () -> websocket.open() == 1);
+        manager.setChannelEnabled(false);
+        await("主动停用已断开", () -> websocket.open() == 0);
+        var message = new org.frostnova.nova.adapter.onebot.dto.MessageDTO();
+        message.setPlatform(OneBotConnectionManager.FIRST_SENDER_NAME);
+        message.setContent("测试");
+        message.setType(org.frostnova.nova.core.enums.PushTargetType.GROUP);
+        message.setNum(FakeOneBotHttpServer.GROUP_NUM);
+        assertNotEquals(0, httpService.send(message).getIntValue("code"));
+        assertTrue(http.groupMessages().isEmpty());
+
+        manager.setChannelEnabled(true);
+        await("新的连接已建立", () -> websocket.open() == 1);
+        assertEquals(0, httpService.send(message).getIntValue("code"));
+        assertEquals(1, http.groupMessages().size());
     }
 
     @Test

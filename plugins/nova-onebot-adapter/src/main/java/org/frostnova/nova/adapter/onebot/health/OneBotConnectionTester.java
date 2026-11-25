@@ -60,7 +60,18 @@ public class OneBotConnectionTester implements BotConnectionTester {
     }
 
     @Override
+    public Optional<ChannelSwitch> channelSwitch() {
+        return Optional.of(new ChannelSwitch(OneBotAdapterPluginProperties.NapCat.ENABLED_KEY, "NapCat",
+                !properties.channelDisabled(),
+                properties.routesQqAlerts() ? "停用后 QQ 告警发不出去，邮件和 Webhook 告警照常。" : "",
+                properties.getSenders().stream().map(OneBotSender::getName).toList()));
+    }
+
+    @Override
     public Result test(String address, int httpPort, String httpToken) {
+        if (properties.channelDisabled()) {
+            return Result.failed(OneBotAdapterPluginProperties.NapCat.DISABLED_REASON, "请到连接页启用通道后再测试");
+        }
         OneBotSender sender = new OneBotSender();
         // 用保留名，让耗时统计等按平台聚合的指标能把这次临时调用排除掉：
         // 测试连接常常正是指向一个填错的地址，混进真实平台的统计会把它带歪

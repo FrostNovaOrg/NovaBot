@@ -17,8 +17,8 @@ import java.lang.reflect.Proxy;
 @NovaComponent
 public class OneBotHttpAdapterRegistrar {
     @Bean
-    public OneBotHttpAdapterProxy oneBotHttpAdapterProxy(HttpUtil http, OneBotConnectionState state) {
-        return new OneBotHttpAdapterProxy(http, state);
+    public OneBotHttpAdapterProxy oneBotHttpAdapterProxy(HttpUtil http, OneBotConnectionState state, OneBotAdapterPluginProperties properties) {
+        return new OneBotHttpAdapterProxy(http, state, properties);
     }
 
     @Bean

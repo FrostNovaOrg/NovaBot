@@ -33,6 +33,7 @@ import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.sender.PushGate;
 import org.frostnova.nova.core.sender.AtMode;
 import org.frostnova.nova.core.sender.NovaMessageSender;
+import org.frostnova.nova.core.sender.PlatformDeliveryGate;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.LiveSessionArchive;
 import org.frostnova.nova.core.service.PushTemplateDefaults;
@@ -967,7 +968,10 @@ public class ConfigUiController {
         ConfigurationGroups.all().forEach(group -> buckets.put(group, new JSONArray()));
         JSONArray orphans = new JSONArray();
 
+        // 连接卡上的开关只在那里编辑，设置页不再生成第二个控件。
+        String channelKey = botChannel().map(BotConnectionTester.ChannelSwitch::key).orElse("");
         for (ConfigurationMetadataService.ConfigurationField field : metadataService.getFields()) {
+            if (field.name().equals(channelKey)) continue;
             ConfigurationGroups.Group group = groupTable.groupOf(field.name());
 
             JSONObject item = new JSONObject();
@@ -1205,7 +1209,7 @@ public class ConfigUiController {
      * @return 保存结果，含改动项数、其中需重启的项数与它们的键名；键名不认得时回 400
      */
     @PostMapping("/api/values")
-    public ResponseEntity<JSONObject> save(@RequestBody Map<String, String> body) {
+    public synchronized ResponseEntity<JSONObject> save(@RequestBody Map<String, String> body) {
         JSONObject result = new JSONObject();
 
         // 界面拿到的机密项是占位值，原样送回来的就是没改过的。不剔除的话，
@@ -1297,6 +1301,14 @@ public class ConfigUiController {
         try {
             List<String> changedKeys = fileService.write(normalized);
             ConfigUiOperationAdvice.changedKeys(changedKeys);
+            if (!changedKeys.isEmpty() && ConfigUiAccess.request() != null) {
+                botChannel().filter(channel -> changedKeys.contains(channel.key())).ifPresent(channel -> {
+                    String value = normalized.get(channel.key());
+                    String action = value == null || Boolean.parseBoolean(value) ? "启用" : "停用";
+                    ConfigUiAccess.request().setAttribute(ConfigUiOperationFilter.ACTION,
+                            new ConfigUiOperationCatalog.Action("BOT_CHANNEL_TOGGLE", action + " " + channel.name() + " 通道", Map.of()));
+                });
+            }
 
             // 只对真正落盘的那几个键动运行中的配置：送上来但值没变的项不该触发任何副作用。
             // 删掉的那几项对运行时按「没有值」落地（空串）——写口里的 null 是删键，两处含义不同
@@ -1536,6 +1548,10 @@ public class ConfigUiController {
         return result;
     }
 
+    private Optional<BotConnectionTester.ChannelSwitch> botChannel() {
+        return connectionTesters.orderedStream().findFirst().flatMap(BotConnectionTester::channelSwitch);
+    }
+
     @GetMapping("/api/setup/bot")
     public JSONObject currentBot() {
         JSONObject result = new JSONObject();
@@ -1663,7 +1679,7 @@ public class ConfigUiController {
             fileService.writeListItemFields(listKey, 0, applied.configuration());
             log.info("{} 存了机器人连接", ConfigUiAccess.actor());
             result.put("success", true);
-            result.put("message", applied.live()
+            result.put("message", applied.disabled() ? "已保存，" + applied.detail() : applied.live()
                     ? "已保存，此连接已建立：" + applied.detail()
                     : "已保存，重启后生效：" + applied.detail());
         } catch (IOException e) {
@@ -1842,6 +1858,8 @@ public class ConfigUiController {
                 result.put("message", skipped == 0
                         ? "已发送，请到对应会话中确认是否收到"
                         : "已发送（有 " + skipped + " 条被跳过，多为 @全体成员 无权限或超出每日配额），请到对应会话中确认");
+            } else if (failure != null && failure.getBooleanValue(PlatformDeliveryGate.BLOCKED)) {
+                result.put("message", failure.getString("message"));
             } else if (failure != null) {
                 result.put("message", "发送失败：" + failure.getString("message"));
                 result.put("advice", "常见原因：目标号填错、机器人不在该群、机器人程序未启动、Token 不匹配。"
@@ -2299,6 +2317,7 @@ public class ConfigUiController {
         JSONObject result = new JSONObject();
         result.put("success", true);
         result.put("health", health());
+        botChannel().ifPresent(channel -> result.put("botChannel", channel));
 
         List<Map<String, Object>> users = new ArrayList<>();
         dataSource.getAllUsers().forEach(user -> {

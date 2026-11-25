@@ -37,7 +37,8 @@ function station(key, seg) {
     + STATION_ICONS[key] + '</svg></span>'
     + '<span class="lm-info"><span class="lm-nm">' + esc(seg.station) + '</span>'
     + '<span class="lm-sub"><span class="lamp ' + esc(seg.level) + '" aria-hidden="true"></span>'
-    + esc(state) + '</span></span>'
+    + esc(state) + '</span>'
+    + (seg.channelNote ? '<span class="lm-sub">' + esc(seg.channelNote) + '</span>' : '') + '</span>'
     + '<span class="lm-arrow" aria-hidden="true">→</span>'
     + '</button>';
 }
