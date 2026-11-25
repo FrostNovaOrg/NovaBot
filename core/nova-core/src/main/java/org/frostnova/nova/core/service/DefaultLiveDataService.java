@@ -2,7 +2,9 @@ package org.frostnova.nova.core.service;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson2.JSONWriter;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.model.LiveGap;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.event.datasource.NovaBaseDataSourceEvent;
@@ -16,6 +18,7 @@ import org.frostnova.nova.core.model.UserScore;
 import org.frostnova.nova.core.util.FaceUrlCodec;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.ContextClosedEvent;
@@ -31,6 +34,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -48,13 +52,12 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class DefaultLiveDataService implements LiveDataService {
     private final NovaCoreProperties properties;
+    private final ObjectProvider<AbstractDataSource> dataSources;
+    private volatile boolean dataSourceLoaded;
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
 
-    /**
-     * 写盘锁。包住取快照和写盘，避免两趟保存交错。
-     * 指标写入只拿 {@link #metricLock}，不拿这把锁，磁盘慢时不挡住消息线程。
-     */
+    /** 单独使用直播数据服务时的写盘锁。运行中的 NovaBot 用数据源的锁。 */
     private final Object writeLock = new Object();
 
     /**
@@ -75,9 +78,14 @@ public class DefaultLiveDataService implements LiveDataService {
 
     private JSONObject cache = new JSONObject();
 
-    @Autowired
     public DefaultLiveDataService(NovaCoreProperties properties) {
+        this(properties, null);
+    }
+
+    @Autowired
+    public DefaultLiveDataService(NovaCoreProperties properties, ObjectProvider<AbstractDataSource> dataSources) {
         this.properties = properties;
+        this.dataSources = dataSources;
     }
 
     /**
@@ -131,6 +139,16 @@ public class DefaultLiveDataService implements LiveDataService {
             log.info("直播数据加载完成");
             readWatermark();
             autoSave();
+        }
+    }
+
+    /** 监听清单由 LoadDataSourceListener 在顺序 0 加载。 */
+    @Order(1)
+    @EventListener(ApplicationReadyEvent.class)
+    public void onDataSourceLoaded() {
+        dataSourceLoaded = true;
+        if (properties.getLive().isSaveLiveData()) {
+            saveNow(false);
         }
     }
 
@@ -198,12 +216,15 @@ public class DefaultLiveDataService implements LiveDataService {
             return;
         }
         String liveDataPath = properties.getLive().getLiveDataPath();
-        synchronized (writeLock) {
-            try {
-                DurableFiles.replace(Path.of(liveDataPath), snapshot(cleanShutdown));
-            } catch (Exception e) {
-                log.error("保存直播数据至 {} 异常", liveDataPath, e);
+        try {
+            AbstractDataSource source = dataSources == null ? null : dataSources.getIfAvailable();
+            // 数据源持锁变更名单，并在变更事件中同步保存。取快照和写盘也用同一把锁。
+            synchronized (source == null ? writeLock : source) {
+                List<PushUser> loadedUsers = source != null && dataSourceLoaded ? source.getAllUsers() : null;
+                DurableFiles.replace(Path.of(liveDataPath), snapshot(cleanShutdown, loadedUsers));
             }
+        } catch (Exception e) {
+            log.error("保存直播数据至 {} 异常", liveDataPath, e);
         }
     }
 
@@ -289,8 +310,9 @@ public class DefaultLiveDataService implements LiveDataService {
      * 落盘时刻在这里盖章而不是由调用方传：它必须与这一份快照的内容严格对应，
      * 否则「采集到哪儿为止」就成了一个近似值。
      * @param cleanShutdown 本次是否为正常退出时的收尾保存
+     * @param loadedUsers 已加载的主播名单，数据源就绪前为 null
      */
-    private String snapshot(boolean cleanShutdown) {
+    private String snapshot(boolean cleanShutdown, List<PushUser> loadedUsers) {
         synchronized (metricLock) {
             long now = System.currentTimeMillis();
             activeMonitoring.values().forEach(segment -> segment.put("to", now));
@@ -301,8 +323,27 @@ public class DefaultLiveDataService implements LiveDataService {
             }
             cache.put(KEY_LAST_SAVE_TIME, now);
             cache.put(KEY_CLEAN_SHUTDOWN, cleanShutdown);
+            if (loadedUsers == null) {
+                // 启动水位线先于数据源加载写盘，此时还无法给出在播名单。
+                cache.put(KEY_LIVE_NOW, null);
+                return cache.toJSONString(JSONWriter.Feature.WriteNulls);
+            }
+            cache.put(KEY_LIVE_NOW, liveNow(loadedUsers));
             return cache.toJSONString();
         }
+    }
+
+    private Map<String, Set<Long>> liveNow(List<PushUser> loadedUsers) {
+        Map<String, Set<Long>> living = new TreeMap<>();
+        for (PushUser user : loadedUsers) {
+            String platform = user.getPlatform();
+            Long uid = user.getUid();
+            if (!Boolean.FALSE.equals(user.getEnabled()) && platform != null && uid != null
+                    && getLiveStatus(platform, uid).orElse(false)) {
+                living.computeIfAbsent(platform, ignored -> new LinkedHashSet<>()).add(uid);
+            }
+        }
+        return living;
     }
 
     // ================ 采集水位线与停机缺口 ================
@@ -316,6 +357,8 @@ public class DefaultLiveDataService implements LiveDataService {
      * 上次是否正常退出的存放键
      */
     private static final String KEY_CLEAN_SHUTDOWN = "CleanShutdown";
+
+    private static final String KEY_LIVE_NOW = "LiveNow";
 
     /**
      * 停机区间列表的存放键
@@ -701,8 +744,10 @@ public class DefaultLiveDataService implements LiveDataService {
     @Override
     public void setLiveStatus(@NonNull String platform, @NonNull Long uid, boolean status) {
         String key = "LiveStatus:" + platform;
-        cache.putIfAbsent(key, new JSONObject());
-        cache.getJSONObject(key).put(String.valueOf(uid), status);
+        synchronized (metricLock) {
+            cache.putIfAbsent(key, new JSONObject());
+            cache.getJSONObject(key).put(String.valueOf(uid), status);
+        }
     }
 
     // ================ 直播开始时间 ================
