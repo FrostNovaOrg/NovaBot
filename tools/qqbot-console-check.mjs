@@ -40,8 +40,19 @@ const {render, refresh} = await import(encodeModule(source
   .replace("'./link-feedback.js'", JSON.stringify(new URL('link-feedback.js', ui).href))));
 
 const state = {success: true, configured: false, intervalMillis: 2000, groups: []};
+const refreshId = 'fixture-refresh';
+const retryAt = '2026-11-24T10:19:00Z';
+const refreshResults = [
+  {num: groupNumber, state: {status: 'RECENT', retryAfterSeconds: 18}, info: {status: 'QUERIED'}},
+  {num: 3, state: {status: 'QUERIED'}, info: {status: 'RECENT', retryAfterSeconds: 59}},
+  {num: 4, state: {status: 'COOLDOWN', retryAt}, info: {status: 'IN_PROGRESS'}},
+  {num: 5, state: {status: 'IN_PROGRESS'}, info: {status: 'RECENT', retryAfterSeconds: 59}},
+  {num: 6, state: {status: 'NO_REPLY', reason: '连不上 QQ 接口'},
+    info: {status: 'NO_REPLY', reason: '连不上 QQ 接口'}},
+];
 let welcomeEnabled = true;
 let rejectWelcome = false;
+let cooldownExpiresDuringRefresh = false;
 const prefix = '/test/config/api/qqbot/';
 let reached = '/';
 const posted = [];
@@ -51,6 +62,17 @@ globalThis.fetch = async (path, options) => {
   let response;
   if (reached === 'state') {
     assert.equal(options.cache, 'no-store');
+    response = state;
+  } else if (reached === 'state?refresh=true') {
+    response = {...state, refreshId, refreshing: true, refreshResults: refreshResults.map(group => ({
+      ...group, state: group.state.status === 'QUERIED' ? {status: 'QUEUED'} : group.state
+    }))};
+  } else if (reached === 'state?refresh=false&refreshId=' + refreshId) {
+    const completed = cooldownExpiresDuringRefresh ? refreshResults.map(group =>
+      group.state.status === 'COOLDOWN' ? {...group, state: {...group.state, retryAfterSeconds: 0}} : group)
+      : refreshResults;
+    response = {...state, refreshId, refreshing: false, refreshResults: completed};
+  } else if (reached === 'state?refresh=false') {
     response = state;
   } else if (reached === 'welcome' && options.method !== 'POST') {
     assert.equal(options.cache, 'no-store');
@@ -220,10 +242,39 @@ groupInput.value = '';
 await submit(groups, groupForm);
 assert.deepEqual(posted[3], ['groups/' + groupNumber + '/remark', {remark: ''}]);
 assert.match(groups.innerHTML, /aria-label="备注" value=""/);
+state.groups[0].proactiveSource = 'GROUP_STATE_API';
+state.groups[0].proactiveAt = claimTime;
+state.groups.push(
+  {num: 3, name: '节目群', proactive: 'ENABLED', proactiveSource: 'SEND_SUCCESS', proactiveAt: claimTime},
+  {num: 4, name: '活动群', proactive: 'DISABLED', proactiveSource: 'SEND_ERROR', proactiveAt: claimTime},
+  {num: 5, name: '聊天群', proactive: 'ENABLED', proactiveSource: 'EVENT', proactiveAt: claimTime},
+  {num: 6, name: '读书群'});
 await reload.listeners.get('click')();
 assert.equal(linkRefreshes, 2);
 assert.equal(password.value, '');
+const refreshSummary = elements['refresh-result'];
+assert.match(refreshSummary.textContent, /主动发言问了 1 个群.*1 个群没问成：连不上 QQ 接口/);
+assert.match(refreshSummary.textContent, /群资料问了 1 个群.*1 个群没问成：连不上 QQ 接口/);
+assert.match(refreshSummary.textContent, /1 个刚查过.*接口冷却.*1 个已经在查/);
+assert.match(groups.innerHTML, /<th>群名<\/th><th>主动发言<\/th>/);
+assert.match(groups.innerHTML, /QQ 群状态接口 <time[^>]*datetime="2026-11-24T10:00:00Z"[^>]*>[^<]+<\/time> 回的/);
+assert.match(groups.innerHTML, /<\/time> 发消息成功/);
+assert.match(groups.innerHTML, /<\/time> 发消息被 QQ 拒（错误码 40034105）/);
+assert.match(groups.innerHTML, /群主 <time[^>]*>[^<]+<\/time> 打开开关/);
+assert.match(groups.innerHTML, /刚查过，约 18 秒后可再查/);
+assert.match(groups.innerHTML, /QQ 接口冷却中，[^<]+ 后再查/);
+assert.match(groups.innerHTML, /已经在查/);
+assert.match(groups.innerHTML, /本次：没问成（连不上 QQ 接口）/);
+assert.match(groups.innerHTML, /本次群资料：没问成（连不上 QQ 接口）/);
+
+// 等待群资料回包期间，主动发言接口的冷却到期。
+cooldownExpiresDuringRefresh = true;
+await reload.listeners.get('click')();
+assert.match(refreshSummary.textContent, /接口冷却.*现在已可再查/);
+assert.doesNotMatch(refreshSummary.textContent, /接口冷却中/);
+assert.match(groups.innerHTML, /QQ 接口冷却已结束，可以再查/);
 console.log('官方机器人卡：空态、密码遮罩与清空、群名只读与转义、间隔提醒、备注保存与清空、状态刷新通过');
+console.log('群状态刷新：汇总实际查询和跳过原因，四种主动发言记录显示来源和时间');
 
 assert.match(section.innerHTML, /超级管理员/);
 assert.match(elements['claim-status'].textContent, /没有有效的认领码/);
@@ -273,7 +324,7 @@ await submit(setupCredentials);
 assert.deepEqual(posted.at(-1), ['credentials', {appId: '87654321', appSecret: secret}]);
 assert.equal(setupSecret.value, '');
 assert.deepEqual(connectionChanges, [true, false]);
-assert.equal(linkRefreshes, 2);
+assert.equal(linkRefreshes, 3);
 
 store.tab = 'bot';
 await refresh();

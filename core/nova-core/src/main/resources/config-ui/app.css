@@ -867,7 +867,14 @@ details.adv .inner{padding:0 16px 16px}
 .lc-table table{margin:0;min-width:600px}
 .lc-table table th{white-space:nowrap}
 #qqbot-groups table{min-width:740px}
-#qqbot-groups th:first-child,#qqbot-groups th:nth-child(5),#qqbot-groups th:nth-child(6){min-width:9em}
+#qqbot-groups th:first-child,#qqbot-groups th:last-child{min-width:9em}
+#qqbot-groups th:nth-child(2){min-width:15em}
+#qqbot-groups td:nth-child(2) time{white-space:nowrap}
+@media (max-width:560px){
+  #qqbot-groups th:first-child{width:7em;min-width:7em}
+  #qqbot-groups th:first-child,#qqbot-groups td:first-child{padding-inline:10px}
+  #qqbot-groups th:nth-child(2){width:15em}
+}
 #token-list th:first-child{min-width:9em}
 #token-list .fp,#token-list td:nth-child(3){white-space:nowrap}
 .lc-table .lc-result{max-width:220px}

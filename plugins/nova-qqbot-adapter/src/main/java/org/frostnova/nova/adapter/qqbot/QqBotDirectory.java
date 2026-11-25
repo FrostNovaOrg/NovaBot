@@ -25,6 +25,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -35,6 +36,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -59,6 +61,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     private static final Duration PROACTIVE_JOIN_GRACE = Duration.ofMinutes(10);
     private static final Duration FAILURE_COOLDOWN = Duration.ofHours(1);
     private static final Duration UNAVAILABLE_COOLDOWN = Duration.ofHours(24);
+    private static final int CONSOLE_REFRESH_HISTORY = 32;
     private static final Proactive UNKNOWN_SWITCH = new Proactive(ProactiveStatus.UNKNOWN, null, null);
     private static final BotEntries EMPTY = new BotEntries(Map.of(), Map.of(), Map.of());
 
@@ -69,7 +72,8 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     private final Function<byte[], byte[]> hash;
     private final QqBotDirectoryFile file;
     private final Map<String, BotEntries> bots;
-    private final Map<FetchKey, CountDownLatch> pending = new HashMap<>();
+    private final Map<FetchKey, FetchAttempt> pending = new HashMap<>();
+    private final Map<UUID, ConsoleRefresh> consoleRefreshes = new LinkedHashMap<>();
 
     @Autowired
     QqBotDirectory(QqBotSettings settings, QqBotApiClient api) {
@@ -93,8 +97,9 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
 
     @PreDestroy
     synchronized void stop() {
-        pending.values().forEach(CountDownLatch::countDown);
+        pending.values().forEach(FetchAttempt::complete);
         pending.clear();
+        consoleRefreshes.clear();
         if (executor instanceof ExecutorService service) {
             service.shutdownNow();
         }
@@ -145,7 +150,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         if (current.removed()) {
             for (Endpoint endpoint : Endpoint.values()) {
                 var request = pending.remove(new FetchKey(appId, number, endpoint));
-                if (request != null) request.countDown();
+                if (request != null) request.complete();
             }
         } else {
             schedule(appId, current, Endpoint.INFO);
@@ -288,16 +293,30 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         return group.joinedAt().plus(PROACTIVE_JOIN_GRACE);
     }
 
-    synchronized ConsoleGroups consoleGroups(Boolean refresh) {
+    ConsoleGroups consoleGroups(Boolean refresh) {
+        return consoleGroups(refresh, null);
+    }
+
+    synchronized ConsoleGroups consoleGroups(Boolean refresh, UUID refreshId) {
         requireReadable();
         String appId = settings.snapshot().appId();
         // 普通页面读取沿用原来的查询节奏。轮询只读取当前结果。
         if (refresh == null) scheduleGroups(appId, FetchReason.REGULAR);
-        else if (refresh) scheduleGroups(appId, FetchReason.CONSOLE_REFRESH);
+        else if (refresh) {
+            refreshId = UUID.randomUUID();
+            consoleRefreshes.put(refreshId, new ConsoleRefresh(appId, scheduleGroups(appId, FetchReason.CONSOLE_REFRESH)));
+            if (consoleRefreshes.size() > CONSOLE_REFRESH_HISTORY) {
+                consoleRefreshes.remove(consoleRefreshes.keySet().iterator().next());
+            }
+        }
+        ConsoleRefresh report = consoleRefreshes.get(refreshId);
+        if (report != null && !report.appId().equals(appId)) report = null;
         BotEntries bot = entries(appId);
         boolean refreshing = pending.keySet().stream()
                 .anyMatch(key -> key.appId().equals(appId));
-        return new ConsoleGroups(consoleGroupInfo(bot), refreshing);
+        Instant now = clock.instant();
+        return new ConsoleGroups(consoleGroupInfo(bot), refreshing, report == null ? null : refreshId.toString(),
+                report == null ? List.of() : report.groups().stream().map(group -> group.feedback(now)).toList());
     }
 
     private List<GroupInfo> consoleGroupInfo(BotEntries bot) {
@@ -324,6 +343,8 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
                 .map(group -> new GroupInfo(group.number(), display.apply(group.name()),
                         group.remark() == null ? null : display.apply(group.remark()), group.nameSource(),
                         group.memberCount(), group.role(), group.proactive().status(),
+                        group.proactive().source() == null ? null : group.proactive().source().name(),
+                        group.proactive().at() == null ? null : group.proactive().at().toString(),
                         group.lastFailure() == null ? null : display.apply(group.lastFailure()
                                 .consoleReason(displayName(group.name(), group.remark()))),
                         group.removed(), group.joinedAt().toString()))
@@ -392,14 +413,19 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         return List.of(new Snapshot(id(), groups, List.of(), now, now, false, null));
     }
 
-    private void scheduleGroups(String appId, FetchReason reason) {
+    private List<GroupRefresh> scheduleGroups(String appId, FetchReason reason) {
+        List<GroupRefresh> results = new ArrayList<>();
         for (GroupEntry group : entries(appId).groups().values()) {
             if (group.removed()) continue;
             boolean proactiveOnly = reason == FetchReason.AFTER_JOIN
                     || (reason == FetchReason.CONSOLE_REFRESH && group.proactive().status() != ProactiveStatus.ENABLED);
-            schedule(appId, group, proactiveOnly ? Endpoint.PROACTIVE_STATE : Endpoint.BOT_STATE, reason);
-            if (reason == FetchReason.CONSOLE_REFRESH) schedule(appId, group, Endpoint.INFO, reason);
+            var state = schedule(appId, group, proactiveOnly ? Endpoint.PROACTIVE_STATE : Endpoint.BOT_STATE, reason);
+            if (reason == FetchReason.CONSOLE_REFRESH) {
+                var info = schedule(appId, group, Endpoint.INFO, reason);
+                results.add(new GroupRefresh(group.number(), state, info));
+            }
         }
+        return results;
     }
 
     @Override
@@ -474,82 +500,97 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     }
 
     private CountDownLatch schedule(String appId, GroupEntry group, Endpoint endpoint) {
-        return schedule(appId, group, endpoint, FetchReason.REGULAR);
+        return schedule(appId, group, endpoint, FetchReason.REGULAR).done;
     }
 
-    private CountDownLatch schedule(String appId, GroupEntry group, Endpoint endpoint, FetchReason reason) {
+    private FetchAttempt schedule(String appId, GroupEntry group, Endpoint endpoint, FetchReason reason) {
         FetchKey key = new FetchKey(appId, group.number(), endpoint);
-        CountDownLatch existing = pending.get(key);
-        if (existing != null) return existing;
-        if (endpoint == Endpoint.PROACTIVE_STATE) {
+        FetchAttempt existing = pending.get(key);
+        if (existing == null && endpoint == Endpoint.PROACTIVE_STATE) {
             existing = pending.get(new FetchKey(appId, group.number(), Endpoint.BOT_STATE));
-            if (existing != null) return existing;
         }
-        if (!canFetch(entries(appId), group, endpoint, reason)) return null;
-        CountDownLatch ticket = new CountDownLatch(1);
-        pending.put(key, ticket);
+        if (existing != null) return new FetchAttempt(existing.done, new FetchResult(RefreshStatus.IN_PROGRESS, null));
+        FetchResult blocked = fetchBlock(entries(appId), group, endpoint, reason);
+        if (blocked != null) return new FetchAttempt(null, blocked);
+        FetchAttempt attempt = new FetchAttempt(new CountDownLatch(1), new FetchResult(RefreshStatus.QUEUED, null));
+        pending.put(key, attempt);
         try {
-            executor.execute(() -> fetch(key, ticket, reason));
+            executor.execute(() -> fetch(key, attempt, reason));
         } catch (RejectedExecutionException e) {
-            pending.remove(key, ticket);
-            return null;
+            pending.remove(key, attempt);
+            return new FetchAttempt(null, new FetchResult(RefreshStatus.UNAVAILABLE, null));
         }
-        return ticket;
+        return attempt;
     }
 
-    private boolean canFetch(BotEntries bot, GroupEntry group, Endpoint endpoint, FetchReason reason) {
+    private FetchResult fetchBlock(BotEntries bot, GroupEntry group, Endpoint endpoint, FetchReason reason) {
         Instant now = clock.instant();
         if (endpoint == Endpoint.PROACTIVE_STATE
                 || (endpoint == Endpoint.BOT_STATE && reason == FetchReason.CONSOLE_REFRESH)) {
-            if (!canFetchProactive(bot, group, reason, now)) return false;
-            if (endpoint == Endpoint.PROACTIVE_STATE) return true;
+            FetchResult blocked = proactiveFetchBlock(bot, group, reason, now);
+            if (blocked != null || endpoint == Endpoint.PROACTIVE_STATE) return blocked;
         }
         Refresh previous = group.refresh(endpoint);
-        if (coolingDown(bot.unavailableUntil().get(endpoint), now)) return false;
-        if (previous == null) return true;
-        if (previous.retryAt() != null) return !coolingDown(previous.retryAt(), now);
+        Instant cooldown = latest(bot.unavailableUntil().get(endpoint), previous == null ? null : previous.retryAt());
+        if (coolingDown(cooldown, now)) return new FetchResult(RefreshStatus.COOLDOWN, cooldown);
+        if (previous == null || previous.retryAt() != null) return null;
         Duration ttl = endpoint == Endpoint.INFO
                 ? (reason == FetchReason.CONSOLE_REFRESH ? INFO_REFRESH_TTL : INFO_TTL) : ROLE_TTL;
-        return !now.isBefore(previous.attemptedAt().plus(ttl));
+        return recentBlock(previous.attemptedAt().plus(ttl), now);
     }
 
-    private static boolean canFetchProactive(BotEntries bot, GroupEntry group, FetchReason reason, Instant now) {
+    private static FetchResult proactiveFetchBlock(BotEntries bot, GroupEntry group, FetchReason reason, Instant now) {
         if (reason == FetchReason.AFTER_JOIN
                 && (!awaitingProactiveConfirmation(group) || now.isBefore(proactiveGraceEnds(group)))) {
-            return false;
+            return new FetchResult(RefreshStatus.UNAVAILABLE, null);
         }
-        // 普通群状态查询也查主动发言，其失败同样限制主动发言复查。
-        if (coolingDown(bot.unavailableUntil().get(Endpoint.BOT_STATE), now)
-                || coolingDown(bot.unavailableUntil().get(Endpoint.PROACTIVE_STATE), now)) return false;
         Refresh role = group.botState();
         Refresh proactive = group.proactiveState();
-        if ((role != null && coolingDown(role.retryAt(), now))
-                || (proactive != null && coolingDown(proactive.retryAt(), now))) return false;
+        // 普通群状态查询也查主动发言，其失败同样限制主动发言复查。
+        Instant cooldown = latest(bot.unavailableUntil().get(Endpoint.BOT_STATE),
+                bot.unavailableUntil().get(Endpoint.PROACTIVE_STATE), role == null ? null : role.retryAt(),
+                proactive == null ? null : proactive.retryAt());
+        if (coolingDown(cooldown, now)) return new FetchResult(RefreshStatus.COOLDOWN, cooldown);
 
-        Instant attemptedAt = role == null ? null : role.attemptedAt();
-        if (proactive != null) {
-            attemptedAt = attemptedAt == null ? proactive.attemptedAt() : later(attemptedAt, proactive.attemptedAt());
+        Instant attemptedAt = latest(role == null ? null : role.attemptedAt(),
+                proactive == null ? null : proactive.attemptedAt());
+        if (attemptedAt == null || (reason == FetchReason.AFTER_JOIN && attemptedAt.isBefore(proactiveGraceEnds(group)))) {
+            return null;
         }
-        if (attemptedAt == null) return true;
-        if (reason == FetchReason.AFTER_JOIN) {
-            return attemptedAt.isBefore(proactiveGraceEnds(group)) || !now.isBefore(attemptedAt.plus(ROLE_TTL));
+        Duration ttl = reason == FetchReason.AFTER_JOIN || group.proactive().status() == ProactiveStatus.ENABLED
+                ? ROLE_TTL : PROACTIVE_REFRESH_TTL;
+        return recentBlock(attemptedAt.plus(ttl), now);
+    }
+
+    private static Instant latest(Instant... times) {
+        Instant latest = null;
+        for (Instant time : times) {
+            if (time != null && (latest == null || time.isAfter(latest))) latest = time;
         }
-        Duration ttl = group.proactive().status() == ProactiveStatus.ENABLED ? ROLE_TTL : PROACTIVE_REFRESH_TTL;
-        return !now.isBefore(attemptedAt.plus(ttl));
+        return latest;
+    }
+
+    private static FetchResult recentBlock(Instant retryAt, Instant now) {
+        return now.isBefore(retryAt) ? new FetchResult(RefreshStatus.RECENT, retryAt) : null;
     }
 
     private static boolean coolingDown(Instant retryAt, Instant now) {
         return retryAt != null && now.isBefore(retryAt);
     }
 
-    private void fetch(FetchKey key, CountDownLatch ticket, FetchReason fetchReason) {
+    private void fetch(FetchKey key, FetchAttempt attempt, FetchReason fetchReason) {
         try {
             GroupEntry before;
             synchronized (this) {
                 BotEntries bot = entries(key.appId());
                 before = bot.groups().get(key.number());
-                if (pending.get(key) != ticket || !key.appId().equals(settings.snapshot().appId())
-                        || before == null || before.removed() || !canFetch(bot, before, key.endpoint(), fetchReason)) {
+                if (pending.get(key) != attempt || !key.appId().equals(settings.snapshot().appId())
+                        || before == null || before.removed()) {
+                    return;
+                }
+                FetchResult blocked = fetchBlock(bot, before, key.endpoint(), fetchReason);
+                if (blocked != null) {
+                    attempt.result = blocked;
                     return;
                 }
             }
@@ -558,7 +599,13 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
             boolean unavailable = false;
             try {
                 String path = groupPath(before.openid()) + "/" + key.endpoint().path;
-                Object value = api.request("GET", path, null, key.appId());
+                Object value = api.queryGroup(path, key.appId(), outcome -> {
+                    synchronized (this) {
+                        attempt.result = outcome == QqBotApiClient.GroupQueryOutcome.REPLIED
+                                ? new FetchResult(RefreshStatus.QUERIED, null)
+                                : new FetchResult(RefreshStatus.NO_REPLY, null, outcome.reason());
+                    }
+                });
                 if (value instanceof JSONObject json) {
                     response = json;
                 } else {
@@ -572,7 +619,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
                 failure = new Failure(reason, clock.instant());
             }
             synchronized (this) {
-                if (pending.get(key) == ticket && key.appId().equals(settings.snapshot().appId())) {
+                if (pending.get(key) == attempt && key.appId().equals(settings.snapshot().appId())) {
                     applyFetch(key, before, response, failure, unavailable);
                 }
             }
@@ -580,8 +627,8 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
             log.warn("无法更新 QQ 官方机器人群资料，群号 {}，接口 {}", key.number(), key.endpoint().path);
         } finally {
             synchronized (this) {
-                pending.remove(key, ticket);
-                ticket.countDown();
+                pending.remove(key, attempt);
+                attempt.complete();
             }
         }
     }
@@ -851,9 +898,53 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     }
 
     record GroupInfo(long num, String name, String remark, NameSource nameSource, Integer memberCount, BotRole role,
-                     ProactiveStatus proactive, String lastFailure, boolean removed, String joinedAt) {}
+                     ProactiveStatus proactive, String proactiveSource, String proactiveAt,
+                     String lastFailure, boolean removed, String joinedAt) {}
 
-    record ConsoleGroups(List<GroupInfo> groups, boolean refreshing) {}
+    record ConsoleGroups(List<GroupInfo> groups, boolean refreshing, String refreshId,
+                         List<GroupRefreshFeedback> refreshResults) {}
+
+    record GroupRefreshFeedback(long num, FetchFeedback state, FetchFeedback info) {}
+
+    record FetchFeedback(RefreshStatus status, String retryAt, Long retryAfterSeconds, String reason) {}
+
+    enum RefreshStatus { QUEUED, QUERIED, RECENT, COOLDOWN, IN_PROGRESS, UNAVAILABLE, NO_REPLY }
+
+    private record ConsoleRefresh(String appId, List<GroupRefresh> groups) {}
+
+    private record GroupRefresh(long num, FetchAttempt state, FetchAttempt info) {
+        GroupRefreshFeedback feedback(Instant now) {
+            return new GroupRefreshFeedback(num, state.result.feedback(now), info.result.feedback(now));
+        }
+    }
+
+    private record FetchResult(RefreshStatus status, Instant retryAt, String reason) {
+        FetchResult(RefreshStatus status, Instant retryAt) {
+            this(status, retryAt, null);
+        }
+
+        FetchFeedback feedback(Instant now) {
+            if (retryAt == null) return new FetchFeedback(status, null, null, reason);
+            Duration remaining = Duration.between(now, retryAt);
+            long seconds = Math.max(0, remaining.getSeconds() + (remaining.getNano() == 0 ? 0 : 1));
+            return new FetchFeedback(status, retryAt.toString(), seconds, reason);
+        }
+    }
+
+    private static final class FetchAttempt {
+        private final CountDownLatch done;
+        private FetchResult result;
+
+        private FetchAttempt(CountDownLatch done, FetchResult result) {
+            this.done = done;
+            this.result = result;
+        }
+
+        private void complete() {
+            if (result.status() == RefreshStatus.QUEUED) result = new FetchResult(RefreshStatus.UNAVAILABLE, null);
+            done.countDown();
+        }
+    }
 
     record MemberEntry(long number, String openid, Instant firstSeenAt, Instant lastSeenAt) {
         MemberEntry {

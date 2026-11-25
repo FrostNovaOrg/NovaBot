@@ -27,6 +27,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @NovaComponent
@@ -49,7 +50,8 @@ public class QqBotConsoleController {
     }
 
     @GetMapping("/state")
-    public ResponseEntity<JSONObject> state(@RequestParam(name = "refresh", required = false) Boolean refresh) {
+    public ResponseEntity<JSONObject> state(@RequestParam(name = "refresh", required = false) Boolean refresh,
+                                            @RequestParam(name = "refreshId", required = false) UUID refreshId) {
         var config = settings.snapshot();
         var connection = probe.connectionState();
         var claims = members.claimState();
@@ -62,7 +64,7 @@ public class QqBotConsoleController {
                             "claimedAt", claim.claimedAt().toString());
                 }).toList();
         String level = probe.active() ? connection.health().level().name() : "OFF";
-        var groups = directory.consoleGroups(refresh);
+        var groups = directory.consoleGroups(refresh, refreshId);
         var body = JSONObject.of("success", true, "configured", config.configured(),
                 "appId", config.appId(), "secretMasked", config.maskedSecret(), "intervalMillis", config.intervalMillis(),
                 "connection", JSONObject.of("level", level, "summary", connection.health().summary(),
@@ -71,6 +73,10 @@ public class QqBotConsoleController {
                 "claimCodeActive", claims.expiresAt() != null,
                 "claimCodeExpiresAt", claims.expiresAt() == null ? null : claims.expiresAt().toString(),
                 "claimedAdmins", claimed);
+        if (groups.refreshId() != null) {
+            body.put("refreshId", groups.refreshId());
+            body.put("refreshResults", groups.refreshResults());
+        }
         return response(HttpStatus.OK, new ConsoleJsonBody(body));
     }
 
