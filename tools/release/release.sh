@@ -203,7 +203,7 @@ fi
 # 探针只输出判定，避免加载服务的日志配置。
 unset JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS
 result=$(java -Xmx64m -Dfile.encoding=UTF-8 -Dslf4j.provider=org.slf4j.helpers.NOP_FallbackServiceProvider \
-  -Dloader.home="$release_dir" -Dloader.path=lib \
+  -Dloader.home="$release_dir" -Dloader.path=lib,plugins,plugins-lib \
   -Dloader.main=org.frostnova.nova.core.release.LiveWindowProbe \
   -jar "$release_dir/NovaBot.jar" "$proc_dir" 2>/dev/null) ||
   unknown "直播数据探针运行失败"
