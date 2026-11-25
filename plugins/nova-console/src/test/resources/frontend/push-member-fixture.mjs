@@ -220,10 +220,14 @@ const cases = {
   },
   // 多平台实例的成员必须能选其他平台，查询和最终保存均应使用选中的平台。
   platforms: async () => {
-    await reset(); store.senderList = ['qq-onebot', 'qq-secondary']; await addDrawer();
+    await reset();
+    store.senderList = ['qq-onebot', 'qq-secondary', 'qq-official'];
+    store.senderAdapters = {'qq-onebot': 'onebot', 'qq-secondary': 'onebot'};
+    await addDrawer();
     const platform = drawer().querySelector('[aria-label="推送平台"]');
     assert.ok(platform, '多个平台应有下拉选择');
-    assert.equal(platform.querySelectorAll('option').length, 2, '合并来源后平台不重复');
+    assert.deepEqual(platform.querySelectorAll('option').map(option => [option.value, option.textContent]),
+      [['qq-onebot', 'NapCat（qq-onebot）'], ['qq-secondary', 'NapCat（qq-secondary）'], ['qq-official', '官方机器人']]);
     platform.value = 'qq-secondary'; await platform.dispatchEvent({type: 'change'});
     await lookup('82002');
     assert.equal(new URL(requests.at(-1).url, 'http://localhost').searchParams.get('platform'), 'qq-secondary');

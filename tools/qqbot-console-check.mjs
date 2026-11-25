@@ -71,8 +71,8 @@ globalThis.fetch = async (path, options) => {
     } else if (reached === 'admin-claims/' + memberNumber + '/revoke') {
       state.claimedAdmins = [];
     } else {
-      assert.equal(reached, 'groups/' + groupNumber + '/name');
-      state.groups[0].name = body.name;
+      assert.equal(reached, 'groups/' + groupNumber + '/remark');
+      state.groups[0].remark = body.remark;
     }
   }
   return {status: 200, json: async () => response};
@@ -137,6 +137,8 @@ assert.equal(password.placeholder, '已保存：fi…et');
 assert.ok(unconfigured.hidden);
 assert.equal(linkRefreshes, 1);
 assert.match(groups.innerHTML, /群&quot;&gt;&lt;img src=x onerror=&quot;bad\(\)&quot;&gt;/);
+assert.match(groups.innerHTML, /<td>群&quot;/);
+assert.doesNotMatch(groups.innerHTML, /aria-label="群名"/);
 assert.match(groups.innerHTML, /&lt;b&gt;请求失败&lt;\/b&gt;/);
 assert.doesNotMatch(groups.innerHTML, /<img|<b>请求失败/);
 assert.match(groups.innerHTML, /<td>42<\/td><td>是<\/td>/);
@@ -150,16 +152,21 @@ assert.equal(millis.value, '1000');
 assert.equal(result.textContent, warning);
 
 const groupInput = new Node();
-groupInput.value = '主播一群';
+groupInput.value = '节目组';
 const groupForm = new Node([groupInput]);
 groupForm.dataset = {groupNumber};
 await submit(groups, groupForm);
-assert.deepEqual(posted[2], ['groups/' + groupNumber + '/name', {name: '主播一群'}]);
-assert.match(groups.innerHTML, /value="主播一群"/);
+assert.deepEqual(posted[2], ['groups/' + groupNumber + '/remark', {remark: '节目组'}]);
+assert.match(groups.innerHTML, /aria-label="备注" value="节目组"/);
+assert.match(groups.innerHTML, /<td>群&quot;/);
+groupInput.value = '';
+await submit(groups, groupForm);
+assert.deepEqual(posted[3], ['groups/' + groupNumber + '/remark', {remark: ''}]);
+assert.match(groups.innerHTML, /aria-label="备注" value=""/);
 await reload.listeners.get('click')();
 assert.equal(linkRefreshes, 2);
 assert.equal(password.value, '');
-console.log('官方机器人卡：空态、密码遮罩与清空、群名转义、间隔提醒、改名和状态刷新通过');
+console.log('官方机器人卡：空态、密码遮罩与清空、群名只读与转义、间隔提醒、备注保存与清空、状态刷新通过');
 
 assert.match(section.innerHTML, /机器人进群时发欢迎语/);
 assert.equal(welcomeToggle.checked, true);

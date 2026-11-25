@@ -3,6 +3,7 @@ package org.frostnova.nova.adapter.qqbot;
 import com.alibaba.fastjson2.JSONObject;
 import jakarta.servlet.http.HttpServletResponse;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
+import org.frostnova.nova.core.config.ui.ConsoleJsonBody;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -62,14 +63,15 @@ public class QqBotConsoleController {
                 }).toList();
         String level = probe.active() ? connection.health().level().name() : "OFF";
         var groups = directory.consoleGroups(refresh);
-        return response(HttpStatus.OK, JSONObject.of("success", true, "configured", config.configured(),
+        var body = JSONObject.of("success", true, "configured", config.configured(),
                 "appId", config.appId(), "secretMasked", config.maskedSecret(), "intervalMillis", config.intervalMillis(),
                 "connection", JSONObject.of("level", level, "summary", connection.health().summary(),
                         "robotName", connection.robotName()),
                 "groups", groups.groups(), "refreshing", groups.refreshing(),
                 "claimCodeActive", claims.expiresAt() != null,
                 "claimCodeExpiresAt", claims.expiresAt() == null ? null : claims.expiresAt().toString(),
-                "claimedAdmins", claimed));
+                "claimedAdmins", claimed);
+        return response(HttpStatus.OK, new ConsoleJsonBody(body));
     }
 
     @PostMapping("/admin-claims/code")
@@ -136,13 +138,13 @@ public class QqBotConsoleController {
         return response(HttpStatus.OK, JSONObject.of("success", true, "enabled", enabled));
     }
 
-    @PostMapping("/groups/{num}/name")
-    public ResponseEntity<JSONObject> groupName(@PathVariable("num") String num, @RequestBody JSONObject body) {
+    @PostMapping("/groups/{num}/remark")
+    public ResponseEntity<JSONObject> groupRemark(@PathVariable("num") String num, @RequestBody ConsoleJsonBody body) {
         Long number = ConfigUiStreamerId.positiveDecimal(num);
-        if (number == null || !(body.get("name") instanceof String name)) {
-            throw new IllegalArgumentException("请填写群编号和群名");
+        if (number == null || !(body.get("remark") instanceof String remark)) {
+            throw new IllegalArgumentException("请填写群编号和备注");
         }
-        directory.renameGroup(number, name);
+        directory.saveGroupRemark(number, remark);
         return response(HttpStatus.OK, JSONObject.of("success", true));
     }
 

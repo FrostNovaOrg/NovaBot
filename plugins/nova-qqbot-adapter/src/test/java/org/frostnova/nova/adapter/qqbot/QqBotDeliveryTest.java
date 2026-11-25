@@ -813,16 +813,21 @@ class QqBotDeliveryTest {
     @ExtendWith(OutputCaptureExtension.class)
     void explainsHowTheGroupOwnerCanEnableProactiveSending(CapturedOutput output) {
         withSender(rig -> {
+            rig.directory.saveGroupRemark(rig.number, "节目组");
             rig.exchange = path -> json("err_code", 40034105, "message", "official denial " + OPENID,
                     "trace_id", "trace-fixture");
             JSONObject result = rig.send("开播了");
             assertEquals(-1, result.getIntValue("code"));
             String message = result.getString("message");
             assertTrue(message.contains("群「测试群」的群主还没打开"));
+            assertFalse(message.contains("节目组"));
+            assertFalse(rig.body(0).toString().contains("节目组"));
             assertTrue(message.contains("群成员里点机器人 → 右上角设置 → 打开"));
             assertEquals(QqBotDirectory.ProactiveStatus.DISABLED, rig.group().proactive().status());
             assertEquals(QqBotDirectory.SwitchSource.SEND_ERROR, rig.group().proactive().source());
             assertEquals(message, rig.group().lastFailure().reason());
+            assertTrue(rig.directory.consoleGroups(false).groups().get(0).lastFailure().contains("群「测试群（节目组）」"));
+            assertFalse(output.getAll().contains("节目组"));
             var file = new QqBotDirectoryFile(dataDirectory.resolve("qqbot"));
             assertTrue(assertDoesNotThrow(() -> Files.readString(dataDirectory.resolve("qqbot/directory.json")))
                     .contains("发送报错"));
@@ -1374,7 +1379,6 @@ class QqBotDeliveryTest {
                     assertEquals(2000, rig.sender.getDelay());
                     rig.directory = context.getBean(QqBotDirectory.class);
                     rig.number = rig.directory.groupJoined(OPENID, Instant.now());
-                    rig.directory.renameGroup(rig.number, "测试群");
                     await().atMost(Duration.ofSeconds(10)).until(() -> {
                         var group = rig.group();
                         return group.info() != null && group.botState() != null;
@@ -1519,7 +1523,7 @@ class QqBotDeliveryTest {
                     if (roleFailure != null) return roleFailure;
                     return role == null ? json() : json("member_role", role);
                 }
-                return json();
+                return uri.getPath().endsWith("/" + OPENID + "/info") ? json("group_name", "测试群") : json();
             }
             assertEquals("POST", method);
             assertEquals("QQBot " + TOKEN, headers.get("Authorization"));

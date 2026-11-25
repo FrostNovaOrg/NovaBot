@@ -1,5 +1,6 @@
 package org.frostnova.nova.core.account;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -15,6 +16,11 @@ public interface BotConnectionTester {
      * @return 适配器名称
      */
     String adapter();
+
+    /** 已配置的推送平台名称，与连接页显示的名称一致。 */
+    default List<String> configuredSenders() {
+        return List.of();
+    }
 
     /**
      * 测试连接

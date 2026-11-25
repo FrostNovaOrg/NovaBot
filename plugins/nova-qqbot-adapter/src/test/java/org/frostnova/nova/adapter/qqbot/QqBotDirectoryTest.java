@@ -230,7 +230,7 @@ class QqBotDirectoryTest {
     }
 
     @Test
-    void otherFailuresRetryOnlyOnNextSightingAfterAnHourAndKeepManualName() {
+    void retryAfterAnHourShowsTheNewQqNameAndKeepsTheRemark() throws IOException {
         AtomicBoolean available = new AtomicBoolean();
         var rig = new Rig(uri -> {
             if (!isInfo(uri)) {
@@ -244,7 +244,16 @@ class QqBotDirectoryTest {
         assertEquals(2, rig.tasks.size());
         rig.drain();
         assertTrue(group(dir, number).lastFailure().reason().contains("50001"));
-        dir.renameGroup(number, "站内通知");
+        // 已知群名的目录仍可能有一次等待重试的群信息请求。
+        var disk = JSON.parseObject(Files.readString(directoryFile()));
+        var saved = disk.getJSONObject("bots").getJSONObject(APP_ID).getJSONObject("groups")
+                .getJSONObject(Long.toString(number));
+        saved.put("name", "原来的群名");
+        saved.put("apiName", "原来的群名");
+        saved.put("nameSource", "GROUP_INFO_API");
+        Files.writeString(directoryFile(), disk.toJSONString());
+        dir = rig.directory();
+        dir.saveGroupRemark(number, "站内通知");
         available.set(true);
 
         rig.clock.advance(Duration.ofMinutes(59));
@@ -257,17 +266,58 @@ class QqBotDirectoryTest {
         dir.groupSeen(GROUP_A, rig.clock.instant());
         rig.drain();
         assertEquals(2, rig.infoCalls());
-        assertEquals(NameSource.MANUAL, group(dir, number).nameSource());
-        assertEquals(new PushTargetDirectory.Group(number, "站内通知", 32, true),
+        // 群主改名后，连接页应显示最新的群名，选推送目标时还应看得到备注。
+        assertEquals("网上的群名", dir.consoleGroups(false).groups().get(0).name());
+        assertEquals("站内通知", dir.consoleGroups(false).groups().get(0).remark());
+        assertEquals(NameSource.GROUP_INFO_API, group(dir, number).nameSource());
+        assertEquals(new PushTargetDirectory.Group(number, "网上的群名", 32, true, "站内通知"),
                 rig.directory().snapshots(true).get(0).groups().get(0));
+        assertEquals("网上的群名（站内通知）", dir.lookup(PLATFORM, PushTargetType.GROUP, number, null).name());
     }
 
     @Test
-    void removedGroupStaysOutUntilRejoinedWithItsOriginalNumberAndName() {
+    void legacyNamesBecomeRemarksWithOrWithoutANameFromQq() throws IOException {
+        // 升级后应保留管理员原来起的名字，同时恢复正确的群名。
+        var rig = new Rig(uri -> isInfo(uri) && uri.getPath().contains(GROUP_A)
+                ? json("group_name", "接口群名") : json());
+        var before = rig.directory();
+        long named = before.groupJoined(GROUP_A, JOINED);
+        long unnamed = before.groupJoined(GROUP_B, JOINED);
+        rig.drain();
+        var disk = JSON.parseObject(Files.readString(directoryFile()));
+        var groups = disk.getJSONObject("bots").getJSONObject(APP_ID).getJSONObject("groups");
+        var legacyNames = Map.of(named, "开播提醒", unnamed, "节目组");
+        legacyNames.forEach((number, name) -> {
+            var group = groups.getJSONObject(Long.toString(number));
+            group.put("name", name);
+            group.put("nameSource", "MANUAL");
+            group.remove("remark");
+        });
+        // 从无接口群名的旧记录里读不到 apiName。
+        groups.getJSONObject(Long.toString(unnamed)).remove("apiName");
+        Files.writeString(directoryFile(), disk.toJSONString());
+
+        var after = rig.directory();
+        String defaultName = "未命名群（11-17 01:05 加入）";
+        assertEquals("接口群名", group(after, named).name());
+        assertEquals(defaultName, group(after, unnamed).name());
+        assertEquals("接口群名（开播提醒）", after.groupDisplayName(APP_ID, named));
+        assertEquals(defaultName + "（节目组）", after.groupDisplayName(APP_ID, unnamed));
+
+        var persisted = new QqBotDirectoryFile(dataDirectory.resolve("qqbot")).load().get(APP_ID).groups();
+        assertEquals(NameSource.GROUP_INFO_API, persisted.get(named).nameSource());
+        assertEquals(NameSource.DEFAULT, persisted.get(unnamed).nameSource());
+        legacyNames.forEach((number, name) -> assertEquals(name, persisted.get(number).remark()));
+        after.saveGroupRemark(unnamed, "");
+        assertEquals(defaultName, rig.directory().groupDisplayName(APP_ID, unnamed));
+    }
+
+    @Test
+    void removedGroupStaysOutUntilRejoinedWithItsOriginalNumberAndRemark() {
         var rig = new Rig(uri -> json());
         var dir = rig.directory();
         long number = dir.groupJoined(GROUP_A, JOINED);
-        dir.renameGroup(number, "节目提醒");
+        dir.saveGroupRemark(number, "节目提醒");
         dir.groupRemoved(GROUP_A, JOINED.plusSeconds(3));
         dir.groupSeen(GROUP_A, JOINED.plusSeconds(4));
         rig.drain();
@@ -281,12 +331,13 @@ class QqBotDirectoryTest {
         assertEquals(number, restarted.groupJoined(GROUP_A, rejoined));
         var snapshot = restarted.snapshots(false).get(0);
         assertEquals(PLATFORM, snapshot.sender());
-        assertEquals(List.of(new PushTargetDirectory.Group(number, "节目提醒", null, null)), snapshot.groups());
+        String defaultName = "未命名群（11-17 01:05 加入）";
+        assertEquals(List.of(new PushTargetDirectory.Group(number, defaultName, null, null, "节目提醒")), snapshot.groups());
         assertTrue(snapshot.friends().isEmpty());
         assertEquals(rig.clock.instant(), snapshot.fetchedAt());
         assertFalse(snapshot.stale());
         assertEquals(rejoined, group(restarted, number).joinedAt());
-        assertEquals(new PushTargetLookup.Result(true, "节目提醒", null),
+        assertEquals(new PushTargetLookup.Result(true, defaultName + "（节目提醒）", null),
                 restarted.lookup(PLATFORM, PushTargetType.GROUP, number, null));
         assertEquals(new PushTargetLookup.Result(false, null, "这个群还没对上号，在群里 @机器人 说一句即可"),
                 restarted.lookup(PLATFORM, PushTargetType.GROUP, 1, null));
@@ -647,8 +698,9 @@ class QqBotDirectoryTest {
         Path backup = directoryFile().resolveSibling("directory-backup.json");
         Files.move(directoryFile(), backup);
         Files.createDirectory(directoryFile());
-        assertThrows(IllegalStateException.class, () -> dir.renameGroup(number, "未写入的名称"));
+        assertThrows(IllegalStateException.class, () -> dir.saveGroupRemark(number, "未写入的备注"));
         assertEquals(NameSource.DEFAULT, group(dir, number).nameSource());
+        assertNull(group(dir, number).remark());
         Files.delete(directoryFile());
         Files.move(backup, directoryFile());
         rig.drain();
@@ -660,7 +712,7 @@ class QqBotDirectoryTest {
         var rig = new Rig(uri -> json());
         var dir = rig.directory();
         long previous = dir.groupJoined(GROUP_A, JOINED);
-        dir.renameGroup(previous, "原机器人的群");
+        dir.saveGroupRemark(previous, "原机器人的群");
         rig.credentials.save("87654321", "fixture-secret-2");
         assertTrue(dir.snapshots(false).get(0).groups().isEmpty());
         assertTrue(dir.groupOpenId(previous).isEmpty());
@@ -670,7 +722,7 @@ class QqBotDirectoryTest {
         assertTrue(rig.calls.stream().allMatch(uri -> uri.getPath().contains(GROUP_B)));
         rig.credentials.save(APP_ID, "fixture-secret");
         var restored = rig.directory();
-        assertEquals("原机器人的群", group(restored, previous).name());
+        assertEquals("原机器人的群", group(restored, previous).remark());
         assertTrue(restored.groupOpenId(current).isEmpty());
     }
 

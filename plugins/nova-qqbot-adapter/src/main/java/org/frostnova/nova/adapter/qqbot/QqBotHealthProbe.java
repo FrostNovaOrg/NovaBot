@@ -52,6 +52,15 @@ public class QqBotHealthProbe implements HealthProbe {
 
     @Override
     public HealthStatus check() {
+        return check(false);
+    }
+
+    @Override
+    public HealthStatus checkForConsole() {
+        return check(true);
+    }
+
+    private HealthStatus check(boolean forConsole) {
         HealthStatus connection = gateway.health();
         directory.recheckProactiveAfterJoin();
         if (connection.level() == HealthStatus.Level.DOWN || dataSource.isEmpty()) return connection;
@@ -67,7 +76,7 @@ public class QqBotHealthProbe implements HealthProbe {
             }
         }
         if (groups.isEmpty()) return connection;
-        var disabled = directory.disabledPushGroups(groups);
+        var disabled = directory.disabledPushGroups(groups, forConsole);
         if (disabled.isEmpty()) return connection;
         String summary = "这些群的群主还没打开主动发言，推送发不进去：" + String.join("、", disabled);
         String advice = QqBotSender.SWITCH_PATH;

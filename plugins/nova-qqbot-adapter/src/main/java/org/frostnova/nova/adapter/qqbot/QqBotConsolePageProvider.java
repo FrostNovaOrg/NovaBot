@@ -44,7 +44,7 @@ public class QqBotConsolePageProvider implements ConsolePageProvider, ConfigUiOp
                 new Operation("POST", "qqbot/credentials", "QQBOT_CREDENTIALS_SAVE", "保存 QQ 官方机器人凭据"),
                 new Operation("POST", "qqbot/interval", "QQBOT_INTERVAL_SAVE", "调整 QQ 官方机器人发送间隔"),
                 new Operation("POST", "qqbot/welcome", "QQBOT_WELCOME_SAVE", "调整 QQ 官方机器人进群欢迎语"),
-                new Operation("POST", "qqbot/groups/{num}/name", "QQBOT_GROUP_NAME_SAVE", "修改 QQ 官方机器人的群名"),
+                new Operation("POST", "qqbot/groups/{num}/remark", "QQBOT_GROUP_REMARK_SAVE", "修改 QQ 官方机器人的群备注"),
                 new Operation("POST", "qqbot/admin-claims/code", "QQBOT_ADMIN_CLAIM_CODE", "生成超管认领码"),
                 new Operation("POST", "qqbot/admin-claims/{memberNum}/revoke", "QQBOT_ADMIN_CLAIM_REVOKE", "撤销官方机器人超管"));
     }

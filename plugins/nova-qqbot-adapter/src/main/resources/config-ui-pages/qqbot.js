@@ -104,8 +104,8 @@ export function render(container, {onConnectionChange} = {}) {
   view.groups.addEventListener('submit', event => {
     const form = event.target;
     const input = form.querySelector('input');
-    return save(view, event, 'groups/' + encodeURIComponent(form.dataset.groupNumber) + '/name',
-      {name: input.value}, '群名已保存', () => { input.defaultValue = input.value; });
+    return save(view, event, 'groups/' + encodeURIComponent(form.dataset.groupNumber) + '/remark',
+      {remark: input.value}, '备注已保存', () => { input.defaultValue = input.value; });
   });
 }
 
@@ -146,7 +146,7 @@ function linkSettingsHtml(loading) {
     <section class="lc-sub">
       <h3 class="lc-h">已加入的群</h3>
       <p class="hint">把机器人拉进群（个人主体要求你是群主或管理员），请群主打开主动发言。然后就可以在推送页选择这个群。</p>
-      <p class="hint">群名留空并保存，可恢复接口群名或默认名。</p>
+      <p class="hint">群名以 QQ 接口取到的为准，备注只在控制台里显示，方便认出是哪个群。</p>
       <button type="button" class="ghost sm" id="qqbot-refresh">刷新状态和群列表</button>
       ${loading}
       <div class="tblwrap" id="qqbot-groups"></div>
@@ -301,7 +301,8 @@ function renderGroups(container, groups) {
     return;
   }
   container.innerHTML = `<table aria-label="已加入的群">
-    <thead><tr><th>群名</th><th>人数</th><th>机器人是管理员</th><th>主动发言</th><th>最近失败原因</th></tr></thead>
+    <thead style="white-space:nowrap"><tr><th style="min-width:8em">群名</th><th>备注</th><th>人数</th><th>机器人是管理员</th>
+      <th style="min-width:10em">主动发言</th><th style="min-width:10em">最近失败原因</th></tr></thead>
     <tbody>${groups.map(groupRow).join('')}</tbody></table>`;
   for (const form of container.querySelectorAll('[data-group-number]')) {
     const value = drafts.get(form.dataset.groupNumber);
@@ -316,10 +317,10 @@ function groupRow(group) {
     ? '<div class="hint">手机 QQ 进群 → 群成员里点机器人 → 右上角设置 → 打开『机器人主动在群聊内发言』</div>'
     : '';
   return `<tr${group.removed ? ' class="dim"' : ''}>
+    <td>${esc(group.name)}${group.removed ? '<div>已移出</div>' : ''}</td>
     <td><form class="fbox" data-group-number="${esc(group.num)}">
-      <div class="row"><input type="text" aria-label="群名" value="${esc(group.name)}">
-        <button type="submit" class="ghost sm">保存群名</button></div>
-      ${group.removed ? '<span>已移出</span>' : ''}
+      <div class="row"><input type="text" aria-label="备注" value="${esc(group.remark ?? '')}" style="width:min(190px,36vw)">
+        <button type="submit" class="ghost sm">保存备注</button></div>
     </form></td>
     <td>${esc(group.memberCount ?? '—')}</td><td>${admin}</td>
     <td>${proactive}${help}</td><td>${esc(group.lastFailure || '—')}</td>

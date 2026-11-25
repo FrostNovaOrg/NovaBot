@@ -22,6 +22,11 @@ public interface HealthProbe {
      */
     HealthStatus check();
 
+    /** 控制台可显示仅供登录用户查看的备注等内容。 */
+    default HealthStatus checkForConsole() {
+        return check();
+    }
+
     /**
      * 当前是否启用。停用时从状态页和告警检查中略过。
      * @return 启用时返回 true

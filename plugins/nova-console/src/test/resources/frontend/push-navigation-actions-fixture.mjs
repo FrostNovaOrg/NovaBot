@@ -237,6 +237,68 @@ await check('官方群名单到达后原地更新切换面板', async () => {
   assert.ok(choose && !choose.disabled);
 });
 
+// 故障：两条都叫「未命名群」的记录，在选目标时分不清。
+await check('可用备注找出同名的官方群', async () => {
+  const name = '未命名群（11-17 01:05 加入）';
+  officialGroups = {items: [
+    {sender: 'qq-official', num: 1234567890123456, name, remark: '节目组'},
+    {sender: 'qq-official', num: 1234567890123457, name, remark: '观众群'},
+  ]};
+  try {
+    await push.loadPushPage();
+    await byText('换成官方机器人').click();
+    const body = idNode('push-drawer-body');
+    const search = body.querySelector('input');
+    assert.ok(all(body).some(node => node.innerHTML.includes(name + '（节目组）')), '选群名单缺少备注');
+    search.value = '节目组';
+    await search.dispatchEvent({type: 'input', target: search});
+    const rows = all(body).filter(node => node.className.includes('dw-target-row'));
+    assert.equal(rows.length, 1);
+    assert.match(rows[0].children[0].innerHTML, /编号 1234567890123456/);
+    assert.match(search.placeholder, /编号.*备注/);
+  } finally {
+    push.closeDrawer();
+    officialGroups = {items: [{sender: 'qq-official', num: 81, name: '官方群'}]};
+  }
+});
+
+// 故障：主播通道列表和通道页都看不出推送走个人 QQ 号还是官方机器人。
+await check('通道列表和通道页标出各自的机器人', async () => {
+  const group = {platform: 'qq-official', type: 1, num: 1234567890123456, messages: []};
+  const user = {...users[0], targets: [users[0].targets[0], group]};
+  officialGroups = {items: [
+    {sender: 'qq', num: 11, name: '观众群'},
+    {sender: 'qq-official', num: group.num, name: '直播间', remark: '节目组'},
+  ]};
+  store.senderList = ['qq', 'qq-backup', 'qq-official'];
+  store.senderAdapters = {qq: 'onebot', 'qq-backup': 'onebot'};
+  push.setPushEntries([user]);
+  try {
+    await push.loadPushPage();
+    await push.showPush('1', '');
+    const rows = right().filter(node => node.className === 'rowcard');
+    for (const [index, label, numberLabel, tail] of [
+      [0, 'NapCat（qq）', '群号 11', 'qq|1|11'],
+      [1, '官方机器人', '编号 ' + group.num, 'qq-official|1|' + group.num],
+    ]) {
+      assert.ok(all(rows[index]).some(node => node.className.includes('nv-pill') && node.textContent === label),
+        '通道列表缺少 ' + label);
+      assert.ok(all(rows[index]).some(node => node.textContent === numberLabel));
+      await push.showPush('1', tail);
+      const head = all(byClass('chead'));
+      assert.ok(head.some(node => node.className.includes('nv-pill') && node.textContent === label),
+        '通道页缺少 ' + label);
+      assert.ok(head.some(node => node.textContent === numberLabel));
+      if (index === 1) assert.ok(head.some(node => node.textContent === '直播间（节目组）'));
+    }
+  } finally {
+    push.setPushEntries(users);
+    push.acceptAddedPushUser(migrationUser, 'version');
+    officialGroups = {items: [{sender: 'qq-official', num: 81, name: '官方群'}]};
+    await push.loadPushPage();
+  }
+});
+
 // 故障：完成提示漏报生效差异，或新通道的保存内容仍采用另一份设置。
 await check('切换保存并显示实际金额与静音时段', async () => {
   location.hash = '#/push/3/qq|1|31';

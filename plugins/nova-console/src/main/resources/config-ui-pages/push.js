@@ -20,7 +20,8 @@ import {
   atAllStatus, buildDirectory, canMigrateGroup, channelIndex, channelName, channelRevenueVisible, channelSession,
   closeAssistantForHiddenRevenue, commandGroups, commandSummary,
   defaultMessages, handlerNames, handlerOf, layoutState, messageOf, migrateGroupTarget, noticeSwitches,
-  officialGroupOptions, previewRequestBody, previewRevenueCaption, pushChannelOf, pushTree, quietSummary,
+  isOfficialGroup, officialGroupOptions, previewRequestBody, previewRevenueCaption, pushChannelOf, pushPlatformLabel,
+  pushTree, quietSummary,
   recentPushes, restoredLayoutParams,
   revenueSummary, savedRevenueVisible,
   sessionOf, streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
@@ -1592,6 +1593,11 @@ function renderStreamerLevel(host, user) {
   }
 }
 
+function targetNumberLabel(platform, type) {
+  if (isOfficialGroup(platform, type)) return '编号';
+  return Number(type) === 1 ? term('bot.target.group', '群号') : term('bot.target.user', '用户号');
+}
+
 function channelRow(user, target) {
   const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type),
     target, user, channelCommands());
@@ -1605,6 +1611,8 @@ function channelRow(user, target) {
   link.textContent = channelName(session, target, directory);
   title.appendChild(link);
   title.appendChild(pill(typeName(session, target)));
+  const platform = pushPlatformLabel(target.platform, store.senderAdapters);
+  if (platform) title.appendChild(pill(platform));
   if (target.enabled === false) title.appendChild(pill('已停用'));
   if (session.disabledCount) {
     title.appendChild(pill('已禁用 ' + session.disabledCount + ' 条命令', 'err'));
@@ -1616,8 +1624,7 @@ function channelRow(user, target) {
   main.appendChild(title);
 
   const sub = el('div', 'rc-sub');
-  sub.textContent = (Number(target.type) === 1
-    ? term('bot.target.group', '群号') : term('bot.target.user', '用户号')) + ' ' + target.num;
+  sub.textContent = targetNumberLabel(target.platform, target.type) + ' ' + target.num;
   main.appendChild(sub);
 
   const tags = el('div', 'rc-tg');
@@ -1670,8 +1677,10 @@ function renderChannelLevel(host, user, target) {
   title.textContent = name;
   line.appendChild(title);
   line.appendChild(pill(typeName(session, target)));
+  const platform = pushPlatformLabel(target.platform, store.senderAdapters);
+  if (platform) line.appendChild(pill(platform));
   const num = el('span', 'ch-id');
-  num.textContent = (group ? term('bot.target.group', '群号') : term('bot.target.user', '用户号')) + ' ' + target.num;
+  num.textContent = targetNumberLabel(target.platform, target.type) + ' ' + target.num;
   line.appendChild(num);
   head.appendChild(line);
   const actions = el('div', 'ch-actions');
@@ -2526,7 +2535,7 @@ function pickTarget(opts) {
     const bar = el('div', 'dwbar');
     const search = el('input');
     search.type = 'search';
-    search.placeholder = opts.officialGroups ? '搜索群名或群号' : '搜索群名、群号或好友昵称';
+    search.placeholder = opts.officialGroups ? '搜索群名、编号或备注' : '搜索群名、群号或好友昵称';
     search.setAttribute('aria-label', opts.officialGroups ? '搜索官方机器人的群' : '搜索可选的群与好友');
     bar.appendChild(search);
 
@@ -2600,9 +2609,7 @@ function pickTarget(opts) {
           const row = el('div', 'dwrow dw-target-row' + (taken ? ' taken' : ''));
           const description = el('div');
           description.innerHTML = '<div class="dw-nm">' + esc(item.name || item.num) + '</div>'
-            + '<div class="dw-sub">' + (item.type === 1
-              ? term('bot.target.group', '群号') + ' ' : term('bot.target.user', '用户号') + ' ')
-            + esc(item.num)
+            + '<div class="dw-sub">' + esc(targetNumberLabel(item.sender, item.type)) + ' ' + esc(item.num)
             + (item.memberCount ? ' · ' + esc(item.memberCount) + ' 人' : '')
             + (item.admin ? ' · 机器人为管理员' : '') + esc(pushing) + '</div>';
           row.appendChild(description);
@@ -2780,7 +2787,7 @@ function pickMemberTarget(opts) {
       for (const platform of platformNames) {
         const option = el('option');
         option.value = platform;
-        option.textContent = platform;
+        option.textContent = pushPlatformLabel(platform, store.senderAdapters) || platform;
         sender.appendChild(option);
       }
       sender.value = platformNames[0];

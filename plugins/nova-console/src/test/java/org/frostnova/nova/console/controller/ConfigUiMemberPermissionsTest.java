@@ -167,7 +167,7 @@ class ConfigUiMemberPermissionsTest {
             POST qqbot/interval
             GET qqbot/welcome
             POST qqbot/welcome
-            POST qqbot/groups/{num}/name
+            POST qqbot/groups/{num}/remark
             POST qqbot/admin-claims/code
             POST qqbot/admin-claims/{memberNum}/revoke
             GET exec/notice

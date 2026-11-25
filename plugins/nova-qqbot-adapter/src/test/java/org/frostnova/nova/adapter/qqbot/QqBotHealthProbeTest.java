@@ -35,9 +35,9 @@ class QqBotHealthProbeTest {
         long a = directory.groupSeen("fixture-group-a", now);
         long b = directory.groupSeen("fixture-group-b", now);
         long c = directory.groupSeen("fixture-group-c", now);
-        directory.renameGroup(a, "开播群");
-        directory.renameGroup(b, "闲聊群");
-        directory.renameGroup(c, "新群");
+        directory.saveGroupRemark(a, "开播群");
+        directory.saveGroupRemark(b, "闲聊群");
+        directory.saveGroupRemark(c, "新群");
         directory.recordProactive(a, DISABLED, EVENT, now);
         directory.recordProactive(b, DISABLED, EVENT, now);
         var enabled = new PushUser();
@@ -62,15 +62,16 @@ class QqBotHealthProbeTest {
                         definition -> definition.setPrimary(true))
                 .run(context -> {
                     var probe = context.getBean(QqBotHealthProbe.class);
-                    var status = probe.check();
+                    var status = probe.checkForConsole();
                     assertEquals(HealthStatus.Level.DEGRADED, status.level(), status::summary);
-                    assertTrue(status.summary().contains("推送发不进去：开播群"));
+                    assertTrue(status.summary().contains("（开播群）"));
                     assertFalse(status.summary().contains("闲聊群") || status.summary().contains("新群"));
-                    assertEquals(status.summary().indexOf("开播群"), status.summary().lastIndexOf("开播群"));
+                    assertEquals(status.summary().indexOf("（开播群）"), status.summary().lastIndexOf("（开播群）"));
+                    assertFalse(probe.check().summary().contains("开播群"));
                     assertTrue(status.advice().contains("群成员里点机器人 → 右上角设置 → 打开"));
 
                     directory.recordProactive(c, DISABLED, EVENT, now);
-                    assertTrue(probe.check().summary().contains("开播群、新群"));
+                    assertTrue(probe.checkForConsole().summary().contains("（新群）"));
 
                     var down = HealthStatus.down("连接断开", "检查连接", "unreachable");
                     when(gateway.health()).thenReturn(down);

@@ -54,7 +54,7 @@ public class ConfigUiPushTargetsController {
     /**
      * 列出可选的推送目标
      * @param type {@code group} 或 {@code friend}
-     * @param q 按名与号筛选的关键字，留空表示不筛
+     * @param q 按名称、号码或备注筛选的关键字，留空表示不筛
      * @return 名单
      */
     @GetMapping(value = TARGETS_PATH, produces = MediaType.APPLICATION_JSON_VALUE)
@@ -76,7 +76,7 @@ public class ConfigUiPushTargetsController {
         for (PushTargetDirectory.Snapshot snapshot : snapshots) {
             if (group) {
                 for (PushTargetDirectory.Group row : snapshot.groups()) {
-                    if (!matches(keyword, row.num(), row.name())) {
+                    if (!matches(keyword, row.num(), row.name(), row.remark())) {
                         continue;
                     }
 
@@ -84,6 +84,7 @@ public class ConfigUiPushTargetsController {
                     item.put("sender", snapshot.sender());
                     item.put("num", row.num());
                     item.put("name", row.name());
+                    if (row.remark() != null) item.put("remark", row.remark());
                     item.put("memberCount", row.memberCount());
                     item.put("admin", row.admin());
                     item.put("configured", configured.contains(key(snapshot.sender(), PushTargetType.GROUP, row.num())));
@@ -110,7 +111,7 @@ public class ConfigUiPushTargetsController {
         result.put("success", true);
         result.put("type", type);
         result.put("items", items);
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(new ConsoleJsonBody(result));
     }
 
     /** 强制刷新各推送平台的名单。 */
@@ -143,7 +144,7 @@ public class ConfigUiPushTargetsController {
         if (found.message() != null) {
             result.put("message", found.message());
         }
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(new ConsoleJsonBody(result));
     }
 
     private List<PushTargetDirectory.Snapshot> snapshots(boolean force) {
