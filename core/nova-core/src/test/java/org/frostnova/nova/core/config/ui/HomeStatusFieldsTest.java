@@ -554,7 +554,7 @@ class HomeStatusFieldsTest {
         when(claimed.name()).thenReturn("卡片探针");
         when(claimed.scope()).thenReturn(HealthProbe.Scope.BOT);
         when(claimed.card()).thenReturn("demo");
-        when(claimed.check()).thenReturn(HealthStatus.ok("已连接"));
+        when(claimed.checkForConsole()).thenReturn(HealthStatus.ok("已连接"));
         probes = List.of(claimed, probe("通用机器人探针", HealthProbe.Scope.BOT, false));
 
         var response = MockMvcBuilders.standaloneSetup(controller()).build()

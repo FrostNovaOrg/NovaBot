@@ -29,6 +29,7 @@ const keys = ['dynamicBlockWords', 'wordCloudBlockWords', 'wordCloudExcludeUids'
 const initial = () => [{platform: 'bilibili', uid: 1, enabled: true,
   targets: [{platform: 'qq-onebot', type: 1, num: 81001, enabled: true, messages: []}]}];
 let disk = initial(), requests = [], reject = false;
+let statusPayload;
 const version = user => JSON.stringify(user);
 const summary = user => ({platform: user.platform, uid: user.uid, enabled: user.enabled, targets: user.targets});
 const state = () => process.env.PUSH_STATE ? JSON.parse(readFileSync(process.env.PUSH_STATE, 'utf8')) : ({sessions: [{platform: 'qq-onebot', typeCode: 1, num: 81001,
@@ -60,6 +61,7 @@ globalThis.fetch = async (path, options = {}) => {
     return response({success: true, user, version: version(user)});
   }
   if (route === '/state') return response(state());
+  if (route === '/status' && statusPayload) return response(statusPayload);
   if (route === '/bot/targets/lookup') {
     const num = url.searchParams.get('num');
     const type = url.searchParams.get('type');
@@ -220,10 +222,14 @@ const cases = {
   },
   // 多平台实例的成员必须能选其他平台，查询和最终保存均应使用选中的平台。
   platforms: async () => {
-    await reset(); store.senderList = ['qq-onebot', 'qq-secondary']; await addDrawer();
+    await reset();
+    store.senderList = ['qq-onebot', 'qq-secondary', 'qq-official'];
+    store.senderAdapters = {'qq-onebot': 'onebot', 'qq-secondary': 'onebot'};
+    await addDrawer();
     const platform = drawer().querySelector('[aria-label="推送平台"]');
     assert.ok(platform, '多个平台应有下拉选择');
-    assert.equal(platform.querySelectorAll('option').length, 2, '合并来源后平台不重复');
+    assert.deepEqual(platform.querySelectorAll('option').map(option => [option.value, option.textContent]),
+      [['qq-onebot', 'NapCat（qq-onebot）'], ['qq-secondary', 'NapCat（qq-secondary）'], ['qq-official', '官方机器人']]);
     platform.value = 'qq-secondary'; await platform.dispatchEvent({type: 'change'});
     await lookup('82002');
     assert.equal(new URL(requests.at(-1).url, 'http://localhost').searchParams.get('platform'), 'qq-secondary');
@@ -233,6 +239,19 @@ const cases = {
     platform.value = 'qq-secondary'; await platform.dispatchEvent({type: 'change'});
     await lookup('82002'); await button(drawer(), '加上').click(); await push.save();
     assert.ok(disk[0].targets.some(target => target.platform === 'qq-secondary' && target.num === 82002));
+    noDirectory();
+  },
+  // 故障：成员先打开推送页，管理员随后接通 NapCat，成员添加目标时只看见平台内部名。
+  connected: async () => {
+    store.senderList = ['qq-official'];
+    store.senderAdapters = {};
+    statusPayload = {senders: ['qq-official']};
+    await reset();
+    statusPayload = {senders: ['qq-official', 'qq-onebot'], senderAdapters: {'qq-onebot': 'onebot'}};
+    await addDrawer();
+    const platform = drawer().querySelector('[aria-label="推送平台"]');
+    assert.deepEqual(platform.querySelectorAll('option').map(option => [option.value, option.textContent]),
+      [['qq-onebot', 'NapCat'], ['qq-official', '官方机器人']]);
     noDirectory();
   },
   // 已经添加的通道不能重复添加，灰色按钮旁应说明原因。

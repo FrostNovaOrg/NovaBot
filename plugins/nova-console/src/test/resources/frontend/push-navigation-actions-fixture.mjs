@@ -25,6 +25,7 @@ document.createElement = tag => {
 document.getElementById = idNode;
 globalThis.window = {getSelection: () => null};
 const {store} = await import('./store.js');
+const {bindBotForm} = await import('../../../../../../core/nova-core/src/main/resources/config-ui/bot.js');
 const push = await import('../../../main/resources/config-ui-pages/push.js');
 const source = readFileSync(new URL('../../../main/resources/config-ui-pages/push.js', import.meta.url), 'utf8');
 const all = root => [root, ...root.children.flatMap(all)];
@@ -35,6 +36,8 @@ const posts = [];
 let failSave = false;
 let officialGroups;
 let migratedUser;
+let firstConnectionUser;
+let napcatConnected = false;
 const migrationUser = {uid: 3, platform: 'bilibili', targets: [{platform: 'qq', type: 1, num: 31, enabled: true,
   revenueVisible: true, assistantEnabled: true, messages: []}]};
 const migrationResult = {success: true, targetSettings: {revenueVisible: false, assistantEnabled: false,
@@ -62,12 +65,24 @@ globalThis.fetch = async (url, opts = {}) => {
       const item = store.handlerList.find(item => item.className === body.className);
       item.defaultParams = {...item.factoryParams, ...body.params};
     }
+  } else if (url.endsWith('/setup/test-bot')) result = {success: true, message: '已连通'};
+  else if (url.endsWith('/setup/bot') && opts.method === 'POST') {
+    napcatConnected = true;
+    result = {success: true, message: '已保存'};
+  } else if (url.endsWith('/status') && firstConnectionUser) {
+    result = napcatConnected ? {senders: ['qq-onebot'], senderAdapters: {'qq-onebot': 'onebot'}} : {senders: []};
   } else if (url.endsWith('/handlers')) result = {handlers: store.handlerList};
   else if (url.endsWith('/datasource/users')) result = {success: true, users};
   else if (url.endsWith('/datasource/users/bilibili/3')) {
     if (opts.method === 'POST') migratedUser = JSON.parse(opts.body).user;
     result = {success: true, version: 'version', user: migrationUser};
+  } else if (url.endsWith('/datasource/users/bilibili/4')) {
+    if (opts.method === 'POST') firstConnectionUser = JSON.parse(opts.body).user;
+    result = {success: true, version: 'version', user: firstConnectionUser};
   } else if (url.endsWith('/state/copy-to-official-group')) result = migrationResult;
+  else if (url.includes('/bot/targets?type=group') && firstConnectionUser) {
+    result = {items: napcatConnected ? [{sender: 'qq-onebot', num: 42, name: '直播通知群'}] : []};
+  }
   else if (url.includes('/bot/targets?type=group') && officialGroups) result = await officialGroups;
   else if (url.includes('/bot/targets?type=group')) result = {items: [
     {sender: 'qq', num: 11, name: '相同群'}, {sender: 'qq', num: 12, name: '新群'}]};
@@ -237,6 +252,68 @@ await check('官方群名单到达后原地更新切换面板', async () => {
   assert.ok(choose && !choose.disabled);
 });
 
+// 故障：两条都叫「未命名群」的记录，在选目标时分不清。
+await check('可用备注找出同名的官方群', async () => {
+  const name = '未命名群（11-17 01:05 加入）';
+  officialGroups = {items: [
+    {sender: 'qq-official', num: 1234567890123456, name, remark: '节目组'},
+    {sender: 'qq-official', num: 1234567890123457, name, remark: '观众群'},
+  ]};
+  try {
+    await push.loadPushPage();
+    await byText('换成官方机器人').click();
+    const body = idNode('push-drawer-body');
+    const search = body.querySelector('input');
+    assert.ok(all(body).some(node => node.innerHTML.includes(name + '（节目组）')), '选群名单缺少备注');
+    search.value = '节目组';
+    await search.dispatchEvent({type: 'input', target: search});
+    const rows = all(body).filter(node => node.className.includes('dw-target-row'));
+    assert.equal(rows.length, 1);
+    assert.match(rows[0].children[0].innerHTML, /编号 1234567890123456/);
+    assert.match(search.placeholder, /编号.*备注/);
+  } finally {
+    push.closeDrawer();
+    officialGroups = {items: [{sender: 'qq-official', num: 81, name: '官方群'}]};
+  }
+});
+
+// 故障：主播通道列表和通道页都看不出推送走个人 QQ 号还是官方机器人。
+await check('通道列表和通道页标出各自的机器人', async () => {
+  const group = {platform: 'qq-official', type: 1, num: 1234567890123456, messages: []};
+  const user = {...users[0], targets: [users[0].targets[0], group]};
+  officialGroups = {items: [
+    {sender: 'qq', num: 11, name: '观众群'},
+    {sender: 'qq-official', num: group.num, name: '直播间', remark: '节目组'},
+  ]};
+  store.senderList = ['qq', 'qq-backup', 'qq-official'];
+  store.senderAdapters = {qq: 'onebot', 'qq-backup': 'onebot'};
+  push.setPushEntries([user]);
+  try {
+    await push.loadPushPage();
+    await push.showPush('1', '');
+    const rows = right().filter(node => node.className === 'rowcard');
+    for (const [index, label, numberLabel, tail] of [
+      [0, 'NapCat（qq）', '群号 11', 'qq|1|11'],
+      [1, '官方机器人', '编号 ' + group.num, 'qq-official|1|' + group.num],
+    ]) {
+      assert.ok(all(rows[index]).some(node => node.className.includes('nv-pill') && node.textContent === label),
+        '通道列表缺少 ' + label);
+      assert.ok(all(rows[index]).some(node => node.textContent === numberLabel));
+      await push.showPush('1', tail);
+      const head = all(byClass('chead'));
+      assert.ok(head.some(node => node.className.includes('nv-pill') && node.textContent === label),
+        '通道页缺少 ' + label);
+      assert.ok(head.some(node => node.textContent === numberLabel));
+      if (index === 1) assert.ok(head.some(node => node.textContent === '直播间（节目组）'));
+    }
+  } finally {
+    push.setPushEntries(users);
+    push.acceptAddedPushUser(migrationUser, 'version');
+    officialGroups = {items: [{sender: 'qq-official', num: 81, name: '官方群'}]};
+    await push.loadPushPage();
+  }
+});
+
 // 故障：完成提示漏报生效差异，或新通道的保存内容仍采用另一份设置。
 await check('切换保存并显示实际金额与静音时段', async () => {
   location.hash = '#/push/3/qq|1|31';
@@ -261,6 +338,45 @@ await check('切换保存并显示实际金额与静音时段', async () => {
   assert.match(completion, /金额可见.+隐藏金额.+和原来不同/);
   assert.match(completion, /金额隐藏，智能助手已一并关闭/);
   assert.match(completion, /静音时段.+23:00–07:00.+和原来不同/);
+});
+
+// 故障：管理员首次接通 NapCat 后仍看不到新通道的机器人标签，必须刷新浏览器。
+await check('首次保存 NapCat 后同一页标明新通道的机器人', async () => {
+  store.senderList = [];
+  store.senderAdapters = {};
+  firstConnectionUser = {uid: 4, platform: 'bilibili', _uname: '主播4', targets: []};
+  push.setPushEntries([]);
+  push.acceptAddedPushUser(firstConnectionUser, 'version');
+  push.leave();
+  location.hash = '#/push/4';
+  await push.refresh({sub: '4', tail: ''});
+  await waitFor(() => byText('＋ 添加通道'));
+  await byText('＋ 添加通道').click();
+  assert.ok(!all(idNode('push-drawer-body')).some(node => node.innerHTML.includes('直播通知群')));
+  push.leave();
+  location.hash = '#/links';
+  bindBotForm('bot');
+  idNode('bot-addr').value = '127.0.0.1';
+  idNode('bot-hport').value = '3000';
+  await idNode('bot-test').click();
+  assert.equal(idNode('bot-save').disabled, false);
+  await idNode('bot-save').click();
+  assert.equal(napcatConnected, true);
+
+  location.hash = '#/push/4';
+  await push.refresh({sub: '4', tail: ''});
+  await byText('＋ 添加通道').click();
+  const add = all(idNode('push-drawer-body')).find(node => node.textContent === '添加');
+  assert.ok(add, '接通后应能选择 NapCat 群');
+  await add.click();
+  await push.save();
+  assert.equal(firstConnectionUser.targets[0]?.platform, 'qq-onebot');
+
+  await push.showPush('4', '');
+  const hasNapCat = root => all(root).some(node => node.className.includes('nv-pill') && node.textContent === 'NapCat');
+  assert.ok(hasNapCat(byClass('rowcard')), '首次接通后通道列表缺少 NapCat');
+  await push.showPush('4', 'qq-onebot|1|42');
+  assert.ok(hasNapCat(byClass('chead')), '首次接通后通道页缺少 NapCat');
 });
 
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

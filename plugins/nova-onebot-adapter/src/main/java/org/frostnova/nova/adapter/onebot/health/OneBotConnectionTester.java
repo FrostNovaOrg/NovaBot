@@ -15,6 +15,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -44,6 +45,12 @@ public class OneBotConnectionTester implements BotConnectionTester {
     @Override
     public String adapter() {
         return "onebot";
+    }
+
+    @Override
+    public List<String> configuredSenders() {
+        return properties.getSenders().stream().map(OneBotSender::getName)
+                .filter(StringUtil::isNotBlank).toList();
     }
 
     @Override

@@ -137,6 +137,17 @@ export function channelName(session, target, directory) {
   return typeName(session, target) + ' ' + target.num;
 }
 
+export function pushPlatformLabel(platform, adapters = {}) {
+  if (platform === OFFICIAL) return '官方机器人';
+  if (adapters[platform] !== 'onebot') return '';
+  const multiple = Object.values(adapters).filter(value => value === 'onebot').length > 1;
+  return multiple ? 'NapCat（' + platform + '）' : 'NapCat';
+}
+
+export function isOfficialGroup(platform, type) {
+  return platform === OFFICIAL && Number(type) === 1;
+}
+
 /**
  * 会话类型的说法
  *

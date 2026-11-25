@@ -3,6 +3,7 @@ package org.frostnova.nova.adapter.qqbot;
 import com.alibaba.fastjson2.JSONObject;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.frostnova.nova.adapter.qqbot.QqBotDirectory.ProactiveDenial;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.Sender;
 import org.frostnova.nova.core.plugin.NovaComponent;
@@ -452,7 +453,7 @@ class QqBotSender {
         if (sequence > 0) {
             reply.delivered();
         } else if (!id.isBlank()) {
-            remember(target, QqBotDirectory.ProactiveStatus.ENABLED, QqBotDirectory.SwitchSource.SEND_SUCCESS, null);
+            remember(target, QqBotDirectory.ProactiveStatus.ENABLED, QqBotDirectory.SwitchSource.SEND_SUCCESS, null, null);
         }
         return id;
     }
@@ -475,10 +476,10 @@ class QqBotSender {
         log.warn("QQ 官方机器人{}失败，群 {}，错误码 {}，原文 {}，trace_id {}",
                 sending ? "发消息" : "传图", target.maskedOpenId(), error.code(), official, trace);
         int code = error.code();
+        ProactiveDenial denial = code == 40034105
+                ? (replyFallback ? ProactiveDenial.REPLY_FALLBACK : ProactiveDenial.DIRECT) : null;
         String reason = switch (code) {
-            case 40034105 -> (replyFallback ? "回复次数用完或超过 60 分钟，改为主动发言时被拒：" : "")
-                    + "群「" + target.group().name()
-                    + "」的群主还没打开机器人的「主动在群聊内发言」：" + SWITCH_PATH;
+            case 40034105 -> denial.reason(target.group().name());
             case 40054007 -> "消息太长，未能完整发出";
             case 40054010 -> "这条里的链接被平台拦了（" + linkHost(text) + "）";
             case 40054002 -> "机器人在这个群被禁言了";
@@ -503,7 +504,7 @@ class QqBotSender {
                         ? "消息格式被平台拒绝（错误码 " + code + "）" : "QQ 返回错误 " + code + "：" + official;
             }
         };
-        JSONObject result = fail(target, maskDiagnostic(target, reason, null), code == 40034105);
+        JSONObject result = fail(target, maskDiagnostic(target, reason, null), denial != null, denial);
         if (!multipart && error.preventsTextDelivery()) result.put(Sender.LocalDelivery.SKIP_IMAGE_FALLBACK, true);
         return result;
     }
@@ -529,8 +530,12 @@ class QqBotSender {
     }
 
     private JSONObject fail(Target target, String reason, boolean proactiveDisabled) {
+        return fail(target, reason, proactiveDisabled, null);
+    }
+
+    private JSONObject fail(Target target, String reason, boolean proactiveDisabled, ProactiveDenial denial) {
         remember(target, proactiveDisabled ? QqBotDirectory.ProactiveStatus.DISABLED : null,
-                proactiveDisabled ? QqBotDirectory.SwitchSource.SEND_ERROR : null, reason);
+                proactiveDisabled ? QqBotDirectory.SwitchSource.SEND_ERROR : null, reason, denial);
         return failure(reason);
     }
 
@@ -544,11 +549,11 @@ class QqBotSender {
     }
 
     private void remember(Target target, QqBotDirectory.ProactiveStatus status, QqBotDirectory.SwitchSource source,
-                          String reason) {
+                          String reason, ProactiveDenial denial) {
         try {
             Instant now = window.now();
             var proactive = status == null ? null : new QqBotDirectory.Proactive(status, source, now);
-            var failure = reason == null ? null : new QqBotDirectory.Failure(reason, now);
+            var failure = reason == null ? null : new QqBotDirectory.Failure(reason, now, denial);
             directory.recordSendResult(target.appId(), target.group().number(), proactive, failure);
         } catch (RuntimeException e) {
             if (target.claimCredentials() == null) {

@@ -12,7 +12,7 @@ import java.util.concurrent.Executor;
 @NovaComponent
 final class QqBotWelcome {
     private static final String TEXT = "大家好，我是这个群的推送机器人。要在群里收到开播通知，请群主在手机 QQ 打开我的"
-            + "『机器人主动在群聊内发言』：群成员列表里点我 → 右上角设置 → 打开。管理员还要到控制台连接页给这个群起个名字。";
+            + "『机器人主动在群聊内发言』：群成员列表里点我 → 右上角设置 → 打开。管理员可在控制台连接页查看这个群。";
 
     private final QqBotApiClient api;
     private final QqBotSendWindow window;

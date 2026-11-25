@@ -1,7 +1,11 @@
 package org.frostnova.nova.console.controller;
 
 import com.alibaba.fastjson2.*;
+import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
+import org.frostnova.nova.adapter.onebot.health.OneBotConnectionTester;
+import org.frostnova.nova.adapter.onebot.model.OneBotSender;
 import org.frostnova.nova.console.*;
+import org.frostnova.nova.core.account.BotConnectionTester;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.*;
 import org.frostnova.nova.core.config.ui.auth.*;
@@ -221,14 +225,27 @@ class MemberListScopeTest {
     }
 
     // 新分到的主播还没有通道时，成员仍需知道可用平台，且不能收到全实例运行信息。
-    @Test void memberStatusIncludesSortedSenderNamesOnly() {
+    @Test @SuppressWarnings("unchecked") void memberStatusIncludesSenderNamesAndAdapterTypes() {
         var senders = (NovaSenderService)dependencies.get(NovaSenderService.class);
         when(senders.getSenderNames()).thenReturn(new LinkedHashSet<>(List.of("qq-secondary", "qq-onebot")));
+        var properties = new OneBotAdapterPluginProperties();
+        for (String name : List.of("qq-onebot", "qq-secondary", "standby")) {
+            var sender = new OneBotSender();
+            sender.setName(name);
+            properties.getSenders().add(sender);
+        }
+        var tester = new OneBotConnectionTester(null, properties, null);
+        var testers = (ObjectProvider<BotConnectionTester>)mock(ObjectProvider.class);
+        when(testers.orderedStream()).thenAnswer(i -> java.util.stream.Stream.of(tester));
+        ReflectionTestUtils.setField(config, "connectionTesters", testers);
         var admin = config.status();
         use(MEMBER);
         var member = config.status();
         assertEquals(List.of("qq-onebot", "qq-secondary"), member.getList("senders", String.class));
         assertEquals(admin.get("senders"), member.get("senders"));
+        assertEquals(Map.of("qq-onebot", "onebot", "qq-secondary", "onebot", "standby", "onebot"),
+                member.get("senderAdapters"));
+        assertEquals(admin.get("senderAdapters"), member.get("senderAdapters"));
         for (String key : List.of("health", "runtime", "update", "configPath", "streamerLimit", "restartPending", "queue", "alerts"))
             assertFalse(member.containsKey(key), key);
     }

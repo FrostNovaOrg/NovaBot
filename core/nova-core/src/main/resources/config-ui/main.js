@@ -499,6 +499,7 @@ export async function load(how) {
 
     store.handlerList = h.handlers || [];
     store.senderList = st.senders || [];
+    store.senderAdapters = st.senderAdapters || {};
     // 某一位取回来的东西有问题时那句话由它自己说，这里只记一位「别替它清状态栏」：
     // 末尾那句 say('') 会把状态栏清空，不记的话那条提示刚显示就被自己抹掉
     const quiet = await sources;

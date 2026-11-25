@@ -2314,7 +2314,7 @@ public class ConfigUiController {
     @GetMapping("/api/status")
     public JSONObject status() {
         if (ConfigUiAccess.memberAccount() != null) return memberStatus();
-        JSONObject result = new JSONObject();
+        JSONObject result = new ConsoleJsonBody();
         result.put("success", true);
         result.put("health", health());
         botChannel().ifPresent(channel -> result.put("botChannel", channel));
@@ -2382,6 +2382,7 @@ public class ConfigUiController {
         result.put("restartPending", runtimeApplier.getPendingRestart());
         // 供界面填充「发送测试消息」的推送平台下拉框，避免让使用者手打平台名
         result.put("senders", senderService.getSenderNames().stream().sorted().toList());
+        includeSenderAdapters(result);
         // 这台控制台上没上锁。取自签发会话的那一处，界面不另按配置项自己判一遍——
         // 「有没有口令」与「口令登录启不启用」在配置面上不是同一件事，各判各的迟早会说两种话
         result.put("locked", authService.isEnabled());
@@ -2406,10 +2407,20 @@ public class ConfigUiController {
                     "platform", user.getPlatform(), "enabled", user.getEnabled(), "targets", user.getTargets().stream()
                             .filter(target -> !Boolean.FALSE.equals(target.getEnabled())).count()));
         }
-        return JSONObject.of("success", true, "version", buildVersion(), "users", users, "locked", authService.isEnabled(),
+        JSONObject result = JSONObject.of("success", true, "version", buildVersion(), "users", users, "locked", authService.isEnabled(),
                 "pushEnabled", properties.getPush().isEnabled(),
                 "senders", senderService.getSenderNames().stream().sorted().toList(),
                 "quiet", quiet(), "live", liveNow(), "today", todayPushCounts());
+        includeSenderAdapters(result);
+        return result;
+    }
+
+    private void includeSenderAdapters(JSONObject result) {
+        Map<String, String> adapters = new LinkedHashMap<>();
+        connectionTesters.orderedStream().forEach(tester -> {
+            for (String sender : tester.configuredSenders()) adapters.putIfAbsent(sender, tester.adapter());
+        });
+        if (!adapters.isEmpty()) result.put("senderAdapters", adapters);
     }
 
     /**
@@ -2624,7 +2635,7 @@ public class ConfigUiController {
 
                     try {
                         if (activation.failure() != null) throw activation.failure();
-                        HealthStatus status = probe.check();
+                        HealthStatus status = probe.checkForConsole();
                         item.put("level", status.level().name());
                         item.put("summary", status.summary());
                         item.put("advice", status.advice());

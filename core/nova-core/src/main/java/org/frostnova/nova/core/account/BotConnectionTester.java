@@ -17,6 +17,11 @@ public interface BotConnectionTester {
      */
     String adapter();
 
+    /** 已配置的推送平台名称，与连接页显示的名称一致。 */
+    default List<String> configuredSenders() {
+        return List.of();
+    }
+
     /**
      * 测试连接
      * @param address 地址

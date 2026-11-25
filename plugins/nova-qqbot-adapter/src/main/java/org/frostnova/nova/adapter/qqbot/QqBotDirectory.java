@@ -51,6 +51,8 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     private static final BigInteger NUMBER_RANGE = BigInteger.valueOf((1L << 53) - NUMBER_BASE);
     private static final DateTimeFormatter JOIN_TIME = DateTimeFormatter.ofPattern("MM-dd HH:mm", Locale.ROOT)
             .withZone(ZoneOffset.ofHours(8));
+    private static final Duration INFO_TTL = Duration.ofHours(24);
+    private static final Duration INFO_REFRESH_TTL = Duration.ofMinutes(10);
     private static final Duration ROLE_TTL = Duration.ofMinutes(10);
     private static final Duration ROLE_WAIT = Duration.ofSeconds(3);
     private static final Duration PROACTIVE_REFRESH_TTL = Duration.ofMinutes(1);
@@ -160,7 +162,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     private static GroupEntry joinedGroup(long number, String openid, Instant at, GroupEntry previous) {
         if (previous == null) {
             return new GroupEntry(number, openid, defaultName(at), NameSource.DEFAULT, at, at, false,
-                    UNKNOWN_SWITCH, null, null, null, null, null, null, null, null);
+                    UNKNOWN_SWITCH, null, null, null, null, null, null, null, null, null);
         }
         GroupEntry group = previous.withJoinedAt(at).withLastSeenAt(later(previous.lastSeenAt(), at))
                 .withRemoved(false).withProactive(UNKNOWN_SWITCH).withRole(null);
@@ -212,7 +214,19 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         requireReadable();
         BotEntries bot = entries(appId);
         GroupEntry group = bot.groups().get(number);
-        return group == null ? "群 " + number : maskKnown(group.name(), bot);
+        return group == null ? "群 " + number : displayName(group, bot);
+    }
+
+    private String displayName(GroupEntry group, BotEntries bot) {
+        return displayName(maskKnown(group.name(), bot), consoleRemark(group, bot));
+    }
+
+    private static String displayName(String name, String remark) {
+        return remark == null ? name : name + "（" + remark + "）";
+    }
+
+    private String consoleRemark(GroupEntry group, BotEntries bot) {
+        return group.remark() == null ? null : withConsoleText(bot, display -> display.apply(group.remark()));
     }
 
     public synchronized OptionalLong groupNumber(String openid) {
@@ -236,39 +250,32 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         return member != null && member.openid().equals(openid) ? OptionalLong.of(number) : OptionalLong.empty();
     }
 
-    public synchronized void renameGroup(long number, String name) {
-        String title = Objects.requireNonNull(name).strip();
-        if (title.codePointCount(0, title.length()) > 40) {
+    public synchronized void saveGroupRemark(long number, String remark) {
+        String value = Objects.requireNonNull(remark).strip();
+        if (value.codePointCount(0, value.length()) > 40) {
             throw new IllegalArgumentException("群名最多 40 字");
         }
-        if (!title.isEmpty() && settings.snapshot().configured() && settings.useSecret(title::contains)) {
+        if (!value.isEmpty() && settings.snapshot().configured() && settings.useSecret(value::contains)) {
             throw new IllegalArgumentException("群名不能包含 AppSecret");
         }
-        updateGroup(configuredApp(), number, group -> {
-            if (!title.isEmpty()) {
-                String apiName = group.nameSource() == NameSource.GROUP_INFO_API ? group.name() : group.apiName();
-                return group.withApiName(apiName).withName(title).withNameSource(NameSource.MANUAL);
-            }
-            if (group.nameSource() != NameSource.MANUAL) return group;
-            return group.apiName() == null
-                    ? group.withName(defaultName(group.joinedAt())).withNameSource(NameSource.DEFAULT)
-                    : group.withName(group.apiName()).withNameSource(NameSource.GROUP_INFO_API);
-        });
+        String appId = configuredApp();
+        String saved = value.isEmpty() ? null : maskKnown(value, entries(appId));
+        updateGroup(appId, number, group -> group.withRemark(saved));
     }
 
-    synchronized List<String> disabledPushGroups(Set<Long> targets) {
+    synchronized List<String> disabledPushGroups(Set<Long> targets, boolean forConsole) {
         if (bots == null) return List.of();
         BotEntries bot = currentEntries();
         return targets.stream().map(bot.groups()::get).filter(Objects::nonNull)
                 .filter(group -> group.proactive().status() == ProactiveStatus.DISABLED)
                 .filter(group -> !awaitingProactiveConfirmation(group))
-                .map(group -> maskKnown(group.name(), bot)).toList();
+                .map(group -> forConsole ? displayName(group, bot) : maskKnown(group.name(), bot)).toList();
     }
 
     synchronized void recheckProactiveAfterJoin() {
         if (bots == null) return;
         var config = settings.snapshot();
-        if (config.configured()) scheduleGroupStates(config.appId(), FetchReason.AFTER_JOIN);
+        if (config.configured()) scheduleGroups(config.appId(), FetchReason.AFTER_JOIN);
     }
 
     private static boolean awaitingProactiveConfirmation(GroupEntry group) {
@@ -285,34 +292,40 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         requireReadable();
         String appId = settings.snapshot().appId();
         // 普通页面读取沿用原来的查询节奏。轮询只读取当前结果。
-        if (refresh == null) scheduleGroupStates(appId, FetchReason.REGULAR);
-        else if (refresh) scheduleGroupStates(appId, FetchReason.CONSOLE_REFRESH);
+        if (refresh == null) scheduleGroups(appId, FetchReason.REGULAR);
+        else if (refresh) scheduleGroups(appId, FetchReason.CONSOLE_REFRESH);
         BotEntries bot = entries(appId);
         boolean refreshing = pending.keySet().stream()
-                .anyMatch(key -> key.appId().equals(appId) && key.endpoint() != Endpoint.INFO);
+                .anyMatch(key -> key.appId().equals(appId));
         return new ConsoleGroups(consoleGroupInfo(bot), refreshing);
     }
 
     private List<GroupInfo> consoleGroupInfo(BotEntries bot) {
         if (bot.groups().isEmpty()) return List.of();
+        return withConsoleText(bot, display -> groupInfo(bot, display));
+    }
+
+    private <T> T withConsoleText(BotEntries bot, Function<Function<String, String>, T> render) {
         if (settings.snapshot().configured()) {
             try {
-                return settings.useSecret(secret -> groupInfo(bot,
+                return settings.useSecret(secret -> render.apply(
                         text -> text.contains(secret) ? "已隐藏" : maskKnown(text, bot)));
             } catch (IllegalStateException e) {
-                return groupInfo(bot, text -> "已隐藏");
+                return render.apply(text -> "已隐藏");
             }
         }
-        return groupInfo(bot, text -> maskKnown(text, bot));
+        return render.apply(text -> maskKnown(text, bot));
     }
 
     private static List<GroupInfo> groupInfo(BotEntries bot, Function<String, String> display) {
         return bot.groups().values().stream()
                 .sorted(Comparator.comparing(GroupEntry::removed).thenComparing(GroupEntry::joinedAt)
                         .thenComparingLong(GroupEntry::number))
-                .map(group -> new GroupInfo(group.number(), display.apply(group.name()), group.nameSource(),
+                .map(group -> new GroupInfo(group.number(), display.apply(group.name()),
+                        group.remark() == null ? null : display.apply(group.remark()), group.nameSource(),
                         group.memberCount(), group.role(), group.proactive().status(),
-                        group.lastFailure() == null ? null : display.apply(group.lastFailure().reason()),
+                        group.lastFailure() == null ? null : display.apply(group.lastFailure()
+                                .consoleReason(displayName(group.name(), group.remark()))),
                         group.removed(), group.joinedAt().toString()))
                 .toList();
     }
@@ -368,23 +381,24 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     public synchronized List<Snapshot> snapshots(boolean force) {
         requireReadable();
         String appId = settings.snapshot().appId();
-        if (force) scheduleGroupStates(appId, FetchReason.REGULAR);
+        if (force) scheduleGroups(appId, FetchReason.REGULAR);
         BotEntries bot = entries(appId);
         Instant now = clock.instant();
         List<Group> groups = bot.groups().values().stream()
                 .filter(group -> !group.removed())
                 .map(group -> new Group(group.number(), maskKnown(group.name(), bot), group.memberCount(),
-                        group.role() == null ? null : group.role() != BotRole.MEMBER))
+                        group.role() == null ? null : group.role() != BotRole.MEMBER, consoleRemark(group, bot)))
                 .toList();
         return List.of(new Snapshot(id(), groups, List.of(), now, now, false, null));
     }
 
-    private void scheduleGroupStates(String appId, FetchReason reason) {
+    private void scheduleGroups(String appId, FetchReason reason) {
         for (GroupEntry group : entries(appId).groups().values()) {
             if (group.removed()) continue;
             boolean proactiveOnly = reason == FetchReason.AFTER_JOIN
                     || (reason == FetchReason.CONSOLE_REFRESH && group.proactive().status() != ProactiveStatus.ENABLED);
             schedule(appId, group, proactiveOnly ? Endpoint.PROACTIVE_STATE : Endpoint.BOT_STATE, reason);
+            if (reason == FetchReason.CONSOLE_REFRESH) schedule(appId, group, Endpoint.INFO, reason);
         }
     }
 
@@ -456,7 +470,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         if (group.removed()) {
             return new Result(false, null, "机器人已被移出这个群");
         }
-        return new Result(true, maskKnown(group.name(), bot), null);
+        return new Result(true, displayName(group, bot), null);
     }
 
     private CountDownLatch schedule(String appId, GroupEntry group, Endpoint endpoint) {
@@ -485,7 +499,8 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
 
     private boolean canFetch(BotEntries bot, GroupEntry group, Endpoint endpoint, FetchReason reason) {
         Instant now = clock.instant();
-        if (endpoint == Endpoint.PROACTIVE_STATE || reason == FetchReason.CONSOLE_REFRESH) {
+        if (endpoint == Endpoint.PROACTIVE_STATE
+                || (endpoint == Endpoint.BOT_STATE && reason == FetchReason.CONSOLE_REFRESH)) {
             if (!canFetchProactive(bot, group, reason, now)) return false;
             if (endpoint == Endpoint.PROACTIVE_STATE) return true;
         }
@@ -493,7 +508,9 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         if (coolingDown(bot.unavailableUntil().get(endpoint), now)) return false;
         if (previous == null) return true;
         if (previous.retryAt() != null) return !coolingDown(previous.retryAt(), now);
-        return endpoint == Endpoint.BOT_STATE && !now.isBefore(previous.attemptedAt().plus(ROLE_TTL));
+        Duration ttl = endpoint == Endpoint.INFO
+                ? (reason == FetchReason.CONSOLE_REFRESH ? INFO_REFRESH_TTL : INFO_TTL) : ROLE_TTL;
+        return !now.isBefore(previous.attemptedAt().plus(ttl));
     }
 
     private static boolean canFetchProactive(BotEntries bot, GroupEntry group, FetchReason reason, Instant now) {
@@ -590,13 +607,11 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     }
 
     private static GroupEntry applyInfo(GroupEntry group, JSONObject response) {
-        if (response.get("group_name") instanceof String name && !name.isBlank()) {
-            String title = mask(name.strip(), text(response, "union_group_openid"));
-            group = group.withApiName(title);
-            if (group.nameSource() != NameSource.MANUAL) {
-                group = group.withName(title).withNameSource(NameSource.GROUP_INFO_API);
-            }
-        }
+        String title = text(response, "group_name").strip();
+        String apiName = title.isEmpty() ? null : mask(title, text(response, "union_group_openid"));
+        group = group.withApiName(apiName)
+                .withName(apiName == null ? defaultName(group.joinedAt()) : apiName)
+                .withNameSource(apiName == null ? NameSource.DEFAULT : NameSource.GROUP_INFO_API);
         if (response.get("group_member_num") instanceof Integer count && count >= 0) {
             group = group.withMemberCount(count);
         }
@@ -646,8 +661,9 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     }
 
     private Map<String, BotEntries> load() {
+        Map<String, BotEntries> loaded;
         try {
-            Map<String, BotEntries> loaded = file.load();
+            loaded = file.load();
             Map<Long, String> groups = new HashMap<>();
             Map<Long, String> members = new HashMap<>();
             for (BotEntries bot : loaded.values()) {
@@ -655,11 +671,41 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
                 bot.members().forEach((num, member) -> checkNumber(members, num, member.number(), "member", member.openid()));
                 Objects.requireNonNull(bot.unavailableUntil());
             }
-            return loaded;
         } catch (IOException | RuntimeException e) {
             log.warn("无法读取 QQ 官方机器人对照表");
             return null;
         }
+        if (migrateManualNames(loaded)) {
+            try {
+                file.save(loaded);
+            } catch (IOException | RuntimeException e) {
+                // 本次运行仍可读到备注，下次成功保存对照表时会一起写入。
+                log.warn("无法保存 QQ 官方机器人群备注迁移结果");
+            }
+        }
+        return loaded;
+    }
+
+    private static boolean migrateManualNames(Map<String, BotEntries> loaded) {
+        boolean changed = false;
+        for (var entry : loaded.entrySet()) {
+            BotEntries bot = entry.getValue();
+            Map<Long, GroupEntry> migrated = null;
+            for (GroupEntry group : bot.groups().values()) {
+                if (group.nameSource() != NameSource.MANUAL) continue;
+                if (migrated == null) migrated = new LinkedHashMap<>(bot.groups());
+                String apiName = group.apiName();
+                boolean named = apiName != null && !apiName.isBlank();
+                migrated.put(group.number(), group.withRemark(maskKnown(group.name(), bot))
+                        .withName(named ? apiName : defaultName(group.joinedAt()))
+                        .withNameSource(named ? NameSource.GROUP_INFO_API : NameSource.DEFAULT));
+            }
+            if (migrated != null) {
+                entry.setValue(bot.withGroups(migrated));
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     private void save(String appId, BotEntries updated) {
@@ -766,7 +812,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     public record GroupEntry(long number, String openid, String name, NameSource nameSource,
                              Instant joinedAt, Instant lastSeenAt, boolean removed, Proactive proactive,
                              BotRole role, Integer memberCount, Refresh info, Refresh botState, Failure lastFailure,
-                             String apiName, LocalDate atAllRejectedOn, Refresh proactiveState) {
+                             String apiName, LocalDate atAllRejectedOn, Refresh proactiveState, String remark) {
         public GroupEntry {
             Objects.requireNonNull(openid);
             Objects.requireNonNull(name);
@@ -804,7 +850,7 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
         }
     }
 
-    record GroupInfo(long num, String name, NameSource nameSource, Integer memberCount, BotRole role,
+    record GroupInfo(long num, String name, String remark, NameSource nameSource, Integer memberCount, BotRole role,
                      ProactiveStatus proactive, String lastFailure, boolean removed, String joinedAt) {}
 
     record ConsoleGroups(List<GroupInfo> groups, boolean refreshing) {}
@@ -823,7 +869,41 @@ public class QqBotDirectory implements PushTargetDirectory, PushTargetLookup, At
     }
 
     public record Proactive(ProactiveStatus status, SwitchSource source, Instant at) {}
-    public record Failure(String reason, Instant at) {}
+    public record Failure(String reason, Instant at, ProactiveDenial proactiveDenial) {
+        public Failure(String reason, Instant at) {
+            this(reason, at, null);
+        }
+
+        String consoleReason(String groupName) {
+            ProactiveDenial denial = proactiveDenial == null ? ProactiveDenial.fromLegacyReason(reason) : proactiveDenial;
+            return denial == null ? reason : denial.reason(groupName);
+        }
+    }
+
+    public enum ProactiveDenial {
+        DIRECT(""),
+        REPLY_FALLBACK("回复次数用完或超过 60 分钟，改为主动发言时被拒：");
+
+        private static final String SUFFIX = "」的群主还没打开机器人的「主动在群聊内发言」：" + QqBotSender.SWITCH_PATH;
+        private final String prefix;
+
+        ProactiveDenial(String prefix) {
+            this.prefix = prefix + "群「";
+        }
+
+        String reason(String groupName) {
+            return prefix + groupName + SUFFIX;
+        }
+
+        private static ProactiveDenial fromLegacyReason(String reason) {
+            if (reason != null && reason.endsWith(SUFFIX)) {
+                for (ProactiveDenial denial : values()) {
+                    if (reason.startsWith(denial.prefix)) return denial;
+                }
+            }
+            return null;
+        }
+    }
     public record Refresh(Instant attemptedAt, Instant retryAt, Instant roleCheckedAt) {
         public Refresh(Instant attemptedAt, Instant retryAt) {
             this(attemptedAt, retryAt, null);

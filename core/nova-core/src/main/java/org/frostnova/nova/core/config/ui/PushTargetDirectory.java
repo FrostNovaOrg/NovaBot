@@ -16,8 +16,12 @@ public interface PushTargetDirectory {
      */
     List<Snapshot> snapshots(boolean force);
 
-    /** Member count and administrator status may be null if unknown. */
-    record Group(long num, String name, Integer memberCount, Boolean admin) {}
+    /** Member count, administrator status and console remark may be absent. */
+    record Group(long num, String name, Integer memberCount, Boolean admin, String remark) {
+        public Group(long num, String name, Integer memberCount, Boolean admin) {
+            this(num, name, memberCount, admin, null);
+        }
+    }
 
     record Friend(long num, String nickname, String remark) {}
 

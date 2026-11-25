@@ -53,6 +53,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.HttpEntityMethodProcessor;
+import org.springframework.web.servlet.mvc.method.annotation.RequestResponseBodyMethodProcessor;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -257,20 +258,31 @@ class QqBotConsoleControllerTest {
     }
 
     @Test
-    void renamedGroupAppearsInPushPickerAndResetRestoresTheNameFromQq() {
+    void groupRemarkIsSearchableAndCanBeClearedWithoutChangingTheQqName() {
         withConsole(rig -> {
             saveCredentials(rig.mvc);
             long number = join(rig);
-            String path = "groups/" + number + "/name";
+            String path = "groups/" + number + "/remark";
             var picker = get("/config/api/bot/targets").param("type", "group").requestAttr(ConfigUiAccess.ACCOUNT, ADMIN);
-            rig.mvc.perform(write(path, JSONObject.of("name", "群".repeat(41)))).andExpect(status().isBadRequest());
+            rig.mvc.perform(write("groups/" + number + "/name", JSONObject.of("name", "手改群名")))
+                    .andExpect(status().isNotFound());
+            rig.mvc.perform(write(path, JSONObject.of("remark", "群".repeat(41)))).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("群名最多 40 字"));
+            rig.mvc.perform(write(path, JSONObject.of("remark", "备注 " + SECRET))).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.message").value("群名不能包含 AppSecret"));
             rig.mvc.perform(picker).andExpect(jsonPath("$.items[0].name").value("接口群名"));
-            rig.mvc.perform(write(path, JSONObject.of("name", "  主播一群  "))).andExpect(status().isOk());
+            rig.mvc.perform(write(path, JSONObject.of("remark", "  主播一群  "))).andExpect(status().isOk());
             rig.mvc.perform(picker).andExpect(status().isOk())
                     .andExpect(jsonPath("$.items[0].num").value(number))
-                    .andExpect(jsonPath("$.items[0].name").value("主播一群"));
-            rig.mvc.perform(write(path, JSONObject.of("name", " "))).andExpect(status().isOk());
-            rig.mvc.perform(picker).andExpect(jsonPath("$.items[0].name").value("接口群名"));
+                    .andExpect(jsonPath("$.items[0].name").value("接口群名"))
+                    .andExpect(jsonPath("$.items[0].remark").value("主播一群"));
+            rig.mvc.perform(get("/config/api/bot/targets").param("type", "group").param("q", "主播一群")
+                            .requestAttr(ConfigUiAccess.ACCOUNT, ADMIN))
+                    .andExpect(jsonPath("$.items[0].num").value(number));
+            rig.mvc.perform(write(path, JSONObject.of("remark", " "))).andExpect(status().isOk());
+            rig.mvc.perform(picker)
+                    .andExpect(jsonPath("$.items[0].name").value("接口群名"))
+                    .andExpect(jsonPath("$.items[0].remark").doesNotExist());
         });
     }
 
@@ -328,23 +340,23 @@ class QqBotConsoleControllerTest {
             var credential = JSONObject.of("appId", APP_ID, "appSecret", SECRET);
             var interval = JSONObject.of("millis", 2000);
             var welcome = JSONObject.of("enabled", false);
-            var name = JSONObject.of("name", "主播一群");
+            var remark = JSONObject.of("remark", "主播一群");
             rig.mvc.perform(write("credentials", credential).requestAttr(ConfigUiAccess.ACCOUNT, MEMBER))
                     .andExpect(status().isForbidden());
             assertTrue(rig.tokenRequests.isEmpty());
             rig.mvc.perform(write("credentials", credential)).andExpect(status().isOk());
-            String group = "groups/" + join(rig) + "/name";
-            for (var request : List.of(write("interval", interval), write("welcome", welcome), write(group, name))) {
+            String group = "groups/" + join(rig) + "/remark";
+            for (var request : List.of(write("interval", interval), write("welcome", welcome), write(group, remark))) {
                 rig.mvc.perform(request.requestAttr(ConfigUiAccess.ACCOUNT, MEMBER)).andExpect(status().isForbidden());
             }
             rig.mvc.perform(write("interval", interval)).andExpect(status().isOk());
             rig.mvc.perform(write("welcome", welcome)).andExpect(status().isOk());
-            rig.mvc.perform(write(group, JSONObject.of("name", "主播一群", "command", SECRET))
+            rig.mvc.perform(write(group, JSONObject.of("remark", "主播一群", "command", SECRET))
                     .param("platform", SECRET).param("uid", APP_ID)).andExpect(status().isOk());
             var audit = audit();
             var successful = audit.stream().filter(row -> "SUCCESS".equals(row.getString("result"))).toList();
             assertEquals(List.of("保存 QQ 官方机器人凭据", "调整 QQ 官方机器人发送间隔",
-                            "调整 QQ 官方机器人进群欢迎语", "修改 QQ 官方机器人的群名"),
+                            "调整 QQ 官方机器人进群欢迎语", "修改 QQ 官方机器人的群备注"),
                     successful.stream().map(row -> row.getString("description")).toList());
             assertTrue(audit.stream().allMatch(row -> row.getJSONObject("target").isEmpty()));
             assertPrivate(audit.toString());
@@ -543,10 +555,13 @@ class QqBotConsoleControllerTest {
     void claimCodeAndOpenIdsStayOutOfLogsTimelineAuditAndState() {
         Logger gatewayLog = (Logger) LoggerFactory.getLogger(QqBotGateway.class);
         Logger mvcLog = (Logger) LoggerFactory.getLogger(HttpEntityMethodProcessor.class);
+        Logger mvcBodyLog = (Logger) LoggerFactory.getLogger(RequestResponseBodyMethodProcessor.class);
         Logger senderLog = (Logger) LoggerFactory.getLogger(QqBotSender.class);
         Level originalGatewayLevel = gatewayLog.getLevel();
         Level originalMvcLevel = mvcLog.getLevel();
+        Level originalMvcBodyLevel = mvcBodyLog.getLevel();
         boolean originalMvcAdditivity = mvcLog.isAdditive();
+        boolean originalMvcBodyAdditivity = mvcBodyLog.isAdditive();
         boolean originalSenderAdditivity = senderLog.isAdditive();
         var logs = new ListAppender<ILoggingEvent>();
         logs.list = new CopyOnWriteArrayList<>();
@@ -556,13 +571,22 @@ class QqBotConsoleControllerTest {
         senderLog.addAppender(logs);
         gatewayLog.setLevel(Level.DEBUG);
         mvcLog.setLevel(Level.TRACE);
+        mvcBodyLog.setLevel(Level.TRACE);
         mvcLog.setAdditive(false);
+        mvcBodyLog.setAdditive(false);
         senderLog.setAdditive(false);
         try {
             withConsole(rig -> {
                 saveCredentials(rig.mvc);
                 connect(rig);
                 long group = join(rig);
+                mvcBodyLog.addAppender(logs);
+                try {
+                    rig.mvc.perform(write("groups/" + group + "/remark", JSONObject.of("remark", "节目组")))
+                            .andExpect(status().isOk());
+                } finally {
+                    mvcBodyLog.detachAppender(logs);
+                }
                 configurePush(rig, group);
                 rig.mvc.perform(write(CLAIM_CODE, new JSONObject()).requestAttr(ConfigUiAccess.ACCOUNT, MEMBER))
                         .andExpect(status().isForbidden());
@@ -583,13 +607,22 @@ class QqBotConsoleControllerTest {
                 assertFalse(afterReplyError.toJSONString().contains(code), "认领回复失败时状态回包外泄认领码");
 
                 rig.claim("claim", SENDER, "认领 " + code);
-                assertTrue(rig.passiveReply("claim").contains("已认领超级管理员"));
+                String reply = rig.passiveReply("claim");
+                assertTrue(reply.contains("已认领超级管理员"));
+                assertFalse(reply.contains("节目组"));
                 JSONObject claimed = state(rig);
                 assertFalse(claimed.getBooleanValue("claimCodeActive"));
                 var admin = claimed.getJSONArray("claimedAdmins").getJSONObject(0);
                 assertEquals("小明", admin.getString("nickname"));
-                assertEquals("接口群名", admin.getString("groupName"));
+                assertEquals("接口群名（节目组）", admin.getString("groupName"));
                 assertNotNull(admin.getString("claimedAt"));
+                rig.mvc.perform(get("/config/api/bot/targets").param("type", "group")
+                                .requestAttr(ConfigUiAccess.ACCOUNT, ADMIN))
+                        .andExpect(jsonPath("$.items[0].remark").value("节目组"));
+                rig.mvc.perform(get("/config/api/bot/targets/lookup").param("platform", PLATFORM)
+                                .param("type", "group").param("num", Long.toString(group))
+                                .requestAttr(ConfigUiAccess.ACCOUNT, ADMIN))
+                        .andExpect(jsonPath("$.name").value("接口群名（节目组）"));
                 rig.mvc.perform(write("admin-claims/" + admin.getString("memberNum") + "/revoke", new JSONObject())
                         .param("uid", code).param("platform", SENDER)).andExpect(status().isOk());
 
@@ -598,10 +631,12 @@ class QqBotConsoleControllerTest {
                 assertTrue(audit.stream().anyMatch(row -> "撤销官方机器人超管".equals(row.getString("description"))));
                 assertTrue(audit.stream().allMatch(row -> row.getJSONObject("target").isEmpty()));
                 assertEquals(1, rig.timeline.size(), "认领只记一条专用时间线");
-                assertTrue(rig.timeline.get(0).text().contains("群『接口群名』的『小明』认领了超级管理员"));
+                assertTrue(rig.timeline.get(0).text().contains("群『接口群名（节目组）』的『小明』认领了超级管理员"));
                 for (var line : logs.list) {
                     assertFalse(line.getFormattedMessage().contains(code),
                             "认领码出现在 " + line.getLoggerName() + " 的日志");
+                    assertFalse(line.getFormattedMessage().contains("节目组"),
+                            "群备注出现在 " + line.getLoggerName() + " 的日志");
                 }
                 for (String text : List.of(withCode.toString(), claimed.toString(), audit.toString(), rig.timeline.toString(),
                         logs.list.stream().map(ILoggingEvent::getFormattedMessage).toList().toString())) {
@@ -616,7 +651,9 @@ class QqBotConsoleControllerTest {
             senderLog.detachAppender(logs);
             gatewayLog.setLevel(originalGatewayLevel);
             mvcLog.setLevel(originalMvcLevel);
+            mvcBodyLog.setLevel(originalMvcBodyLevel);
             mvcLog.setAdditive(originalMvcAdditivity);
+            mvcBodyLog.setAdditive(originalMvcBodyAdditivity);
             senderLog.setAdditive(originalSenderAdditivity);
             logs.stop();
         }

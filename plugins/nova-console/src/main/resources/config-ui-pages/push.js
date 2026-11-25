@@ -20,7 +20,8 @@ import {
   atAllStatus, buildDirectory, canMigrateGroup, channelIndex, channelName, channelRevenueVisible, channelSession,
   closeAssistantForHiddenRevenue, commandGroups, commandSummary,
   defaultMessages, handlerNames, handlerOf, layoutState, messageOf, migrateGroupTarget, noticeSwitches,
-  officialGroupOptions, previewRequestBody, previewRevenueCaption, pushChannelOf, pushTree, quietSummary,
+  isOfficialGroup, officialGroupOptions, previewRequestBody, previewRevenueCaption, pushChannelOf, pushPlatformLabel,
+  pushTree, quietSummary,
   recentPushes, restoredLayoutParams,
   revenueSummary, savedRevenueVisible,
   sessionOf, streamerName, strandedSessions, subscriptionSummary, templateState, typeName,
@@ -867,6 +868,18 @@ function loadGroupList() {
   return groupListLoad;
 }
 
+async function refreshPushPlatforms() {
+  try {
+    const status = await api('/status', {cache: 'no-store'});
+    if (Array.isArray(status?.senders)) {
+      store.senderList = status.senders;
+      store.senderAdapters = status.senderAdapters || {};
+    }
+  } catch (e) {
+    // 状态暂时取不到时，继续用上次取得的平台资料。
+  }
+}
+
 /**
  * 取这一页要用的几份数据
  *
@@ -877,6 +890,7 @@ function loadGroupList() {
  * 也照样改得动——整趟判失败的话，屏幕上会只剩一句「载入失败」，配好的东西一个也看不见。
  */
 export async function loadPushPage() {
+  const loadingPlatforms = refreshPushPlatforms();
   const loadingGroups = isMember() ? null : loadGroupList();
   try {
     const listed = await api('/report/palettes');
@@ -928,6 +942,7 @@ export async function loadPushPage() {
     directory = {};
   }
 
+  await loadingPlatforms;
   renderStreamers();
   await decoratePushData();
 }
@@ -1592,6 +1607,11 @@ function renderStreamerLevel(host, user) {
   }
 }
 
+function targetNumberLabel(platform, type) {
+  if (isOfficialGroup(platform, type)) return '编号';
+  return Number(type) === 1 ? term('bot.target.group', '群号') : term('bot.target.user', '用户号');
+}
+
 function channelRow(user, target) {
   const session = channelSession(sessionOf(runtime.sessions, target.platform, target.num, target.type),
     target, user, channelCommands());
@@ -1605,6 +1625,8 @@ function channelRow(user, target) {
   link.textContent = channelName(session, target, directory);
   title.appendChild(link);
   title.appendChild(pill(typeName(session, target)));
+  const platform = pushPlatformLabel(target.platform, store.senderAdapters);
+  if (platform) title.appendChild(pill(platform));
   if (target.enabled === false) title.appendChild(pill('已停用'));
   if (session.disabledCount) {
     title.appendChild(pill('已禁用 ' + session.disabledCount + ' 条命令', 'err'));
@@ -1616,8 +1638,7 @@ function channelRow(user, target) {
   main.appendChild(title);
 
   const sub = el('div', 'rc-sub');
-  sub.textContent = (Number(target.type) === 1
-    ? term('bot.target.group', '群号') : term('bot.target.user', '用户号')) + ' ' + target.num;
+  sub.textContent = targetNumberLabel(target.platform, target.type) + ' ' + target.num;
   main.appendChild(sub);
 
   const tags = el('div', 'rc-tg');
@@ -1670,8 +1691,10 @@ function renderChannelLevel(host, user, target) {
   title.textContent = name;
   line.appendChild(title);
   line.appendChild(pill(typeName(session, target)));
+  const platform = pushPlatformLabel(target.platform, store.senderAdapters);
+  if (platform) line.appendChild(pill(platform));
   const num = el('span', 'ch-id');
-  num.textContent = (group ? term('bot.target.group', '群号') : term('bot.target.user', '用户号')) + ' ' + target.num;
+  num.textContent = targetNumberLabel(target.platform, target.type) + ' ' + target.num;
   line.appendChild(num);
   head.appendChild(line);
   const actions = el('div', 'ch-actions');
@@ -2526,7 +2549,7 @@ function pickTarget(opts) {
     const bar = el('div', 'dwbar');
     const search = el('input');
     search.type = 'search';
-    search.placeholder = opts.officialGroups ? '搜索群名或群号' : '搜索群名、群号或好友昵称';
+    search.placeholder = opts.officialGroups ? '搜索群名、编号或备注' : '搜索群名、群号或好友昵称';
     search.setAttribute('aria-label', opts.officialGroups ? '搜索官方机器人的群' : '搜索可选的群与好友');
     bar.appendChild(search);
 
@@ -2600,9 +2623,7 @@ function pickTarget(opts) {
           const row = el('div', 'dwrow dw-target-row' + (taken ? ' taken' : ''));
           const description = el('div');
           description.innerHTML = '<div class="dw-nm">' + esc(item.name || item.num) + '</div>'
-            + '<div class="dw-sub">' + (item.type === 1
-              ? term('bot.target.group', '群号') + ' ' : term('bot.target.user', '用户号') + ' ')
-            + esc(item.num)
+            + '<div class="dw-sub">' + esc(targetNumberLabel(item.sender, item.type)) + ' ' + esc(item.num)
             + (item.memberCount ? ' · ' + esc(item.memberCount) + ' 人' : '')
             + (item.admin ? ' · 机器人为管理员' : '') + esc(pushing) + '</div>';
           row.appendChild(description);
@@ -2763,7 +2784,13 @@ function lookupTarget(platform, type, num) {
 }
 
 /** 成员只查询输入的完整号码，不读取或展示机器人会话名单。 */
-function pickMemberTarget(opts) {
+async function pickMemberTarget(opts) {
+  const body = $('#push-drawer-body');
+  openDrawer(opts.title, '', content => { content.innerHTML = loadingHtml('正在读取推送平台…'); });
+  const loading = body.children[0];
+  await refreshPushPlatforms();
+  if (body.children[0] !== loading) return;
+
   const platformNames = [...new Set([
     ...(opts.user.targets || []).map(target => target.platform),
     ...pushData.flatMap(user => user.targets || []).map(target => target.platform),
@@ -2780,7 +2807,7 @@ function pickMemberTarget(opts) {
       for (const platform of platformNames) {
         const option = el('option');
         option.value = platform;
-        option.textContent = platform;
+        option.textContent = pushPlatformLabel(platform, store.senderAdapters) || platform;
         sender.appendChild(option);
       }
       sender.value = platformNames[0];
@@ -2871,7 +2898,7 @@ function addChannel(user) {
   const taken = (user.targets || [])
     .map(item => item.platform + '|' + Number(item.type) + '|' + item.num);
 
-  (isMember() ? pickMemberTarget : pickTarget)({
+  return (isMember() ? pickMemberTarget : pickTarget)({
     title: '给「' + streamerName(user) + '」添加通道',
     lead: '从机器人已加入的群和已添加的好友中选择，已添加为通道的显示为灰色。通道设置（金额可见、问数开关、静音时段、报告图配色和命令开关）每条通道各一份，不影响同群的其他主播。',
     user,

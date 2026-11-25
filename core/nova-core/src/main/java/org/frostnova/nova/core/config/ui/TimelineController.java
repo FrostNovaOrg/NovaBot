@@ -64,7 +64,7 @@ public class TimelineController {
                                @RequestParam(required = false) String q,
                                @RequestParam(defaultValue = "0") int limit,
                                @RequestParam(required = false) String cursor) {
-        JSONObject result = new JSONObject();
+        JSONObject result = new ConsoleJsonBody();
         result.put("success", true);
 
         LocalDate day;

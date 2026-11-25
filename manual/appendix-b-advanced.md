@@ -232,6 +232,6 @@ novabot:
 `application.yml` 与 `datasource.json` 都可以直接编辑，改完重启即可。
 `datasource.json` 的完整示例见发行包里的 `datasource.example.json`。
 
-推送目标的 `type`：**1 为群聊，0 为私聊**，`num` 是对应的群号或 QQ 号。填其他数字会被当作
+推送目标的 `type`：**1 为群聊，0 为私聊**。`num` 对 NapCat 是群号或 QQ 号，对官方机器人的群是 NovaBot 分配的编号。`type` 填其他数字会被当作
 「未知类型」在运行期丢弃，因此界面在保存时就会拦下；手写 JSON 时没有这道拦，写错了不报错，
 只是那条推送悄悄不生效。
