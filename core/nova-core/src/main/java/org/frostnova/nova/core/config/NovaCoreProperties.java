@@ -248,7 +248,7 @@ public class NovaCoreProperties {
         private volatile boolean enabled = true;
 
         /**
-         * 第一次推送到一个群或好友时附一句用法提示，只发一次。改完立即生效，不必重启。
+         * 默认关闭。开启后，第一次推送到一个群或好友时附一句用法提示，只发一次。改完立即生效，不必重启。
          */
         // 关掉之后不把这次算作已经提示过，下次打开时的第一条还会带上。
         // 之所以能即时生效：每次跟提示前都现读。关掉必须立刻停，否则关了还会再发一句
@@ -256,7 +256,7 @@ public class NovaCoreProperties {
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("首次推送用法提示")
         @ConfigSummary(value = "", details = false)
-        private boolean firstPushTip = true;
+        private boolean firstPushTip = false;
 
         /**
          * 机器人账号每日最多 @全体成员 的次数，单位：次，0 或负数不限制，额度由该账号推送的全部会话共享。超额时平台会静默忽略——消息照发但 @ 不生效，所以这里先记账，超额改发普通消息。

@@ -21,6 +21,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -28,7 +29,6 @@ import org.springframework.beans.factory.ObjectProvider;
 import java.nio.file.Path;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -36,6 +36,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -74,12 +76,7 @@ class FirstPushTipCorpusTest {
      */
     private static final Duration DELIVERY_TIMEOUT = Duration.ofSeconds(5);
 
-    /**
-     * 等「不该再有下一条」的观察窗口
-     * <p>
-     * 提示是在同一个线程里紧跟着投出去的，隔的是几微秒。留这么久纯粹是为了
-     * 让「多出来的那一条」有充分的机会露面——它若在这段时间里没出现，就是真的没有
-     */
+    /** 静音时消息不入队，保留短暂的观察窗口检查意外投递。 */
     private static final Duration SETTLE = Duration.ofMillis(200);
 
     /**
@@ -186,6 +183,7 @@ class FirstPushTipCorpusTest {
     @MethodSource("corpus")
     void replays(Corpus corpus) {
         Fixture fixture = new Fixture();
+        fixture.properties.getPush().setFirstPushTip(true);
 
         for (Push push : corpus.pushes()) {
             List<String> sent = fixture.push(push);
@@ -203,6 +201,19 @@ class FirstPushTipCorpusTest {
                 assertTrue(sent.get(1).contains("菜单"),
                         corpus.name() + "：提示得指出发什么，实际是「" + sent.get(1) + "」");
             }
+        }
+    }
+
+    @ParameterizedTest(name = "{0} {1}")
+    @CsvSource({PLATFORM + ", GROUP", "qq-official, GROUP", PLATFORM + ", FRIEND"})
+    @DisplayName("未设置开关时，首次推送只发送通知")
+    void firstPushWithNoSettingSendsOnlyNotification(String platform, PushTargetType type) {
+        Fixture fixture = new Fixture(platform);
+        try {
+            long target = type == PushTargetType.GROUP ? GROUP_A : FRIEND;
+            assertEquals(List.of("开播啦"), fixture.push(new Push(type, target, true, false, false, null)));
+        } finally {
+            fixture.sender.shutdown();
         }
     }
 
@@ -475,29 +486,35 @@ class FirstPushTipCorpusTest {
     private static class Fixture {
         final NovaCoreProperties properties = new NovaCoreProperties();
 
+        private final String platform;
+
         private final List<String> delivered = Collections.synchronizedList(new ArrayList<>());
+
+        private final Semaphore finished = new Semaphore(0);
 
         private final NovaMessageSender sender;
 
         private volatile boolean succeeds = true;
 
         Fixture() {
+            this(PLATFORM);
+        }
+
+        Fixture(String platform) {
+            this.platform = platform;
             HttpUtil http = mock(HttpUtil.class);
-            when(http.postJson(anyString(), any(), any())).thenAnswer(invocation -> {
-                Map<String, Object> params = invocation.getArgument(2);
-                delivered.add(String.valueOf(params.get("content")));
-                return succeeds
-                        ? new JSONObject().fluentPut("code", 0).fluentPut("id", "m" + delivered.size())
-                        : new JSONObject().fluentPut("code", 2).fluentPut("message", "群不存在");
-            });
+            when(http.postJson(anyString(), any(), any())).thenAnswer(invocation -> deliver(invocation.getArgument(2)));
 
             Sender target = new Sender();
-            target.setName(PLATFORM);
+            target.setName(platform);
             target.setUrl("http://127.0.0.1:7827/onebot/send");
             target.setDelay(0);
+            if ("qq-official".equals(platform)) {
+                target.setLocalDelivery((headers, params) -> deliver(params));
+            }
 
             NovaSenderService senderService = mock(NovaSenderService.class);
-            when(senderService.getSender(PLATFORM)).thenReturn(Optional.of(target));
+            when(senderService.getSender(platform)).thenReturn(Optional.of(target));
 
             @SuppressWarnings("unchecked")
             ObjectProvider<AtAllPermissionResolver> resolvers = mock(ObjectProvider.class);
@@ -506,47 +523,47 @@ class FirstPushTipCorpusTest {
             sender = new NovaMessageSender(http, senderService,
                     new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties),
                     TimelineWriter.NONE, new AtAllQuotaService(properties), resolvers,
-                    new FirstPushTipService(new NovaStateStore(properties), properties));
+                    new FirstPushTipService(new NovaStateStore(properties), properties)) {
+                @Override
+                void waitForNextMessage(long delay) {
+                    finished.release();
+                }
+            };
+        }
+
+        private JSONObject deliver(Map<String, Object> params) {
+            delivered.add(String.valueOf(params.get("content")));
+            return succeeds
+                    ? new JSONObject().fluentPut("code", 0).fluentPut("id", "m" + delivered.size())
+                    : new JSONObject().fluentPut("code", 2).fluentPut("message", "群不存在");
         }
 
         /**
          * 推一条，返回这一次实际发出去的每一条（按顺序）
          * <p>
-         * 走 {@link NovaMessageSender#send} 而不是 sendNow：提示只跟在真正的推送后面，
-         * 而 sendNow 是「发送测试消息」按钮那条路。代价是投递在后台线程上，只能等——
-         * 因此先等够该有的条数，再多看一会儿有没有多出来的
+         * 等发送线程处理完本条推送及其可能附带的提示，再检查实际投递内容。
          */
         List<String> push(Push push) {
             quiet(push.quiet());
             succeeds = push.succeeds();
 
             int before = delivered.size();
-            Message message = Message.create(PLATFORM, push.type(), push.num(), "开播啦").get(0);
+            Message message = Message.create(platform, push.type(), push.num(), "开播啦").get(0);
             message.setReply(push.reply());
             sender.send(message);
 
-            await(before + push.expected());
-            settle();
-            synchronized (delivered) {
-                return List.copyOf(delivered.subList(before, delivered.size()));
-            }
-        }
-
-        /**
-         * 等到投出去的总条数达到目标，或超时为止
-         */
-        private void await(int total) {
-            Instant deadline = Instant.now().plus(DELIVERY_TIMEOUT);
-            while (delivered.size() < total && Instant.now().isBefore(deadline)) {
-                Thread.onSpinWait();
-            }
-        }
-
-        private void settle() {
             try {
-                Thread.sleep(SETTLE.toMillis());
+                if (push.quiet()) {
+                    assertFalse(finished.tryAcquire(SETTLE.toMillis(), TimeUnit.MILLISECONDS), "静音期间不应入队");
+                } else {
+                    assertTrue(finished.tryAcquire(DELIVERY_TIMEOUT.toSeconds(), TimeUnit.SECONDS), "等待推送处理完毕超时");
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                throw new AssertionError(e);
+            }
+            synchronized (delivered) {
+                return List.copyOf(delivered.subList(before, delivered.size()));
             }
         }
 
