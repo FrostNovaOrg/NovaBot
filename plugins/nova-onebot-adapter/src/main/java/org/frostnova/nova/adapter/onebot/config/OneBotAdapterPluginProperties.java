@@ -98,18 +98,18 @@ public class OneBotAdapterPluginProperties {
         /**
          * 是否信任反向代理设置的 X-Forwarded-For／X-Real-IP 头；只有确实部署在反代之后才可开，否则来源 IP 可被伪造。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("推送接口 · 信任反向代理")
         @ConfigSummary("仅在可信反向代理之后启用，否则来源 IP 可被伪造。")
-        private boolean trustProxy = false;
+        private volatile boolean trustProxy = false;
 
         /**
          * 是否输出鉴权失败的审计日志。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("推送接口 · 鉴权失败审计日志")
         @ConfigSummary(value = "", details = false)
-        private boolean auditLog = true;
+        private volatile boolean auditLog = true;
 
         /**
          * 推送接口令牌过弱（太短，或含常见词）时是否直接终止启动；只查这一项。默认只告警不拦，对外网可达的部署建议开。
@@ -124,6 +124,26 @@ public class OneBotAdapterPluginProperties {
         private RateLimit rateLimit = new RateLimit();
 
         /**
+         * 一个请求从头到尾照用的那一组：信任反向代理、审计日志、频率限制开关
+         * <p>
+         * 保存时这三项在同一把锁（本对象）下一起写回，这里在同一把锁下一起取，
+         * 一个请求拿到的不会是半新半旧的一组；保存返回之后进来的请求拿到的全是新值。
+         * @return 此刻的一组取值
+         */
+        public synchronized RequestPolicy requestPolicy() {
+            return new RequestPolicy(trustProxy, auditLog, rateLimit.isEnabled());
+        }
+
+        /**
+         * 推送接口一个请求照用的安全取值
+         * @param trustProxy 是否信任反向代理设置的来源头
+         * @param auditLog 是否记鉴权失败审计日志
+         * @param rateLimited 是否做频率限制
+         */
+        public record RequestPolicy(boolean trustProxy, boolean auditLog, boolean rateLimited) {
+        }
+
+        /**
          * 频率限制相关
          */
         @Getter
@@ -132,10 +152,10 @@ public class OneBotAdapterPluginProperties {
             /**
              * 是否启用推送接口频率限制。
              */
-            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
             @ConfigLabel("推送接口 · 频率限制")
             @ConfigSummary(value = "", details = false)
-            private boolean enabled = true;
+            private volatile boolean enabled = true;
 
             /**
              * 单个来源每分钟允许的请求数，单位：次／分。
@@ -224,10 +244,10 @@ public class OneBotAdapterPluginProperties {
         // 退化时（2026-08-10，cgroup 内存节流）中位 2.83 秒、p90 10.4 秒。判据取最近
         // 若干次的中位数而非最近一次，健康时的偶发毛刺因此不会翻黄。图片是几百 KB 的
         // 内联 base64，转发一慢就没有工作线程去读它，最终卡满超时被丢弃。
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("OneBot 探测 · 慢调用阈值")
         @ConfigSummary("0 或负数表示不判定慢调用。")
-        private int slowThresholdMillis = 2000;
+        private volatile int slowThresholdMillis = 2000;
 
         // 告警收敛间隔原本在此按通道各配一份，现已统一由 novabot.core.alert.convergence-interval
         // 管理：同一个故障不该因为出口不同而各有一套抑制规则
