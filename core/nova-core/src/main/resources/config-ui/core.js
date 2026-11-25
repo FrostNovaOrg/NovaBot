@@ -340,9 +340,7 @@ export function barVisible(n, pending, message) {
 /**
  * 按此刻的三件事重画底部那条
  *
- * 挂在 <html> 上而不是直接改那条的 style：页底得空出条那么高的一截，最后一行才不会被盖住，
- * 而藏了条还空着一截就成了一段无缘无故的留白。两件事同一个开关，样式表里一处写全
- * （见 app.css 的 html.nobar）；分成两处切的话，它们迟早会各切各的。
+ * app.css 用 html.nobar 控制显隐。页底留白随保存栏实际高度调整，隐藏时高度归零。
  */
 function paintBar() {
   const on = barVisible(changeCount(), store.restartPending.length, $('#status-text').textContent);
