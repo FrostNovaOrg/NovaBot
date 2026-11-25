@@ -305,8 +305,8 @@ class QqBotSender {
             for (int i = 0; i < uploaded.size(); i++) {
                 String fileInfo = uploaded.get(i);
                 String text = i == 0 ? caption : "";
-                JSONObject body = JSONObject.of("msg_type", 7, "content", text.isBlank() ? " " : text,
-                        "media", JSONObject.of("file_info", fileInfo));
+                JSONObject body = JSONObject.of("msg_type", 7, "media", JSONObject.of("file_info", fileInfo));
+                if (!text.isBlank()) body.put("content", text);
                 JSONObject result = sendContent(target, path + "/messages", body, null, replyTo, reply, false);
                 if (result.getIntValue("code") != 0) {
                     return imageFailure(firstId, result);
@@ -336,6 +336,7 @@ class QqBotSender {
             JSONObject part = parts.get(i);
             JSONObject markdown = part.getJSONObject("markdown");
             String text = markdown == null ? part.getString("content") : markdown.getString("content");
+            if (text == null) text = "";
             if (atAllRejected && text.contains(AT_ALL_TAG)) {
                 text = escapeMentions(text.replace(AT_ALL_TAG, ""));
                 if (text.isBlank() && (imagesFollow || firstId != null || i + 1 < parts.size())) {
@@ -383,6 +384,11 @@ class QqBotSender {
                 }
                 boolean fallback = reply != null && !part.containsKey("msg_id");
                 JSONObject failed = apiFailure(target, text, fileInfo, e, part, fallback, false);
+                if (failed == null) {
+                    log.warn("QQ 不收不带文字的图片消息（错误码 {}），这条改回带一个空格发", e.code());
+                    part.put("content", " ");
+                    continue;
+                }
                 // 已确认的首段编号也让核心知道不能剥图重发整篇正文。
                 if (firstId != null) failed.put("id", firstId);
                 return failed;
@@ -458,6 +464,7 @@ class QqBotSender {
         return id;
     }
 
+    /** 无文字图片遇到可换写法重试的拒绝时，返回 null 让发送循环补发。 */
     private JSONObject apiFailure(Target target, String text, String protectedValue, QqBotApiException error,
                                   JSONObject messageBody, boolean replyFallback, boolean multipart) {
         boolean sending = messageBody != null;
@@ -472,9 +479,6 @@ class QqBotSender {
             return fail(target, CLAIM_REPLY_FAILED, error.code() == 40034105);
         }
         String official = maskDiagnostic(target, error.getMessage(), protectedValue);
-        String trace = maskDiagnostic(target, error.traceId(), protectedValue);
-        log.warn("QQ 官方机器人{}失败，群 {}，错误码 {}，原文 {}，trace_id {}",
-                sending ? "发消息" : "传图", target.maskedOpenId(), error.code(), official, trace);
         int code = error.code();
         ProactiveDenial denial = code == 40034105
                 ? (replyFallback ? ProactiveDenial.REPLY_FALLBACK : ProactiveDenial.DIRECT) : null;
@@ -500,10 +504,20 @@ class QqBotSender {
                     case 10000 -> "平台不支持这项上传操作";
                     default -> "图片分片上传失败（错误码 " + code + "）";
                 };
+                int status = error.httpStatus();
+                if (sending && messageBody.getIntValue("msg_type") == 7 && !messageBody.containsKey("content")
+                        && code > 0 && code != 50001 && !error.atAllLimitReached()
+                        && status > 0 && status != 408 && status < 500) {
+                    yield null;
+                }
                 yield sending && messageBody.containsKey("markdown") && error.markdownFormatRejected()
                         ? "消息格式被平台拒绝（错误码 " + code + "）" : "QQ 返回错误 " + code + "：" + official;
             }
         };
+        if (reason == null) return null;
+        String trace = maskDiagnostic(target, error.traceId(), protectedValue);
+        log.warn("QQ 官方机器人{}失败，群 {}，错误码 {}，原文 {}，trace_id {}",
+                sending ? "发消息" : "传图", target.maskedOpenId(), code, official, trace);
         JSONObject result = fail(target, maskDiagnostic(target, reason, null), denial != null, denial);
         if (!multipart && error.preventsTextDelivery()) result.put(Sender.LocalDelivery.SKIP_IMAGE_FALLBACK, true);
         return result;
