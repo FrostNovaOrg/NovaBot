@@ -67,6 +67,8 @@ public class WebhookAlertChannel implements AlertChannel {
     public void send(String subject, String content) {
         NovaCoreProperties.Alert alert = properties.getAlert();
         String url = alert.getWebhookUrl();
+        // 请求方式与两个字段名保存即生效，可能在同一次保存里一起改：这一条从头到尾用同一组
+        NovaCoreProperties.Alert.WebhookFormat format = alert.webhookFormat();
         String host = UrlRedactor.hostOf(url);
 
         // GET 一支在解析地址之前先看有没有空白：URI.create 抛出的原文带着整条地址，而剥地址
@@ -74,7 +76,7 @@ public class WebhookAlertChannel implements AlertChannel {
         // 密钥就从那里漏。不去解析，直接按失败交出去，异常从外到内都不写这条地址。
         // 这一步必须在 try 之外抛：进了 try 会被出口收口换成「发送失败（异常名）」，
         // 「地址里有空格」这一句就到不了使用者眼前
-        if ("GET".equalsIgnoreCase(alert.getWebhookMethod()) && hasWhitespace(url)) {
+        if (format.get() && hasWhitespace(url)) {
             throw new IllegalStateException(report(reportedHost(url), "地址里有空格"),
                     new IllegalArgumentException("Webhook GET 地址里混进了空白字符"));
         }
@@ -100,8 +102,8 @@ public class WebhookAlertChannel implements AlertChannel {
         // 字符后面那段（正是推送密钥待的地方）会原样留在工程日志里。
         // 解析抛了就不发，按失败交出去；与空白那条同理放在网络 try 之外抛，
         // 别被出口收口换成「发送失败（异常名）」，「地址写法不对」这一句就到不了使用者眼前
-        URI getRequestUri = "GET".equalsIgnoreCase(alert.getWebhookMethod())
-                ? parseGetUri(url, alert, subject, content)
+        URI getRequestUri = format.get()
+                ? parseGetUri(url, format, subject, content)
                 : null;
 
         int status;
@@ -121,8 +123,8 @@ public class WebhookAlertChannel implements AlertChannel {
                 status = http.getForStatus(getRequestUri, headers, HttpUtil.AddressIsCredential.YES);
             } else {
                 JSONObject body = new JSONObject();
-                body.put(alert.getWebhookTitleField(), subject);
-                body.put(alert.getWebhookContentField(), content);
+                body.put(format.titleField(), subject);
+                body.put(format.contentField(), content);
 
                 // HttpUtil#postForStatus 自身已设置 JSON 的 Content-Type，此处不再重复指定
                 status = http.postForStatus(url, headers, body, HttpUtil.AddressIsCredential.YES);
@@ -238,8 +240,8 @@ public class WebhookAlertChannel implements AlertChannel {
      * 往外那句只带主机名、写「地址写法不对」，起因不带地址原文——
      * URI.create 的报错原文带着整条地址，路径里可能正是推送密钥。
      */
-    private URI parseGetUri(String url, NovaCoreProperties.Alert alert, String subject, String content) {
-        String full = appendQuery(url, alert.getWebhookTitleField(), subject, alert.getWebhookContentField(), content);
+    private URI parseGetUri(String url, NovaCoreProperties.Alert.WebhookFormat format, String subject, String content) {
+        String full = appendQuery(url, format.titleField(), subject, format.contentField(), content);
         try {
             return URI.create(full);
         } catch (IllegalArgumentException e) {

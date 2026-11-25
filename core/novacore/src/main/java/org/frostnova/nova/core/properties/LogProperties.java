@@ -46,18 +46,18 @@ public class LogProperties {
     /**
      * 是否记录网络请求日志。
      */
-    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
     @ConfigLabel("网络日志")
     @ConfigSummary(value = "", details = false)
-    private boolean networkLog = false;
+    private volatile boolean networkLog = false;
 
     /**
      * 网络日志的同类去重窗口，单位：秒，设为 0 关闭。打开网络日志后轮询请求一小时上千行，不去重要查的异常就淹在里面；失败的请求不参与抑制。
      */
     // 同类按「请求方法 + 去掉查询串的地址」判定；被抑制的条数攒着，随下一条同类
     // 日志一起报出来。失败一律放行——抑制的目的就是让异常显出来。
-    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
     @ConfigLabel("网络日志 · 去重窗口")
     @ConfigSummary("0 表示不去重；失败的请求始终记录。")
-    private int networkLogSuppressWindow = 60;
+    private volatile int networkLogSuppressWindow = 60;
 }

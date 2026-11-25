@@ -49,11 +49,11 @@ public class LiveProperties {
     /**
      * 多长时间内的下播又开播算同一场直播，单位：秒；这样的重连不会重置直播数据。
      */
-    @ConfigEffect(ConfigEffect.Effect.RESTART)
+    @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
     @ConfigLabel("短暂下播视为同一场")
     @ConfigLevel(ConfigLevel.Level.COMMON)
     @ConfigSummary(value = "时限内重新开播视为同一场，数据继续累计。", details = false)
-    private int reconnectInterval = 300;
+    private volatile int reconnectInterval = 300;
 
     /**
      * 每场直播明细数据（曲线、排行、词频、弹幕原文）的保留天数，单位：天，0 表示永久保留。
