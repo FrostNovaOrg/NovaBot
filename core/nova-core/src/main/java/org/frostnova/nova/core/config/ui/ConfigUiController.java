@@ -968,7 +968,10 @@ public class ConfigUiController {
         ConfigurationGroups.all().forEach(group -> buckets.put(group, new JSONArray()));
         JSONArray orphans = new JSONArray();
 
+        // 连接卡上的开关只在那里编辑，设置页不再生成第二个控件。
+        String channelKey = botChannel().map(BotConnectionTester.ChannelSwitch::key).orElse("");
         for (ConfigurationMetadataService.ConfigurationField field : metadataService.getFields()) {
+            if (field.name().equals(channelKey)) continue;
             ConfigurationGroups.Group group = groupTable.groupOf(field.name());
 
             JSONObject item = new JSONObject();

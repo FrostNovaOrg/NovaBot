@@ -35,6 +35,12 @@ class LinksPageWordingTest {
     private static final List<String> SCRIPTS = List.of("links.js", "links-model.js", "tokens.js", "tokens-model.js");
 
     @Test
+    @DisplayName("停用 NapCat 后测试消息卡说明停用原因，管理员仍可向官方机器人群试发")
+    void disabledChannelExplainsMissingTestTargets() throws Exception {
+        FrontendFixture.run(FrontendFixture.fixture("content-loading-fixture.mjs"), "测试消息目标", "test-targets");
+    }
+
+    @Test
     @DisplayName("🔴 连接页上不再出现「发一条试试」「只读口令」「签发一把新口令」「已签发的口令」")
     void linksPageUsesOneNamePerThing() throws IOException {
         Path ui = Path.of("").toAbsolutePath().resolve("src/main/resources/config-ui");

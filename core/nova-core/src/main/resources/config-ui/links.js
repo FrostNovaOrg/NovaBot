@@ -85,18 +85,20 @@ function paint(card) {
 }
 
 /**
- * 重取本页的三份数据再一次性画完
+ * 刷新连接卡，打开页面或切换通道时也重取测试消息目标。
  *
  * 三个请求并发发出、一起等：分三次画的话，卡上已经按新的一份数据变红，
  * 而下面的清单还是上一份算出来的——两块说的是同一件事，屏幕上却互相矛盾。
  */
-export async function refreshLinks() {
+export async function refreshLinks(withTargets = false) {
+  const statusRequest = api('/status');
+  const targets = withTargets ? loadTargets(false, statusRequest) : null;
   try {
     const [status, login, tokens] = await Promise.all([
-      api('/status'), api('/login'), api('/event-tokens')]);
+      statusRequest, api('/login'), api('/event-tokens')]);
 
     renderStatus(status);
-    renderBotChannel('bot', status.botChannel, () => Promise.all([refreshLinks(), loadTargets(false)]));
+    renderBotChannel('bot', status.botChannel, () => refreshLinks(true));
     model = linksModel(status, login, linkCards, tokens.tokens || [],
       phrase('bot.impl', v => '机器人（' + v + ' 等）', '机器人'), tokens.stream);
     model.cards.forEach(paint);
@@ -105,6 +107,7 @@ export async function refreshLinks() {
   } catch (e) {
     say('连接页加载失败：' + e.message, 'err');
   }
+  await targets;
 }
 
 /**
@@ -142,38 +145,49 @@ function scrollToWanted() {
  * 而「这个字符串是不是名单里的」正是要判的那件事——读回来再拆一遍，就等于相信了它
  */
 let options = [];
+let targetLoad = 0;
+
+async function fetchTargetOptions(force) {
+  if (force) await api('/bot/targets/refresh', {method: 'POST'});
+  const [groups, friends] = await Promise.all([
+    api('/bot/targets?type=group'), api('/bot/targets?type=friend')]);
+  return targetOptions(groups, friends);
+}
 
 /**
  * 取一次名单并填进下拉框
  * @param force 是否让机器人重新去问一遍
+ * @param statusRequest 与上方连接卡共用的状态请求，单独刷新名单时重取
  */
-export async function loadTargets(force) {
+export async function loadTargets(force, statusRequest) {
+  const current = ++targetLoad;
+  options = [];
   const pick = $('#test-target');
+  const hint = $('#test-hint');
   pick.innerHTML = '<option value="">正在加载…</option>';
-  $('#test-hint').innerHTML = loadingHtml('正在加载…', true);
+  hint.innerHTML = loadingHtml('正在加载…', true);
   $('#test-send').disabled = true;
 
-  try {
-    if (force) await api('/bot/targets/refresh', {method: 'POST'});
-    const [groups, friends] = await Promise.all([
-      api('/bot/targets?type=group'), api('/bot/targets?type=friend')]);
-    options = targetOptions(groups, friends);
-  } catch (e) {
-    // 取不到名单时<b>不退回手填</b>：退回手填等于把「填错一位数不报错」那个失败形态请回来。
-    // 这里只把话说清楚——先去把机器人连上，再回来发这一条
-    options = [];
+  const [status, targets] = await Promise.allSettled([statusRequest || api('/status'), fetchTargetOptions(force)]);
+  if (current !== targetLoad) return;
+  const channel = status.value?.botChannel;
+  const disabledNotice = channel?.enabled === false ? channel.name + ' 通道已停用。' : '';
+  if (targets.status === 'rejected') {
     pick.innerHTML = '<option value="">群组与好友列表加载失败</option>';
-    $('#test-hint').textContent = '机器人尚未连接，或暂时无响应。请先查看上方机器人卡片的状态。';
+    hint.textContent = disabledNotice || '机器人尚未连接，或暂时无响应。请先查看上方机器人卡片的状态。';
     return;
   }
 
-  pick.innerHTML = options.length
-    ? options.map(item => '<option value="' + esc(item.key) + '">' + esc(item.text)
-        + (item.configured ? ' · 已配置推送' : '') + '</option>').join('')
-    : '<option value="">机器人尚未加入任何群组，也没有好友</option>';
-  $('#test-hint').textContent = options.length
-    ? '列表由机器人提供，不支持手动输入号码。'
-    : '请先将机器人加入群组或添加为好友，然后点击「刷新列表」。';
+  options = targets.value;
+  if (options.length) {
+    pick.innerHTML = options.map(item => '<option value="' + esc(item.key) + '">' + esc(item.text)
+      + (item.configured ? ' · 已配置推送' : '') + '</option>').join('');
+  } else {
+    const empty = disabledNotice ? '暂无可选目标' : '机器人尚未加入任何群组，也没有好友';
+    pick.innerHTML = '<option value="">' + empty + '</option>';
+  }
+  hint.textContent = disabledNotice || (options.length ? '列表由机器人提供，不支持手动输入号码。'
+    : '请先将机器人加入群组或添加为好友，然后点击「刷新列表」。');
   $('#test-send').disabled = !options.length;
 }
 
@@ -211,7 +225,7 @@ export async function sendTestMessage() {
     box.innerHTML = '<b>发送失败：' + esc(e.message) + '</b>';
   }
 
-  $('#test-send').disabled = false;
+  $('#test-send').disabled = !options.length;
 }
 
 /**

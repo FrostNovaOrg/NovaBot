@@ -2,6 +2,7 @@ package org.frostnova.nova.core.config.ui;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.core.account.BotConnectionTester;
 import org.frostnova.nova.core.assistant.AssistantProperties;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.properties.EventStreamProperties;
@@ -19,8 +20,10 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -147,6 +150,28 @@ class ConfigurationSchemaLabelTest {
         return context;
     }
 
+    @Test
+    @DisplayName("连接卡负责的开关不出现在设置页，其它布尔项仍可编辑")
+    void channelSwitchHasOneEditor() throws IOException {
+        String channelKey = "novabot.core.sender.example.enabled";
+        String otherKey = "novabot.core.sender.example.detect.enabled";
+        var metadata = mock(ConfigurationMetadataService.class);
+        when(metadata.getFields()).thenReturn(List.of(
+                new ConfigurationMetadataService.ConfigurationField(channelKey, "java.lang.Boolean", "", true),
+                new ConfigurationMetadataService.ConfigurationField(otherKey, "java.lang.Boolean", "", true)));
+        try (var context = context()) {
+            var controller = controller(context, metadata);
+            assertEquals("boolean", field(controller.schema(), channelKey).getString("widget"));
+            var tester = mock(BotConnectionTester.class);
+            when(tester.channelSwitch()).thenReturn(Optional.of(
+                    new BotConnectionTester.ChannelSwitch(channelKey, "示例", true, "", List.of())));
+            context.getBeanFactory().registerSingleton("tester", tester);
+            var schema = controller.schema();
+            assertFalse(schema.toJSONString().contains(channelKey), "设置页仍有连接卡上的开关");
+            assertEquals("boolean", field(schema, otherKey).getString("widget"));
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private ConfigUiController controller(AnnotationConfigApplicationContext context,
                                           ConfigurationMetadataService metadata) throws IOException {
@@ -180,7 +205,7 @@ class ConfigurationSchemaLabelTest {
                 new ConfigurationEffectResolver(context),
                 new ConfigurationDangerResolver(context),
                 RuntimeConfigurationApplier.bench(properties).build(),
-                mock(org.springframework.beans.factory.ObjectProvider.class),
+                context.getBeanProvider(BotConnectionTester.class),
                 mock(org.springframework.beans.factory.ObjectProvider.class),
                 new EventStreamTokenService(properties.getLive()),
                 mock(org.springframework.beans.factory.ObjectProvider.class),

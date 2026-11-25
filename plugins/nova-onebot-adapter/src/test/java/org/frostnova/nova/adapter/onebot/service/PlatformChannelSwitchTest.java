@@ -148,7 +148,14 @@ class PlatformChannelSwitchTest {
         assertEquals("NapCat 通道已停用", response.getString("message"));
         var dto = new MessageDTO();
         dto.setPlatform(NAPCAT);
-        assertEquals("NapCat 通道已停用", controller.send(dto).getString("message"));
+        dto.setType(PushTargetType.GROUP);
+        dto.setNum(12345L);
+        dto.setContent("外部群推送");
+        dto.setSequence(1L);
+        dto.setCreateTime(System.currentTimeMillis());
+        var external = controller.send(dto);
+        assertEquals("NapCat 通道已停用", external.getString("message"));
+        assertEquals(-1, external.getIntValue("code"));
         verify(api, never()).sendGroupMsg(any(), any());
         verify(api, never()).sendPrivateMsg(any(), any());
         verifyNoInteractions(history);
@@ -159,6 +166,11 @@ class PlatformChannelSwitchTest {
         messages.send(official);
         assertTrue(sent.await(10, TimeUnit.SECONDS));
         assertEquals(List.of("开播通知"), officialPosts);
+
+        // 同一份请求在启用时必须能发到群，避免把请求本身无效误判成通道拦截成功。
+        enabled(true);
+        assertEquals(0, controller.send(dto).getIntValue("code"));
+        verify(api).sendGroupMsg(any(), argThat(params -> "12345".equals(params.getString("group_id"))));
     }
 
     @Test
