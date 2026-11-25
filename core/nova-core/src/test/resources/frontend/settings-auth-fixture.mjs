@@ -126,6 +126,8 @@ try {
   qFormOff = 'error:' + e.message;
 }
 eq(qFormOff, true, 'store.totpRequired===false 签发表单不含验证码栏');
+eq(runIssueForm(false).match(/<button\b[^>]*\bid="tk-issue"[^>]*>([^<]*)<\/button>/)?.[1],
+  '签发令牌', '新建令牌的按钮明确写明签发动作');
 
 /**
  * 从拼出来的表单里取出含 marker 的那一个 input 标签

@@ -76,7 +76,7 @@ function issueFormHtml() {
           + ' placeholder="验证器应用中的 6 位数字" autocomplete="one-time-code"></div>'
         : '')
 
-    + '</div><div class="lc-actions"><button type="button" class="primary" id="tk-issue">保存</button>'
+    + '</div><div class="lc-actions"><button type="button" class="primary" id="tk-issue">签发令牌</button>'
     + '<span class="lc-unsaved" id="tk-unsaved" hidden>未保存</span>'
     + '<span class="lc-result" id="tk-msg" role="status" hidden></span></div>'
     + '<div id="token-issued"></div>';

@@ -29,6 +29,11 @@ public class QqBotConsolePageProvider implements ConsolePageProvider, ConfigUiOp
     }
 
     @Override
+    public int order() {
+        return 20;
+    }
+
+    @Override
     public ConsolePageSlot slot() {
         return ConsolePageSlot.LINKS;
     }

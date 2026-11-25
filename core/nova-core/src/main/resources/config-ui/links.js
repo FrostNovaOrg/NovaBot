@@ -8,18 +8,12 @@ import {renderStatus} from './overview.js';
 import {renderTokens} from './tokens.js';
 
 /**
- * 插件登记到本页的连接卡，每项是 {id, displayName}
+ * 插件登记到本页的连接卡，每项是 {id, displayName, botLink}
  *
- * 由 main.js 在装载插件页时逐个交进来。本文件不自己去问 /pages：
+ * 由 main.js 在装载插件页时按服务端排好的 /pages 清单逐个交进来。本文件不自己去问 /pages：
  * 装载与登记是同一件事的两半，各问一次的话，装不上的那一页会在卡的位置上留一张空壳
  */
 const linkCards = [];
-const pluginOrder = ['bilibili', 'qqbot'];
-
-function linkCardRank(card) {
-  const rank = pluginOrder.indexOf(card.id);
-  return rank === -1 ? pluginOrder.length : rank;
-}
 
 /**
  * 上一次算出来的视图模型
@@ -45,17 +39,14 @@ let linksLoad = 0;
  * @return {HTMLElement} 插件往里渲染的容器
  */
 export function mountLinkCard(meta) {
-  const link = {id: meta.id, displayName: meta.displayName, botLink: meta.botLink};
-  linkCards.push(link);
-  linkCards.sort((a, b) => linkCardRank(a) - linkCardRank(b));
+  linkCards.push({id: meta.id, displayName: meta.displayName, botLink: meta.botLink});
 
   const card = el('div', 'nv-card lcard');
   card.id = 'card-p-' + meta.id;
   card.innerHTML = '<div class="lc-hd"><span class="lamp" aria-hidden="true"></span><b></b><span class="lc-cap"></span></div>'
     + '<div class="lc-body"></div>';
   card.querySelector('.lc-hd b').textContent = meta.displayName;
-  const host = $('#link-cards');
-  host.insertBefore(card, host.children[linkCards.indexOf(link)] || null);
+  $('#link-cards').appendChild(card);
 
   return card.querySelector('.lc-body');
 }
