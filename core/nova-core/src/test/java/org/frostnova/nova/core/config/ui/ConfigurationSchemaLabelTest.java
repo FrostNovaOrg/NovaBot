@@ -55,7 +55,7 @@ class ConfigurationSchemaLabelTest {
     }
 
     @Test
-    @DisplayName("总额度与主播额度在智能助手普通设置中相邻，保存后重启生效")
+    @DisplayName("总额度与主播额度在智能助手普通设置中相邻，保存后即时生效")
     void assistantBudgetsAppearTogether() throws IOException {
         var metadata = new ConfigurationMetadataService();
         String template = ConfigurationTemplate.render(metadata.getFields(), Map.of());

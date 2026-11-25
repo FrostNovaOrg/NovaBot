@@ -47,7 +47,8 @@ class AssistantAudienceCacheTest {
         var client = mock(AssistantClient.class);
         var question = mock(AssistantClient.Question.class);
         when(client.beginQuestion(eq(PLATFORM), anyLong())).thenReturn(question);
-        when(client.budgetStatus(eq(PLATFORM), anyLong()))
+        when(question.settings()).thenReturn(new AssistantProperties().snapshot());
+        when(question.budgetStatus())
                 .thenReturn(new AssistantClient.BudgetStatus(null, BigDecimal.ZERO, BigDecimal.TEN, null));
         when(question.totalCostYuan()).thenReturn(BigDecimal.ZERO);
         when(question.complete(any(), any())).thenReturn(new AssistantClient.Response(

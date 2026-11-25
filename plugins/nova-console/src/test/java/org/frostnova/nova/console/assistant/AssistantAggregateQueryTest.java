@@ -288,7 +288,8 @@ class AssistantAggregateQueryTest {
         var client = mock(AssistantClient.class);
         var question = mock(AssistantClient.Question.class);
         when(client.beginQuestion(PLATFORM, ROOM)).thenReturn(question);
-        when(client.budgetStatus(PLATFORM, ROOM)).thenReturn(new AssistantClient.BudgetStatus(null, BigDecimal.ZERO, BigDecimal.TEN, null));
+        when(question.settings()).thenAnswer(ignored -> properties.snapshot());
+        when(question.budgetStatus()).thenReturn(new AssistantClient.BudgetStatus(null, BigDecimal.ZERO, BigDecimal.TEN, null));
         when(question.totalCostYuan()).thenReturn(BigDecimal.ZERO);
         var request = request(List.of("gift", "box", "guard", "super_chat"), FROM, TO, "sum:amount");
         request.put("groupBy", List.of("audience"));
@@ -338,7 +339,8 @@ class AssistantAggregateQueryTest {
         var client = mock(AssistantClient.class);
         var question = mock(AssistantClient.Question.class);
         when(client.beginQuestion(PLATFORM, ROOM)).thenReturn(question);
-        when(client.budgetStatus(PLATFORM, ROOM)).thenReturn(new AssistantClient.BudgetStatus(null, BigDecimal.ZERO, BigDecimal.TEN, null));
+        when(question.settings()).thenReturn(new AssistantProperties().snapshot());
+        when(question.budgetStatus()).thenReturn(new AssistantClient.BudgetStatus(null, BigDecimal.ZERO, BigDecimal.TEN, null));
         when(question.totalCostYuan()).thenReturn(BigDecimal.ZERO);
         var toolCall = JSONObject.of("id", "duration-summary", "type", "function",
                 "function", JSONObject.of("name", "aggregate", "arguments", request.toJSONString()));
@@ -559,7 +561,8 @@ class AssistantAggregateQueryTest {
         var client = mock(AssistantClient.class);
         var question = mock(AssistantClient.Question.class);
         when(client.beginQuestion(PLATFORM, ROOM)).thenReturn(question);
-        when(client.budgetStatus(PLATFORM, ROOM)).thenReturn(new AssistantClient.BudgetStatus(null, BigDecimal.ZERO, BigDecimal.TEN, null));
+        when(question.settings()).thenReturn(new AssistantProperties().snapshot());
+        when(question.budgetStatus()).thenReturn(new AssistantClient.BudgetStatus(null, BigDecimal.ZERO, BigDecimal.TEN, null));
         when(question.totalCostYuan()).thenReturn(BigDecimal.ZERO);
         var usage = new AssistantClient.Usage(0, 100, 10);
         var toolResult = new AtomicReference<JSONObject>();

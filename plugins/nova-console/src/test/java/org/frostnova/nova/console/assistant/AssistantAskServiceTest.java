@@ -485,7 +485,7 @@ class AssistantAskServiceTest {
         var qq = local.qqSource("QQ", GROUP, 123, 456);
         var request = JSONObject.of("question", "甲和乙这周流水谁高");
         var result = service.askFromQq("bilibili", List.of(FIRST_STREAMER, SECOND_STREAMER), qq, request,
-                true, List.of(), null, () -> { }, ignored -> { }).response();
+                true, List.of(), null, ignored -> { }, ignored -> { }).response();
 
         assertTrue(result.getBooleanValue("answered"), result::toJSONString);
         assertEquals("analysis", result.getString("difficulty"));
@@ -695,7 +695,7 @@ class AssistantAskServiceTest {
         var question = JSONObject.of("question", "这场开播头十分钟观众在说什么");
         assertTrue(ask(question).getBooleanValue("answered"));
         var source = local.qqSource("QQ", GROUP, 123, 456);
-        var qq = service.askFromQq("bilibili", 1L, source, question, false, List.of(), null, () -> { }, ignored -> { });
+        var qq = service.askFromQq("bilibili", 1L, source, question, false, List.of(), null, ignored -> { }, ignored -> { });
         assertTrue(qq.response().getBooleanValue("answered"));
         var definitions = sent.stream().map(request -> request.getJSONArray("tools").stream()
                 .map(JSONObject.class::cast).map(tool -> tool.getJSONObject("function"))
@@ -985,7 +985,7 @@ class AssistantAskServiceTest {
         replies.add(call("revenue", JSONObject.of("start", 123)));
         replies.add(JSONObject.of("content", draft));
         var source = local.qqSource("QQ", GROUP, 123, 456);
-        var qq = service.askFromQq("bilibili", 1L, source, JSONObject.of("question", "流水怎么样"), true, List.of(), null, () -> { }, ignored -> { });
+        var qq = service.askFromQq("bilibili", 1L, source, JSONObject.of("question", "流水怎么样"), true, List.of(), null, ignored -> { }, ignored -> { });
 
         assertAll(
                 () -> assertEquals(body, result.getString("answer"), "控制台正文"),

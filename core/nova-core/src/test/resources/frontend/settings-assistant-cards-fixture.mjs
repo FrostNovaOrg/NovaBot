@@ -47,15 +47,16 @@ const fields = [
   ['excluded-uids', '观众拒绝名单', 'list', null],
 ].map(([key, label, widget, defaultValue], order) => ({
   name: 'novabot.assistant.' + key, label, widget, defaultValue, order,
-  group: 'assistant', level: 'ADVANCED', effect: 'RESTART', sensitive: false,
+  group: 'assistant', level: 'ADVANCED', effect: 'IMMEDIATE', sensitive: false,
 }));
-const group = {group: 'assistant', title: '智能助手', advanced: false, allRestart: true, fields};
+const group = {group: 'assistant', title: '智能助手', advanced: false, allRestart: false, fields};
 const store = {role: 'ADMIN', tab: 'settings', schema: [group], ungrouped: [],
   values: {}, dirty: {}, legacy: {}};
 let saved = {};
 let accepted = false;
 const confirmations = [];
 const requests = [];
+let notice = '';
 const api = async (path, options) => {
   requests.push({path, options});
   if (path === '/assistant/acknowledge') accepted = true;
@@ -72,7 +73,7 @@ const api = async (path, options) => {
   if (path === '/values') {
     if (options?.method === 'POST') {
       saved = {...saved, ...JSON.parse(options.body)};
-      return {success: true};
+      return {success: true, message: '已保存 1 项，已生效', restartRequired: [], restartPending: []};
     }
     return {values: {...saved}};
   }
@@ -92,7 +93,10 @@ const env = {...model, ...assistant, el, $, api, ask, store, switchControl,
   buildThemeGroup: () => el('div'), buildUngrouped: () => null, buildNav: noop,
   memberGroup: () => null, agreementDangerZone: () => el('div'),
   alertCards: () => el('section', 'alert-cards'), authCards: () => el('section', 'auth-cards'),
-  markDirty: noop, showIssues: noop, say: (message, tone) => { if (tone === 'err') failures.push(message); },
+  markDirty: noop, showIssues: noop, say: (message, tone) => {
+    notice = message;
+    if (tone === 'err') failures.push(message);
+  },
   saveTarget: () => 'values', load: how => load(how),
 };
 const declarations = ['function valuesOf(', 'function buildControl(', 'function buildRow(',
@@ -136,10 +140,13 @@ eq(store.dirty['novabot.assistant.enabled'], 'true', '确认开启进入待保�
 await page.save();
 eq(requests.find(r => r.path === '/values' && r.options?.method === 'POST')?.options.body,
   '{"novabot.assistant.enabled":"true"}', '保存提交开启值');
+eq(notice.includes('已生效'), true, '保存后页面显示已生效');
 store.values = {};
 store.dirty = {};
 await load();
 enabledRow = rowFor('novabot.assistant.enabled');
+const addressRow = rowFor('novabot.assistant.base-url');
+eq(addressRow.closest('.setgrp').textContent.includes('需重启'), false, '智能助手组与接口地址均无重启提示');
 eq(enabledRow.querySelector('input').checked, true, '重新进入设置后开关保持开启');
 eq(enabledRow.querySelector('.chgdot').classList.contains('hide'), false, '保存后显示已修改');
 eq(enabledRow.querySelector('.defline').classList.contains('hide'), false, '保存后显示默认值与恢复默认');

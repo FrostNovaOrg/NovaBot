@@ -4,6 +4,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.alibaba.fastjson2.JSONWriter;
+import org.frostnova.nova.core.assistant.AssistantProperties.Settings;
 import org.frostnova.nova.core.assistant.AssistantUsageStore.Scope;
 import org.frostnova.nova.core.assistant.AssistantUsageStore.Streamer;
 import org.slf4j.Logger;
@@ -66,6 +67,7 @@ public final class AssistantClient {
 
     private enum CallMode { ANSWER, ANALYSIS, CLASSIFY, PROBE }
     private record Attempt(Response response, boolean outputLimitReached) { }
+    private record Connection(Settings settings, long keyRevision) { }
     private static final Logger LOG = LoggerFactory.getLogger(AssistantClient.class);
     private static final String OUTPUT_LIMIT = "max_output_tokens";
     private static final String ERROR_MASK = "[已遮掩]";
@@ -75,6 +77,7 @@ public final class AssistantClient {
     private final AssistantKeyStore keys;
     private final AssistantUsageStore usage;
     private final Function<Duration, RestTemplate> templates;
+    private long keyRevision;
 
     public AssistantClient(AssistantProperties properties, AssistantKeyStore keys, AssistantUsageStore usage, RestTemplate template) {
         this(properties, keys, usage, timeout -> template);
@@ -93,7 +96,8 @@ public final class AssistantClient {
     }
 
     public Status status(BiFunction<String, Long, String> nickname) {
-        List<String> missing = unavailable().stream().map(AssistantException::getMessage).toList();
+        Settings settings = properties.snapshot();
+        List<String> missing = unavailable(settings).stream().map(AssistantException::getMessage).toList();
         var snapshot = usage.snapshot();
         var byStreamer = snapshot.streamers().entrySet().stream().map(entry -> {
             Streamer streamer = entry.getKey();
@@ -102,30 +106,37 @@ public final class AssistantClient {
             return new StreamerUsage(streamer.platform(), Long.toString(streamer.uid()), name == null || name.isBlank() ? null : name,
                     used.todaySpentYuan(), used.weekSpentYuan());
         }).toList();
-        return new Status(properties.isEnabled(), missing.isEmpty(), missing, keys.isSet(), keys.masked(),
-                properties.getBaseUrl(), properties.getModel(), snapshot.spentYuan(), properties.getWeeklyBudgetYuan(),
+        return new Status(settings.enabled(), missing.isEmpty(), missing, keys.isSet(), keys.masked(),
+                settings.baseUrl(), settings.model(), snapshot.spentYuan(), settings.weeklyBudgetYuan(),
                 byStreamer, snapshot.acknowledgement(),
-                ACKNOWLEDGEMENT_VERSION, ACKNOWLEDGEMENT_TEXT.replace("{接口地址}", properties.getBaseUrl()));
+                ACKNOWLEDGEMENT_VERSION, ACKNOWLEDGEMENT_TEXT.replace("{接口地址}", settings.baseUrl()));
     }
 
     /** 主播的可用状态和剩余额度，不发送模型请求。 */
-    public synchronized BudgetStatus budgetStatus(String platform, long uid) {
-        var reasons = new ArrayList<>(unavailable().stream().map(AssistantException::reason).toList());
-        var quota = usage.quota(List.of(new Streamer(platform, uid)), properties);
+    public BudgetStatus budgetStatus(String platform, long uid) {
+        return budgetStatus(new Streamer(platform, uid), properties.snapshot());
+    }
+
+    private synchronized BudgetStatus budgetStatus(Streamer streamer, Settings settings) {
+        var reasons = new ArrayList<>(unavailable(settings).stream().map(AssistantException::reason).toList());
+        var quota = usage.quota(List.of(streamer), settings);
         var exhausted = quota == null ? null : quota.exhausted();
         if (exhausted != null) reasons.add(exhausted.scope().reason);
         var streamerQuota = quota == null ? null : new StreamerQuota(quota.primaryPercent(Scope.STREAMER_DAY),
                 quota.primaryPercent(Scope.STREAMER_WEEK));
-        var state = new State(properties.isEnabled(), reasons.isEmpty(), List.copyOf(reasons), streamerQuota);
+        var state = new State(settings.enabled(), reasons.isEmpty(), List.copyOf(reasons), streamerQuota);
         var lowest = quota == null ? null : quota.lowest();
         return new BudgetStatus(state, quota == null ? null : quota.spentYuan(),
-                properties.getWeeklyBudgetYuan(), lowest == null ? null : "提示：" + lowest.noticeText());
+                settings.weeklyBudgetYuan(), lowest == null ? null : "提示：" + lowest.noticeText());
     }
 
     /** 取最紧的一道额度。主播额度的提示由调用方补上对应昵称。 */
-    public synchronized BudgetNotice comparisonBudgetNotice(String platform, List<Long> uids) {
-        var streamers = questionStreamers(platform, uids);
-        var quota = usage.quota(streamers, properties);
+    public BudgetNotice comparisonBudgetNotice(String platform, List<Long> uids) {
+        return comparisonBudgetNotice(questionStreamers(platform, uids), properties.snapshot());
+    }
+
+    private synchronized BudgetNotice comparisonBudgetNotice(List<Streamer> streamers, Settings settings) {
+        var quota = usage.quota(streamers, settings);
         var lowest = quota == null ? null : quota.lowest();
         if (lowest == null) return null;
         if (streamers.size() == 1 || lowest.streamerUid() == null) return new BudgetNotice(null, lowest.noticeText());
@@ -138,24 +149,40 @@ public final class AssistantClient {
 
     public synchronized void acknowledge(String actor) { usage.acknowledge(actor, ACKNOWLEDGEMENT_VERSION); }
 
-    public synchronized void deleteKey() { keys.clear(); }
+    public synchronized void deleteKey() {
+        keys.clear();
+        keyRevision++;
+    }
 
     /** 菜单与命令接收只看总开关和密钥，额度与配置者确认由提问时检查。 */
-    public boolean isConfigured() { return properties.isEnabled() && keys.isSet(); }
+    public boolean isConfigured() { return properties.snapshot().enabled() && keys.isSet(); }
 
     /** 管理员的连接诊断只发送固定短句，不查额度，花费计入每周总额。 */
     public void validateAndSaveKey(String account, String candidate) {
+        Connection connection = connection();
+        Settings settings = connection.settings();
         AssistantKeyStore.validate(candidate);
         usage.requireReadable();
         keys.prepareForSave();
-        probe(candidate);
-        keys.save(candidate);
+        probe(candidate, connection);
+        synchronized (this) {
+            synchronized (properties) {
+                Settings current = properties.snapshot();
+                if (!current.baseUrl().equals(settings.baseUrl()) || !current.apiFormat().equals(settings.apiFormat())
+                        || !current.model().equals(settings.model())) {
+                    throw new AssistantException("试连期间模型连接设置已更改，请重新保存密钥");
+                }
+                keys.save(candidate);
+                keyRevision++;
+            }
+        }
     }
 
     /** 使用当前设置做连接诊断，同样要求开启、设置密钥和确认。 */
     public void testSettings(String account) {
-        requireAvailable();
-        probe(null);
+        Connection connection = connection();
+        requireAvailable(connection.settings());
+        probe(null, connection);
     }
 
     public synchronized Question beginQuestion(String platform, long uid) {
@@ -168,10 +195,13 @@ public final class AssistantClient {
     }
 
     private Question beginQuestion(List<Streamer> streamers) {
-        requireAvailable();
-        usage.checkBudget(streamers, properties);
-        return new Question(streamers);
+        Connection connection = connection();
+        requireAvailable(connection.settings());
+        usage.checkBudget(streamers, connection.settings());
+        return new Question(streamers, connection);
     }
+
+    private synchronized Connection connection() { return new Connection(properties.snapshot(), keyRevision); }
 
     private static List<Streamer> questionStreamers(String platform, List<Long> uids) {
         if (uids == null || uids.isEmpty() || uids.size() > 5)
@@ -188,15 +218,23 @@ public final class AssistantClient {
 
     public final class Question implements AutoCloseable {
         private final List<Streamer> streamers;
+        private final Connection connection;
         private String sentEndpoint;
         private boolean closed;
         private boolean inFlight;
         private BigDecimal total = BigDecimal.ZERO;
         private int modelCalls;
 
-        private Question(List<Streamer> streamers) {
+        private Question(List<Streamer> streamers, Connection connection) {
             this.streamers = streamers;
+            this.connection = connection;
         }
+
+        public Settings settings() { return connection.settings(); }
+
+        public BudgetStatus budgetStatus() { return AssistantClient.this.budgetStatus(streamers.get(0), settings()); }
+
+        public BudgetNotice comparisonBudgetNotice() { return AssistantClient.this.comparisonBudgetNotice(streamers, settings()); }
 
         public Response complete(Request request) { return complete(request, Duration.ofSeconds(90)); }
 
@@ -220,13 +258,13 @@ public final class AssistantClient {
             synchronized (AssistantClient.this) {
                 if (closed) throw new AssistantException("这一问已经结束");
                 if (inFlight) throw new AssistantException("这一问正在请求大模型服务，请等待返回");
-                requireAvailable();
+                requireAvailable(settings());
                 validate(request);
-                usage.checkBudget(streamers, properties);
+                usage.checkBudget(streamers, settings());
                 inFlight = true;
             }
             try {
-                return send(request, null, this, timeout, mode);
+                return send(request, null, this, timeout, mode, connection);
             } finally {
                 synchronized (AssistantClient.this) { inFlight = false; }
             }
@@ -243,16 +281,16 @@ public final class AssistantClient {
         @Override public void close() { synchronized (AssistantClient.this) { closed = true; } }
     }
 
-    private void probe(String candidate) {
+    private void probe(String candidate, Connection connection) {
         if (candidate == null && !keys.isSet()) throw new AssistantException("no_key", "尚未设置智能助手模型密钥");
         usage.requireReadable();
         send(new Request(List.of(JSONObject.of("role", "user", "content", "回复好")), List.of(), "none", 0),
-                candidate, null, Duration.ofSeconds(20), CallMode.PROBE);
+                candidate, null, Duration.ofSeconds(20), CallMode.PROBE, connection);
     }
 
-    private List<AssistantException> unavailable() {
+    private List<AssistantException> unavailable(Settings settings) {
         var missing = new ArrayList<AssistantException>();
-        if (!properties.isEnabled()) missing.add(new AssistantException("disabled", "智能助手总开关已关闭"));
+        if (!settings.enabled()) missing.add(new AssistantException("disabled", "智能助手总开关已关闭"));
         if (!keys.isSet()) missing.add(new AssistantException("no_key", "尚未设置智能助手模型密钥"));
         if (usage.problem() != null) {
             missing.add(new AssistantException("usage_unreadable", usage.problem()));
@@ -266,8 +304,8 @@ public final class AssistantClient {
         return List.copyOf(missing);
     }
 
-    private void requireAvailable() {
-        var missing = unavailable();
+    private void requireAvailable(Settings settings) {
+        var missing = unavailable(settings);
         if (!missing.isEmpty()) throw new AssistantException(missing.get(0).reason(),
                 String.join("；", missing.stream().map(AssistantException::getMessage).toList()));
     }
@@ -279,29 +317,30 @@ public final class AssistantClient {
         }
     }
 
-    private Response send(Request request, String candidate, Question question, Duration timeout, CallMode mode) {
+    private Response send(Request request, String candidate, Question question, Duration timeout, CallMode mode, Connection connection) {
         long startedAt = System.nanoTime();
-        String baseUrl = properties.getBaseUrl();
-        boolean responses = "responses".equals(properties.getApiFormat());
+        Settings settings = connection.settings();
+        String baseUrl = settings.baseUrl();
+        boolean responses = "responses".equals(settings.apiFormat());
         boolean shortRequest = mode == CallMode.PROBE || mode == CallMode.CLASSIFY;
-        String model = properties.getModel();
-        if (mode == CallMode.CLASSIFY && !properties.getDifficultyModel().isBlank())
-            model = properties.getDifficultyModel();
+        String model = settings.model();
+        if (mode == CallMode.CLASSIFY && !settings.difficultyModel().isBlank())
+            model = settings.difficultyModel();
         String thinking = switch (mode) {
-            case ANSWER -> properties.getThinking();
-            case ANALYSIS -> thinkingForHardQuestion();
+            case ANSWER -> settings.thinking();
+            case ANALYSIS -> thinkingForHardQuestion(settings);
             case CLASSIFY, PROBE -> responses ? "low" : "off";
         };
         int maxTokens = switch (mode) {
             case CLASSIFY -> 256;
-            case PROBE -> Math.min(8, properties.getAnswerLimit());
-            default -> properties.getAnswerLimit();
+            case PROBE -> Math.min(8, settings.answerLimit());
+            default -> settings.answerLimit();
         };
         String endpoint = baseUrl.replaceAll("/+$", "") + (responses ? "/responses" : "/chat/completions");
         try {
             if (!responses) {
                 JSONObject body = chatBody(request, maxTokens, baseUrl, model, thinking);
-                return exchange(endpoint, body, false, candidate, question, timeout, mode).response();
+                return exchange(endpoint, body, false, candidate, question, timeout, mode, connection).response();
             }
             int allowance = reasoningAllowance(thinking);
             long maxOutput = switch (mode) {
@@ -310,14 +349,14 @@ public final class AssistantClient {
                 default -> (long) maxTokens + allowance;
             };
             JSONObject body = responsesBody(request, maxOutput, model, thinking);
-            Attempt first = exchange(endpoint, body, true, candidate, question, timeout, mode);
+            Attempt first = exchange(endpoint, body, true, candidate, question, timeout, mode, connection);
             if (shortRequest || !first.outputLimitReached()) return first.response();
 
-            usage.checkBudget(question.streamers, properties);
+            usage.checkBudget(question.streamers, settings);
             Duration remaining = timeout.minusNanos(System.nanoTime() - startedAt);
             if (remaining.compareTo(Duration.ofMillis(1)) < 0) throw outputLimitFailure();
             body.put(OUTPUT_LIMIT, maxOutput + allowance);
-            Attempt retry = exchange(endpoint, body, true, candidate, question, remaining, mode);
+            Attempt retry = exchange(endpoint, body, true, candidate, question, remaining, mode, connection);
             if (retry.outputLimitReached()) throw outputLimitFailure();
             Response response = retry.response();
             Usage initial = first.response().usage();
@@ -339,9 +378,9 @@ public final class AssistantClient {
         return new AssistantException(OUTPUT_LIMIT, "大模型服务达到输出上限，未能生成回答，请稍后再试");
     }
 
-    private String thinkingForHardQuestion() {
-        String normal = properties.getThinking();
-        String hard = properties.getHardThinking();
+    private static String thinkingForHardQuestion(Settings settings) {
+        String normal = settings.thinking();
+        String hard = settings.hardThinking();
         return THINKING_LEVELS.indexOf(hard) > THINKING_LEVELS.indexOf(normal) ? hard : normal;
     }
 
@@ -406,10 +445,10 @@ public final class AssistantClient {
     }
 
     private Attempt exchange(String endpoint, JSONObject body, boolean responses, String candidate, Question question,
-                             Duration timeout, CallMode mode) {
+                             Duration timeout, CallMode mode, Connection connection) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        if (candidate == null) keys.authorize(headers); else headers.setBearerAuth(candidate);
+        if (candidate == null) authorize(headers, connection.keyRevision()); else headers.setBearerAuth(candidate);
         String secret = headers.getFirst(HttpHeaders.AUTHORIZATION).substring(7);
         try {
             RestTemplate template = templates.apply(timeout);
@@ -428,7 +467,7 @@ public final class AssistantClient {
             if (bytes == null) throw new AssistantException("大模型服务返回了空响应");
             JSONObject json = JSON.parseObject(new String(bytes, StandardCharsets.UTF_8));
             Usage tokens = parseUsage(json.getJSONObject("usage"), responses);
-            BigDecimal cost = cost(tokens);
+            BigDecimal cost = cost(tokens, connection.settings());
             if (question != null) {
                 synchronized (this) { question.total = question.total.add(cost); }
             }
@@ -596,10 +635,17 @@ public final class AssistantClient {
         return value.longValueExact();
     }
 
-    private BigDecimal cost(Usage tokens) {
-        return properties.getPriceCachedInputYuanPerMillion().multiply(BigDecimal.valueOf(tokens.cachedInputTokens()))
-                .add(properties.getPriceInputYuanPerMillion().multiply(BigDecimal.valueOf(tokens.uncachedInputTokens())))
-                .add(properties.getPriceOutputYuanPerMillion().multiply(BigDecimal.valueOf(tokens.outputTokens())))
+    private synchronized void authorize(HttpHeaders headers, long initialKeyRevision) {
+        // 更换服务时，旧问题不能把新保存的密钥带到旧地址。
+        if (initialKeyRevision != keyRevision)
+            throw new AssistantException("模型密钥已更改，请重试");
+        keys.authorize(headers);
+    }
+
+    private static BigDecimal cost(Usage tokens, Settings settings) {
+        return settings.priceCachedInputYuanPerMillion().multiply(BigDecimal.valueOf(tokens.cachedInputTokens()))
+                .add(settings.priceInputYuanPerMillion().multiply(BigDecimal.valueOf(tokens.uncachedInputTokens())))
+                .add(settings.priceOutputYuanPerMillion().multiply(BigDecimal.valueOf(tokens.outputTokens())))
                 .movePointLeft(6);
     }
 }

@@ -250,8 +250,12 @@ class ExcludedViewersFileTest {
         return context;
     }
 
-    @SuppressWarnings("unchecked")
     private ConfigUiController controller(AnnotationConfigApplicationContext context) {
+        return controller(context, config);
+    }
+
+    @SuppressWarnings("unchecked")
+    static ConfigUiController controller(AnnotationConfigApplicationContext context, Path config) {
         var properties = context.getBean(NovaCoreProperties.class);
         var applier = RuntimeConfigurationApplier.bench(properties)
                 .contributors(context.getBeansOfType(RuntimeConfigurationApplierContributor.class).values()).build();
@@ -262,7 +266,7 @@ class ExcludedViewersFileTest {
                 mock(org.frostnova.nova.core.health.PushActivityRecorder.class),
                 mock(org.frostnova.nova.core.service.NovaEventHandlerService.class),
                 mock(org.frostnova.nova.core.datasource.DataSourceServiceRegistry.class),
-                mock(ConfigurationLevelResolver.class), new ConfigurationLabelResolver(context),
+                new ConfigurationLevelResolver(context), new ConfigurationLabelResolver(context),
                 new ConfigurationEffectResolver(context), new ConfigurationDangerResolver(context), applier,
                 mock(ObjectProvider.class), mock(ObjectProvider.class),
                 mock(org.frostnova.nova.core.protocol.EventStreamTokenService.class), mock(ObjectProvider.class),

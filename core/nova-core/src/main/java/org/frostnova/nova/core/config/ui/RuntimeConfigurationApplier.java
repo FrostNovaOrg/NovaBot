@@ -2,6 +2,7 @@ package org.frostnova.nova.core.config.ui;
 
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.StandbyBoundConfig;
+import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplierContributor.BatchApplier;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
@@ -136,6 +137,7 @@ public class RuntimeConfigurationApplier {
      * 插件申报的即时生效项。核心自有表不在这里。
      */
     private final Map<String, Consumer<String>> contributedAppliers;
+    private final Map<String, BatchApplier> contributedBatches;
 
     /**
      * 插件申报的「另有专门入口落地」项。核心自有表不在这里。
@@ -193,12 +195,14 @@ public class RuntimeConfigurationApplier {
                 : loaded(fileService, "启动时没能读下配置文件，改回原样的那笔待重启账销不掉");
         Contributed contributed = mergeContributions(contributors);
         this.contributedAppliers = contributed.appliers();
+        this.contributedBatches = contributed.batches();
         this.contributedAppliedElsewhere = contributed.elsewhere();
         this.contributedValidators = contributed.validators();
         this.timeline = timeline;
     }
 
-    private record Contributed(Map<String, Consumer<String>> appliers, Map<String, String> elsewhere,
+    private record Contributed(Map<String, Consumer<String>> appliers, Map<String, BatchApplier> batches,
+                               Map<String, String> elsewhere,
                                Map<String, Function<String, String>> validators) {
     }
 
@@ -233,22 +237,33 @@ public class RuntimeConfigurationApplier {
     private static Contributed mergeContributions(
             Collection<RuntimeConfigurationApplierContributor> contributors) {
         if (contributors == null || contributors.isEmpty()) {
-            return new Contributed(Map.of(), Map.of(), Map.of());
+            return new Contributed(Map.of(), Map.of(), Map.of(), Map.of());
         }
 
         Map<String, Consumer<String>> appliers = new LinkedHashMap<>();
+        Map<String, BatchApplier> batches = new LinkedHashMap<>();
         Map<String, String> elsewhere = new LinkedHashMap<>();
         Map<String, Function<String, String>> validators = new LinkedHashMap<>();
         for (RuntimeConfigurationApplierContributor contributor : contributors) {
             if (contributor == null) {
                 continue;
             }
-            mergeAppliers(contributor.appliers(), appliers, elsewhere);
-            mergeElsewhere(contributor.appliedElsewhere(), appliers, elsewhere);
+            mergeAppliers(contributor.appliers(), appliers, batches, elsewhere);
+            mergeElsewhere(contributor.appliedElsewhere(), appliers, batches, elsewhere);
+            BatchApplier batch = contributor.batchApplier();
+            if (batch != null) {
+                for (String key : batch.keys()) {
+                    rejectDuplicate(key, appliers, batches, elsewhere);
+                    if (ConfigUiAuthService.isDedicatedAuthKey(key)) {
+                        throw new IllegalStateException("配置项 " + key + " 不能经通用保存改，请走登录与安全专用口");
+                    }
+                    batches.put(key, batch);
+                }
+            }
             mergeValidators(contributor.valueValidators(), validators);
         }
-        return new Contributed(Collections.unmodifiableMap(appliers), Collections.unmodifiableMap(elsewhere),
-                Collections.unmodifiableMap(validators));
+        return new Contributed(Collections.unmodifiableMap(appliers), Collections.unmodifiableMap(batches),
+                Collections.unmodifiableMap(elsewhere), Collections.unmodifiableMap(validators));
     }
 
     /**
@@ -277,6 +292,7 @@ public class RuntimeConfigurationApplier {
 
     private static void mergeAppliers(Map<String, Consumer<String>> declared,
                                       Map<String, Consumer<String>> appliers,
+                                      Map<String, BatchApplier> batches,
                                       Map<String, String> elsewhere) {
         if (declared == null) {
             return;
@@ -287,13 +303,14 @@ public class RuntimeConfigurationApplier {
             if (key == null || applier == null) {
                 continue;
             }
-            rejectDuplicate(key, appliers, elsewhere);
+            rejectDuplicate(key, appliers, batches, elsewhere);
             appliers.put(key, applier);
         }
     }
 
     private static void mergeElsewhere(Map<String, String> declared,
                                        Map<String, Consumer<String>> appliers,
+                                       Map<String, BatchApplier> batches,
                                        Map<String, String> elsewhere) {
         if (declared == null) {
             return;
@@ -304,17 +321,19 @@ public class RuntimeConfigurationApplier {
             if (key == null || who == null) {
                 continue;
             }
-            rejectDuplicate(key, appliers, elsewhere);
+            rejectDuplicate(key, appliers, batches, elsewhere);
             elsewhere.put(key, who);
         }
     }
 
     private static void rejectDuplicate(String key,
                                         Map<String, Consumer<String>> appliers,
+                                        Map<String, BatchApplier> batches,
                                         Map<String, String> elsewhere) {
         if (APPLIERS.containsKey(key)
                 || APPLIED_ELSEWHERE.containsKey(key)
                 || appliers.containsKey(key)
+                || batches.containsKey(key)
                 || elsewhere.containsKey(key)) {
             throw new IllegalStateException("即时生效配置项 " + key + " 被写了两次");
         }
@@ -406,6 +425,7 @@ public class RuntimeConfigurationApplier {
         Set<String> keys = new LinkedHashSet<>(APPLIERS.keySet());
         keys.addAll(APPLIED_ELSEWHERE.keySet());
         keys.addAll(contributedAppliers.keySet());
+        keys.addAll(contributedBatches.keySet());
         keys.addAll(contributedAppliedElsewhere.keySet());
         return Collections.unmodifiableSet(keys);
     }
@@ -448,9 +468,16 @@ public class RuntimeConfigurationApplier {
         List<String> restartRequired = new ArrayList<>();
         List<String> applied = new ArrayList<>();
         Map<String, Object> savedValues = null;
+        Set<String> failedBatchKeys = applyBatches(changes);
 
         for (Map.Entry<String, String> change : changes.entrySet()) {
-            Runnable applier = resolve(change.getKey(), change.getValue());
+            String key = change.getKey();
+            if (contributedBatches.containsKey(key)) {
+                if (failedBatchKeys.contains(key)) restartRequired.add(key);
+                else recordApplied(key, applied);
+                continue;
+            }
+            Runnable applier = resolve(key, change.getValue() == null ? "" : change.getValue());
             if (applier == null) {
                 if (savedValues == null) {
                     savedValues = startupValues.isEmpty() ? Map.of()
@@ -469,9 +496,7 @@ public class RuntimeConfigurationApplier {
 
             try {
                 applier.run();
-                log.info("配置项 {} 已即时生效", change.getKey());
-                pendingRestart.remove(change.getKey());
-                applied.add(change.getKey());
+                recordApplied(key, applied);
             } catch (RuntimeException e) {
                 // 值的形式不对时不当作已生效：界面写「已生效」而实际没变，比多重启一次糟得多
                 log.warn("配置项 {} 的取值 {} 无法即时生效, 已按需重启处理: {}",
@@ -487,6 +512,32 @@ public class RuntimeConfigurationApplier {
 
         pendingRestart.addAll(restartRequired);
         return restartRequired;
+    }
+
+    private Set<String> applyBatches(Map<String, String> changes) {
+        Map<BatchApplier, Map<String, String>> batches = new LinkedHashMap<>();
+        changes.forEach((key, value) -> {
+            BatchApplier batch = contributedBatches.get(key);
+            if (batch != null) {
+                batches.computeIfAbsent(batch, ignored -> new LinkedHashMap<>()).put(key, value);
+            }
+        });
+        Set<String> failed = new LinkedHashSet<>();
+        batches.forEach((batch, values) -> {
+            try {
+                batch.apply().accept(Collections.unmodifiableMap(values));
+            } catch (RuntimeException error) {
+                failed.addAll(values.keySet());
+                log.warn("配置项 {} 无法即时生效，已按需重启处理: {}", values.keySet(), error.toString());
+            }
+        });
+        return failed;
+    }
+
+    private void recordApplied(String key, List<String> applied) {
+        log.info("配置项 {} 已即时生效", key);
+        pendingRestart.remove(key);
+        applied.add(key);
     }
 
     /**

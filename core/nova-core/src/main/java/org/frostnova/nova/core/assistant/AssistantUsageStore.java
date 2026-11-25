@@ -158,13 +158,13 @@ public final class AssistantUsageStore {
         }
     }
 
-    synchronized Quota quota(List<Streamer> group, AssistantProperties properties) {
+    synchronized Quota quota(List<Streamer> group, AssistantProperties.Settings settings) {
         if (problem != null) return null;
         rollOver();
         var allowances = new ArrayList<Allowance>();
-        var weeklyLimit = properties.getStreamerWeeklyBudgetYuan();
-        var dailyLimit = properties.getStreamerDailyBudgetYuan();
-        allowances.add(allowance(Scope.TOTAL, null, properties.getWeeklyBudgetYuan(), spent));
+        var weeklyLimit = settings.streamerWeeklyBudgetYuan();
+        var dailyLimit = settings.streamerDailyBudgetYuan();
+        allowances.add(allowance(Scope.TOTAL, null, settings.weeklyBudgetYuan(), spent));
         for (Streamer streamer : group) {
             Spending used = streamers.getOrDefault(streamer, Spending.ZERO);
             allowances.add(allowance(Scope.STREAMER_WEEK, streamer.uid(), weeklyLimit, used.weekSpentYuan()));
@@ -177,9 +177,9 @@ public final class AssistantUsageStore {
         return new Allowance(scope, streamerUid, limit, limit.subtract(used));
     }
 
-    synchronized void checkBudget(List<Streamer> group, AssistantProperties properties) {
+    synchronized void checkBudget(List<Streamer> group, AssistantProperties.Settings settings) {
         requireReadable();
-        Allowance exhausted = quota(group, properties).exhausted();
+        Allowance exhausted = quota(group, settings).exhausted();
         if (exhausted != null) {
             var scope = exhausted.scope();
             Long streamerUid = group.size() > 1 ? exhausted.streamerUid() : null;
