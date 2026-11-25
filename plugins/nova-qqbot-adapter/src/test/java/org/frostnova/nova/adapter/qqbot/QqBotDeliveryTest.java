@@ -125,7 +125,7 @@ class QqBotDeliveryTest {
             assertEquals(2, rig.body(0).getIntValue("msg_type"));
             assertEquals("<qqbot-at-user id=\"fixture-member\" />" + AT_ALL_TAG + "开播了",
                     rig.body(0).getJSONObject("markdown").getString("content"));
-            assertEquals(JSONObject.of("msg_type", 7, "content", " ", "media", media()), rig.body(2));
+            assertEquals(JSONObject.of("msg_type", 7, "media", media()), rig.body(2));
         });
     }
 
@@ -309,6 +309,7 @@ class QqBotDeliveryTest {
     }
 
     @Test
+    @DisplayName("先发 @ 的文字时，后续图片直接显示")
     void sendsMentionAsTextBeforeTheCover() {
         withSender(rig -> {
             assertEquals(0, rig.send("{at=all}开播了" + IMAGE).getIntValue("code"));
@@ -316,7 +317,7 @@ class QqBotDeliveryTest {
             var posts = rig.messageRequests();
             assertEquals(List.of(0, 7), posts.stream().map(request -> request.body().getIntValue("msg_type")).toList());
             assertEquals(AT_ALL_TAG + "开播了", posts.get(0).body().getString("content"));
-            assertEquals(" ", posts.get(1).body().getString("content"));
+            assertFalse(posts.get(1).body().containsKey("content"));
             assertEquals(media(), posts.get(1).body().getJSONObject("media"));
         });
     }
@@ -338,7 +339,7 @@ class QqBotDeliveryTest {
                     : path.equals("files") ? json("file_info", FILE_INFO) : json("id", "cover");
             assertEquals("cover", rig.send("{at=all}" + IMAGE).getString("id"));
             assertEquals(List.of("messages", "files", "messages"), rig.endpoints());
-            assertEquals(" ", rig.body(2).getString("content"));
+            assertFalse(rig.body(2).containsKey("content"));
             assertEquals(media(), rig.body(2).getJSONObject("media"));
         });
     }
@@ -420,13 +421,26 @@ class QqBotDeliveryTest {
     }
 
     @Test
-    void uploadsTheReportImageBeforeSendingItWithNonemptyContent() {
+    @DisplayName("单张报告图直接显示，避免被包在聊天框里")
+    void uploadsTheReportImageBeforeSendingItWithoutContent() {
         withSender(rig -> {
             assertEquals(0, rig.send(IMAGE).getIntValue("code"));
             assertEquals(List.of("files", "messages"), rig.endpoints());
             assertEquals(JSONObject.of("file_type", 1, "file_name", "image.png", "file_data", PNG,
                     "srv_send_msg", false), rig.body(0));
-            assertEquals(JSONObject.of("msg_type", 7, "content", " ", "media", media()), rig.body(1));
+            assertEquals(JSONObject.of("msg_type", 7, "media", media()), rig.body(1));
+        });
+    }
+
+    @Test
+    @DisplayName("多张图没有说明文字时，每张都直接显示")
+    void sendsEveryImageWithoutContentWhenThereIsNoCaption() {
+        withSender(rig -> {
+            assertEquals(0, rig.send(" \t" + IMAGE + "{image_base64=" + JPEG + "}").getIntValue("code"));
+            assertEquals(List.of("files", "files", "messages", "messages"), rig.endpoints());
+            for (Request request : rig.messageRequests()) {
+                assertEquals(JSONObject.of("msg_type", 7, "media", media()), request.body());
+            }
         });
     }
 
@@ -436,6 +450,75 @@ class QqBotDeliveryTest {
             assertEquals(0, rig.send("标题" + IMAGE).getIntValue("code"));
             assertEquals(List.of("files", "messages"), rig.endpoints());
             assertEquals(JSONObject.of("msg_type", 7, "content", "标题", "media", media()), rig.body(1));
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @DisplayName("QQ 拒收新写法时，用同一张图带一个空格重发一次")
+    @ExtendWith(OutputCaptureExtension.class)
+    void retriesCaptionlessImageWithOneSpaceAfterAnUnknownRejection(boolean acceptsRetry, CapturedOutput output) {
+        withSender(rig -> {
+            int rejectionCode = 987654;
+            rig.exchange = path -> {
+                if (path.equals("files")) return json("file_info", FILE_INFO);
+                if (acceptsRetry && " ".equals(rig.body(rig.requests.size() - 1).getString("content"))) {
+                    return json("id", "image-1");
+                }
+                return json("code", rejectionCode);
+            };
+
+            JSONObject result = rig.send(IMAGE);
+
+            assertEquals(List.of("files", "messages", "messages"), rig.endpoints());
+            assertEquals(JSONObject.of("msg_type", 7, "media", media()), rig.body(1));
+            assertEquals(JSONObject.of("msg_type", 7, "content", " ", "media", media()), rig.body(2));
+            assertEquals(acceptsRetry ? 0 : -1, result.getIntValue("code"));
+            if (acceptsRetry) assertEquals("image-1", result.getString("id"));
+            assertEquals(1, output.getAll().lines().filter(line -> line.contains("WARN")
+                    && line.contains("QQ 不收不带文字的图片消息") && line.contains("错误码 " + rejectionCode)
+                    && line.contains("带一个空格发")).count());
+        });
+    }
+
+    @Test
+    @DisplayName("有说明文字的图被拒时，保留原失败原因，避免补发一张没有说明的图")
+    void doesNotRetryACaptionedImageAfterAnUnknownRejection() {
+        withSender(rig -> {
+            rig.exchange = path -> path.equals("files") ? json("file_info", FILE_INFO)
+                    : json("code", 987654, "message", "远端原因");
+            JSONObject result = rig.send("标题" + IMAGE);
+            assertEquals(List.of("files", "messages"), rig.endpoints());
+            assertEquals("标题", rig.body(1).getString("content"));
+            assertEquals(-1, result.getIntValue("code"));
+            assertTrue(result.getString("message").contains("987654"));
+        });
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            200 | 40034105 | 群主还没打开
+            200 | 40054010 | 域名未知
+            200 | 40054007 | 消息太长
+            200 | 304019   | QQ 返回错误 304019
+            200 | 40034142 | QQ 返回错误 40034142
+            200 | 50055001 | QQ 侧发送出错
+            200 | 50001    | QQ 返回错误 50001
+            500 | 987654   | QQ 返回错误 987654
+            408 | 987654   | QQ 返回错误 987654
+            400 | 0        | QQ 返回错误 400
+            """)
+    @DisplayName("群没开主动发言等情况下，图片只发一次并保留失败原因")
+    void captionlessImageKeepsTheOriginalFailureWithoutRetry(int status, int code, String reason) {
+        withSender(rig -> {
+            rig.exchange = path -> path.equals("files") ? json("file_info", FILE_INFO)
+                    : new QqBotHttpTransport.Response(status, json("code", code).body());
+            JSONObject result = rig.send(IMAGE);
+            assertEquals(List.of("files", "messages"), rig.endpoints());
+            assertEquals(JSONObject.of("msg_type", 7, "media", media()), rig.body(1));
+            assertEquals(-1, result.getIntValue("code"));
+            assertFalse(result.getBooleanValue(Sender.LocalDelivery.DELIVERY_UNKNOWN));
+            assertTrue(result.getString("message").contains(reason));
         });
     }
 
@@ -762,7 +845,7 @@ class QqBotDeliveryTest {
         withSender(rig -> {
             rig.exchange = path -> path.equals("files") ? json("file_info", FILE_INFO)
                     : new QqBotHttpTransport.Response(status, json("code", 40054005).body());
-            var message = Message.create(PLATFORM, PushTargetType.GROUP, rig.number, "答复" + IMAGE).get(0);
+            var message = Message.create(PLATFORM, PushTargetType.GROUP, rig.number, IMAGE).get(0);
             message.setReplyTo("question");
             var result = sendNow(rig, message);
             assertTrue(result.getBooleanValue(Sender.LocalDelivery.DELIVERY_UNKNOWN));
@@ -805,7 +888,7 @@ class QqBotDeliveryTest {
             assertEquals(List.of("files", "files", "messages", "messages"), rig.endpoints());
             assertEquals("image.jpg", rig.body(1).getString("file_name"));
             assertEquals("＜qqbot-at-everyone /> ＠Everyone", rig.body(2).getString("content"));
-            assertEquals(" ", rig.body(3).getString("content"));
+            assertFalse(rig.body(3).containsKey("content"));
         });
     }
 
@@ -851,7 +934,7 @@ class QqBotDeliveryTest {
                 }
                 throw new HttpTimeoutException("fixture read timeout");
             };
-            JSONObject result = rig.send("开播了" + IMAGE);
+            JSONObject result = rig.send(IMAGE);
             assertEquals(-1, result.getIntValue("code"));
             assertTrue(result.getBooleanValue(Sender.LocalDelivery.DELIVERY_UNKNOWN));
             assertTrue(result.getString("message").contains("没等到 QQ 的回包"));
@@ -1279,7 +1362,7 @@ class QqBotDeliveryTest {
 
             assertEquals(List.of("files", "files", "messages", "messages"), rig.endpoints());
             assertEquals("标题", rig.body(2).getString("content"));
-            assertEquals(" ", rig.body(3).getString("content"));
+            assertFalse(rig.body(3).containsKey("content"));
             assertEquals(0, result.getInteger("code"));
             assertEquals("first", message.getId());
             assertEquals(1, activity.getSuccessCount());
@@ -1303,9 +1386,10 @@ class QqBotDeliveryTest {
     @Test
     void doesNotResendWhenTheResponseHasNoMessageId() {
         withSender(rig -> {
-            rig.exchange = path -> json("timestamp", "2026-11-24T15:20:00Z");
-            assertTrue(rig.send("开播了").getBooleanValue(Sender.LocalDelivery.DELIVERY_UNKNOWN));
-            assertEquals(List.of("messages"), rig.endpoints());
+            rig.exchange = path -> path.equals("files") ? json("file_info", FILE_INFO)
+                    : json("timestamp", "2026-11-24T15:20:00Z");
+            assertTrue(rig.send(IMAGE).getBooleanValue(Sender.LocalDelivery.DELIVERY_UNKNOWN));
+            assertEquals(List.of("files", "messages"), rig.endpoints());
         });
     }
 
