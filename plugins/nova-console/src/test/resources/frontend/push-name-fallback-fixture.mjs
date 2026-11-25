@@ -248,6 +248,7 @@ async function consolePage(hash, slowPlatforms = false, missingNames = false) {
       if (slowPlatforms) await platformsReady;
       return {platforms: ['bilibili']};
     }
+    if (path === '/status') return {senders: []};
     if (path === '/streamer/lookup') {
       if (missingNames) return {success: false};
       const {uid} = JSON.parse(opts.body);
@@ -257,7 +258,8 @@ async function consolePage(hash, slowPlatforms = false, missingNames = false) {
   };
   const pushFns = [
     'function refresh(', 'function leave(', 'function routeFromHash(',
-    'function loadGroupList(', 'async function loadPushPage(', 'async function reload(', 'function serializePush',
+    'function loadGroupList(', 'async function refreshPushPlatforms(', 'async function loadPushPage(',
+    'async function reload(', 'function serializePush',
     'function dropDisplayOnly', 'async function decoratePushData',
   ].map(marker => bracedFrom(src, marker)).join('\n');
   const push = new Function('api', 'store', 'location', 'showPush', 'paintTree', 'renderStreamers',
