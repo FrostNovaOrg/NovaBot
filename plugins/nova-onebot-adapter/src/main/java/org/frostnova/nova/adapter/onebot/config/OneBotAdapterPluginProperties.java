@@ -7,6 +7,8 @@ import org.frostnova.nova.core.properties.ConfigLabel;
 import org.frostnova.nova.core.properties.ConfigSummary;
 import org.frostnova.nova.core.properties.ConfigLevel;
 import org.frostnova.nova.core.plugin.NovaComponent;
+import org.frostnova.nova.core.util.IpMatcher;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -90,10 +92,20 @@ public class OneBotAdapterPluginProperties {
          * 允许调用推送接口的来源 IP 白名单，支持精确 IP 与 CIDR 网段；默认仅放行本机回环，外部程序要调用时在这里追加。
          */
         // NovaBot 核心通过回环调用自身推送接口，因此默认值可满足单机部署。
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("推送接口 · 允许的来源 IP")
         @ConfigSummary("支持 IP 与 CIDR 网段；默认仅允许本机。")
-        private List<String> allowIps = new ArrayList<>(List.of("127.0.0.1/32", "::1/128"));
+        private volatile List<String> allowIps = new ArrayList<>(List.of("127.0.0.1/32", "::1/128"));
+
+        /**
+         * 照哪份名单建的匹配器：名单没变时沿用，不每个请求都重新解析一遍
+         */
+        @Getter(AccessLevel.NONE)
+        @Setter(AccessLevel.NONE)
+        private AllowList allowList;
+
+        private record AllowList(List<String> source, IpMatcher matcher) {
+        }
 
         /**
          * 是否信任反向代理设置的 X-Forwarded-For／X-Real-IP 头；只有确实部署在反代之后才可开，否则来源 IP 可被伪造。
@@ -124,23 +136,39 @@ public class OneBotAdapterPluginProperties {
         private RateLimit rateLimit = new RateLimit();
 
         /**
-         * 一个请求从头到尾照用的那一组：信任反向代理、审计日志、频率限制开关
+         * 一个请求从头到尾照用的那一组：来源 IP 名单、信任反向代理、审计日志、频率限制开关
          * <p>
-         * 保存时这三项在同一把锁（本对象）下一起写回，这里在同一把锁下一起取，
-         * 一个请求拿到的不会是半新半旧的一组；保存返回之后进来的请求拿到的全是新值。
+         * 保存时这几项在同一把锁（本对象）下一起写回，这里在同一把锁下一起取，
+         * 一个请求拿到的不会是半新半旧的一组：不会按旧名单过了来源检查、又按新的代理设置认来源。
+         * 保存返回之后进来的请求拿到的全是新值。
          * @return 此刻的一组取值
          */
         public synchronized RequestPolicy requestPolicy() {
-            return new RequestPolicy(trustProxy, auditLog, rateLimit.isEnabled());
+            return new RequestPolicy(allowMatcher(), trustProxy, auditLog, rateLimit.isEnabled());
+        }
+
+        /**
+         * 此刻名单的匹配器，名单变了（保存写回、或绑定换了一份）才重建。调用方持有本对象的锁
+         */
+        private IpMatcher allowMatcher() {
+            List<String> current = allowIps == null ? List.of() : allowIps;
+            AllowList last = allowList;
+            if (last == null || !last.source().equals(current)) {
+                List<String> source = new ArrayList<>(current);
+                last = new AllowList(source, new IpMatcher(source));
+                allowList = last;
+            }
+            return last.matcher();
         }
 
         /**
          * 推送接口一个请求照用的安全取值
+         * @param allowed 来源 IP 名单的匹配器
          * @param trustProxy 是否信任反向代理设置的来源头
          * @param auditLog 是否记鉴权失败审计日志
          * @param rateLimited 是否做频率限制
          */
-        public record RequestPolicy(boolean trustProxy, boolean auditLog, boolean rateLimited) {
+        public record RequestPolicy(IpMatcher allowed, boolean trustProxy, boolean auditLog, boolean rateLimited) {
         }
 
         /**

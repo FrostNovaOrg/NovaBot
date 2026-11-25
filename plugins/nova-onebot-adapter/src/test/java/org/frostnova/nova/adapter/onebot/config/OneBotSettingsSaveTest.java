@@ -9,7 +9,6 @@ import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplier;
 import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplierContributor;
 import org.frostnova.nova.core.properties.ConfigEffect;
 import org.frostnova.nova.core.timeline.TimelineWriter;
-import org.frostnova.nova.core.util.IpMatcher;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -61,6 +60,7 @@ class OneBotSettingsSaveTest {
             change("alert.type", "1", 1),
             change("alert.num", "20001", 20001L),
             change("napcat.enabled", "false", false),
+            change("security.allow-ips", "127.0.0.1/32\n 10.0.0.0/8 ", List.of("127.0.0.1/32", "10.0.0.0/8")),
             change("security.trust-proxy", "true", true),
             change("security.audit-log", "false", false),
             change("security.rate-limit.enabled", "false", false),
@@ -143,6 +143,8 @@ class OneBotSettingsSaveTest {
 
     static Stream<Arguments> invalidValues() {
         return Stream.of(
+                Arguments.of("security.allow-ips", "127.0.0.1/32\n10.0.0.300"),
+                Arguments.of("security.allow-ips", " \n "),
                 Arguments.of("security.trust-proxy", "maybe"),
                 Arguments.of("security.audit-log", ""),
                 Arguments.of("security.rate-limit.enabled", "enable"),
@@ -211,8 +213,7 @@ class OneBotSettingsSaveTest {
         PushApiTokenStore tokens = new PushApiTokenStore();
         tokens.register(PATH, TOKEN);
         // 桶里只有一枚：第二个请求起就超限
-        PushApiSecurityFilter filter = new PushApiSecurityFilter(properties.getSecurity(), tokens,
-                new IpMatcher(properties.getSecurity().getAllowIps()), new RateLimiter(1, 1));
+        PushApiSecurityFilter filter = new PushApiSecurityFilter(properties.getSecurity(), tokens, new RateLimiter(1, 1));
 
         assertEquals(200, send(filter), "桶里还有一枚时放行");
         assertEquals(429, send(filter), "开着频率限制时超限被拒");
@@ -225,12 +226,83 @@ class OneBotSettingsSaveTest {
         assertEquals(429, send(filter), "重新打开后的下一个请求照旧限频");
     }
 
+    @Test
+    @DisplayName("保存「推送接口 · 允许的来源 IP」后不重启，下一个请求就按新名单放行")
+    void allowListTakesEffectOnTheNextRequest() throws Exception {
+        // 抓的故障：名单在启动时建成匹配器交给过滤器，设置页改了以后不重启，新加的网段仍被挡在外面
+        PushApiTokenStore tokens = new PushApiTokenStore();
+        tokens.register(PATH, TOKEN);
+        PushApiSecurityFilter filter = new PushApiSecurityFilter(properties.getSecurity(), tokens, new RateLimiter(600, 100));
+        assertEquals(403, send(filter, "10.1.2.3", null), "改之前这个地址进不来");
+
+        Saved saved = save(Map.of(PREFIX + "security.allow-ips", "127.0.0.1/32\n10.0.0.0/8"));
+
+        assertEquals(List.of(), saved.restartRequired(), "保存后要重启的项");
+        assertEquals(200, send(filter, "10.1.2.3", null), "改之后的下一个请求就该放行");
+        assertEquals(403, send(filter, "192.168.1.20", null), "不在新名单里的照旧挡住");
+    }
+
+    @Test
+    @DisplayName("名单里有一条写错：拒绝保存并指出是哪一条，旧名单照用")
+    void mistypedAllowListEntryIsRejected() throws Exception {
+        PushApiTokenStore tokens = new PushApiTokenStore();
+        tokens.register(PATH, TOKEN);
+        PushApiSecurityFilter filter = new PushApiSecurityFilter(properties.getSecurity(), tokens, new RateLimiter(600, 100));
+        save(Map.of(PREFIX + "security.allow-ips", "127.0.0.1/32\n10.0.0.0/8"));
+
+        for (String wrong : List.of("10.0.0.300", "192.168.1.0/40", "office-pc", "10.0.0.0/abc")) {
+            Saved rejected = save(Map.of(PREFIX + "security.allow-ips", "127.0.0.1/32\n" + wrong));
+            assertEquals(1, rejected.problems().size(), rejected.problems()::toString);
+            assertTrue(rejected.problems().get(0).contains("「" + wrong + "」"), rejected.problems()::toString);
+        }
+        assertEquals(List.of("127.0.0.1/32", "10.0.0.0/8"), properties.getSecurity().getAllowIps());
+        assertEquals(200, send(filter, "10.1.2.3", null), "旧名单照用");
+    }
+
+    @Test
+    @DisplayName("保存来源 IP 名单与信任反向代理的那一刻，同一个请求不会一半按旧设置、一半按新设置")
+    void oneRequestNeverMixesOldAndNewSecuritySettings() throws Exception {
+        // 抓的故障：请求按旧名单过了来源检查、又按新的代理设置认来源（或反过来），
+        // 两份各自都放行的设置拼在一起，把本该放行的请求挡掉、或把本该挡住的放进来
+        PushApiTokenStore tokens = new PushApiTokenStore();
+        tokens.register(PATH, TOKEN);
+        PushApiSecurityFilter filter = new PushApiSecurityFilter(properties.getSecurity(), tokens, new RateLimiter(600, 100));
+        // 两份设置都放行这个请求：对端是本机反代，代理头里的真实来源是 203.0.113.9
+        Map<String, String> direct = Map.of(PREFIX + "security.allow-ips", "127.0.0.1/32",
+                PREFIX + "security.trust-proxy", "false", PREFIX + "security.rate-limit.enabled", "false");
+        Map<String, String> proxied = Map.of(PREFIX + "security.allow-ips", "203.0.113.0/24",
+                PREFIX + "security.trust-proxy", "true", PREFIX + "security.rate-limit.enabled", "false");
+        assertEquals(List.of(), save(direct).restartRequired());
+        assertEquals(200, send(filter, "127.0.0.1", "203.0.113.9"));
+        assertEquals(List.of(), save(proxied).restartRequired());
+        assertEquals(200, send(filter, "127.0.0.1", "203.0.113.9"));
+
+        List<Integer> mixed = Collections.synchronizedList(new ArrayList<>());
+        Thread writer = new Thread(() -> {
+            for (int i = 0; i < 20_000; i++) applier.applyAndTrack(i % 2 == 0 ? direct : proxied);
+        });
+        writer.start();
+        while (writer.isAlive()) {
+            int status = send(filter, "127.0.0.1", "203.0.113.9");
+            if (status != 200) mixed.add(status);
+        }
+        writer.join(30_000);
+        assertEquals(List.of(), mixed.stream().limit(3).toList(), "两份设置各自都放行，被挡下就是拼了半新半旧的一组");
+    }
+
     // ============ 工具 ============
 
     private static int send(PushApiSecurityFilter filter) throws Exception {
+        return send(filter, "127.0.0.1", null);
+    }
+
+    private static int send(PushApiSecurityFilter filter, String remote, String forwardedFor) throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", PATH);
         request.setRequestURI(PATH);
-        request.setRemoteAddr("127.0.0.1");
+        request.setRemoteAddr(remote);
+        if (forwardedFor != null) {
+            request.addHeader("X-Forwarded-For", forwardedFor);
+        }
         request.addHeader("Authorization", "Bearer " + TOKEN);
         MockHttpServletResponse response = new MockHttpServletResponse();
         filter.doFilter(request, response, new MockFilterChain());
@@ -255,10 +327,21 @@ class OneBotSettingsSaveTest {
 
     /**
      * 重启那一路：同样的取值按 Spring 绑定读进一份新的配置对象
+     * <p>
+     * 多行的取值是名单：配置文件里逐行去首尾空白、去空行写成列表项，这里照样摊成带下标的键。
      */
     private static OneBotAdapterPluginProperties boundFrom(Map<String, String> values) {
+        Map<String, String> file = new LinkedHashMap<>();
+        values.forEach((key, value) -> {
+            if (value.contains("\n")) {
+                List<String> items = value.lines().map(String::strip).filter(item -> !item.isEmpty()).toList();
+                for (int i = 0; i < items.size(); i++) file.put(key + "[" + i + "]", items.get(i));
+            } else {
+                file.put(key, value);
+            }
+        });
         OneBotAdapterPluginProperties bound = new OneBotAdapterPluginProperties();
-        new Binder(new MapConfigurationPropertySource(values))
+        new Binder(new MapConfigurationPropertySource(file))
                 .bind("novabot.adapter.onebot", Bindable.ofInstance(bound));
         return bound;
     }

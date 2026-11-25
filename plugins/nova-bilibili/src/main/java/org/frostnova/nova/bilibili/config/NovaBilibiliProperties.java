@@ -387,11 +387,11 @@ public class NovaBilibiliProperties {
          */
         // 与动态图片的标识分开配置，因为两者未必想打同一个标（dynamic.logo-path）。
         @ConfigLevel(ConfigLevel.Level.COMMON)
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("报告自定义标识图片")
-        @ConfigSummary("填写图片路径；留空不显示。")
+        @ConfigSummary("填写图片路径；留空不显示。保存时会读一遍，读不到或不是图片就不收。")
         @ConfigFormat(ConfigFormat.Format.PATH)
-        private String reportLogoPath = "";
+        private volatile String reportLogoPath = "";
 
         /**
          * 词云不计这些用户的弹幕，每行一个用户编号（纯数字）；欢迎、感谢机器人刷屏的词就不进词云，弹幕原文照常保存。要按弹幕原文重算，没存下原文或读不出的场次排除不了，照旧按存下的词频画。保存后立刻生效。
@@ -442,13 +442,13 @@ public class NovaBilibiliProperties {
         private int autoFollowInterval = 30;
 
         /**
-         * 动态接口的请求间隔，单位：秒。
+         * 动态接口的请求间隔，单位：秒；最短 5 秒。保存后按新间隔重排，从上一次检查起满新间隔就查。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("动态轮询间隔")
-        @ConfigSummary(value = "", details = false)
-        private int apiRequestInterval = 10;
+        @ConfigSummary(value = "最短 5 秒。", details = false)
+        private volatile int apiRequestInterval = 10;
 
         /**
          * 动态图片底部标识图片的路径，留空不画；程序不内置标识图片，要打自己的标就在这里填，图片按固定高度缩放。

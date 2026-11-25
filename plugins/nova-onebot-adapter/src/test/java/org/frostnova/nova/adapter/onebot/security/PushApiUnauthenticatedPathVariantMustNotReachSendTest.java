@@ -1,6 +1,5 @@
 package org.frostnova.nova.adapter.onebot.security;
 
-import org.frostnova.nova.core.util.IpMatcher;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
 import org.junit.jupiter.api.BeforeEach;
@@ -78,7 +77,6 @@ class PushApiUnauthenticatedPathVariantMustNotReachSendTest {
         return new PushApiSecurityFilter(
                 security,
                 tokenStore,
-                new IpMatcher(security.getAllowIps()),
                 new RateLimiter(security.getRateLimit().getPermitsPerMinute(), security.getRateLimit().getBurst()));
     }
 

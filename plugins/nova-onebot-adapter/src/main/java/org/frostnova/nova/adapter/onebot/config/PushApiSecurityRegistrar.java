@@ -1,6 +1,5 @@
 package org.frostnova.nova.adapter.onebot.config;
 
-import org.frostnova.nova.core.util.IpMatcher;
 import org.frostnova.nova.adapter.onebot.security.PushApiSecurityFilter;
 import org.frostnova.nova.adapter.onebot.security.PushApiTokenStore;
 import org.frostnova.nova.adapter.onebot.security.RateLimiter;
@@ -26,22 +25,6 @@ public class PushApiSecurityRegistrar {
     }
 
     /**
-     * 来源 IP 白名单匹配器
-     * @param properties 配置
-     * @return IP 匹配器
-     */
-    @Bean
-    public IpMatcher pushApiIpMatcher(OneBotAdapterPluginProperties properties) {
-        IpMatcher matcher = new IpMatcher(properties.getSecurity().getAllowIps());
-
-        if (matcher.isEmpty()) {
-            log.error("推送接口 IP 白名单为空, 所有请求都将被拒绝, 请检查 novabot.adapter.onebot.security.allow-ips 配置");
-        }
-
-        return matcher;
-    }
-
-    /**
      * 推送接口频率限制器
      * @param properties 配置
      * @return 频率限制器
@@ -56,19 +39,22 @@ public class PushApiSecurityRegistrar {
      * 注册推送接口安全过滤器
      * <p>
      * 过滤器需排在处理链最前，确保鉴权发生在任何业务逻辑之前。
+     * 来源 IP 名单不在这里建好交给过滤器：过滤器每个请求从安全设置里现取，设置页保存后下一个请求就按新名单放行。
      * @param properties 配置
      * @param tokenStore Token 存储
-     * @param ipMatcher IP 匹配器
      * @param rateLimiter 频率限制器
      * @return 过滤器注册信息
      */
     @Bean
     public FilterRegistrationBean<PushApiSecurityFilter> pushApiSecurityFilterRegistration(OneBotAdapterPluginProperties properties,
                                                                                           PushApiTokenStore tokenStore,
-                                                                                          IpMatcher ipMatcher,
                                                                                           RateLimiter rateLimiter) {
+        if (properties.getSecurity().requestPolicy().allowed().isEmpty()) {
+            log.error("推送接口 IP 白名单为空, 所有请求都将被拒绝, 请检查 novabot.adapter.onebot.security.allow-ips 配置");
+        }
+
         FilterRegistrationBean<PushApiSecurityFilter> registration = new FilterRegistrationBean<>();
-        registration.setFilter(new PushApiSecurityFilter(properties.getSecurity(), tokenStore, ipMatcher, rateLimiter));
+        registration.setFilter(new PushApiSecurityFilter(properties.getSecurity(), tokenStore, rateLimiter));
         registration.addUrlPatterns(properties.getBaseUrl() + "/*");
         registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
         registration.setName("pushApiSecurityFilter");
