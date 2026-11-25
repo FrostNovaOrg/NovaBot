@@ -49,6 +49,8 @@ public class PushApiSecurityFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull FilterChain chain) throws ServletException, IOException {
         String requestUri = request.getRequestURI();
+        // 这一个请求照用的那一组安全取值只取一次：保存时三项一起换，请求中途不会一半新一半旧
+        OneBotAdapterPluginProperties.Security.RequestPolicy policy = properties.requestPolicy();
         String registeredPath;
 
         try {
@@ -56,7 +58,7 @@ public class PushApiSecurityFilter extends OncePerRequestFilter {
         } catch (IllegalArgumentException e) {
             // 按框架口径解析不了的路径（contextPath 对不上、非法的百分号编码等）视同未鉴权, 默认拒绝:
             // 这类请求交出去之后容器与框架怎么处置各不相同, 门禁不押注它们的下场
-            audit(requestUri, resolveClientIp(request), "请求路径无法按框架口径解析, 默认拒绝");
+            audit(policy, requestUri, resolveClientIp(policy, request), "请求路径无法按框架口径解析, 默认拒绝");
             reject(response, HttpStatus.UNAUTHORIZED, ResultCode.UNAUTHORIZED);
             return;
         }
@@ -68,10 +70,10 @@ public class PushApiSecurityFilter extends OncePerRequestFilter {
             return;
         }
 
-        String clientIp = resolveClientIp(request);
+        String clientIp = resolveClientIp(policy, request);
 
         if (!ipMatcher.matches(clientIp)) {
-            audit(requestUri, clientIp, "来源 IP 不在白名单内");
+            audit(policy, requestUri, clientIp, "来源 IP 不在白名单内");
             reject(response, HttpStatus.FORBIDDEN, ResultCode.FORBIDDEN_ADDRESS);
             return;
         }
@@ -79,13 +81,13 @@ public class PushApiSecurityFilter extends OncePerRequestFilter {
         // 令牌校验与限流都按登记路径记账: 路径变体与本尊共用同一把令牌、落进同一个限流桶,
         // 写法上的变体刷不掉频率限制
         if (!tokenStore.verify(registeredPath, extractToken(request))) {
-            audit(requestUri, clientIp, "Token 校验失败");
+            audit(policy, requestUri, clientIp, "Token 校验失败");
             reject(response, HttpStatus.UNAUTHORIZED, ResultCode.UNAUTHORIZED);
             return;
         }
 
-        if (properties.getRateLimit().isEnabled() && !rateLimiter.tryAcquire(registeredPath + '@' + clientIp)) {
-            audit(requestUri, clientIp, "请求频率超出限制");
+        if (policy.rateLimited() && !rateLimiter.tryAcquire(registeredPath + '@' + clientIp)) {
+            audit(policy, requestUri, clientIp, "请求频率超出限制");
             reject(response, HttpStatus.TOO_MANY_REQUESTS, ResultCode.RATE_LIMITED);
             return;
         }
@@ -98,11 +100,13 @@ public class PushApiSecurityFilter extends OncePerRequestFilter {
      * <p>
      * 默认直接采用 TCP 连接的对端地址。仅当明确配置信任反向代理时才解析 X-Forwarded-For，
      * 因为该请求头可由客户端任意伪造，在未经过代理的部署中信任它等同于让 IP 白名单失效。
+     * @param policy 本请求照用的安全取值
      * @param request 请求
      * @return 客户端 IP
      */
-    private String resolveClientIp(HttpServletRequest request) {
-        if (properties.isTrustProxy()) {
+    private static String resolveClientIp(OneBotAdapterPluginProperties.Security.RequestPolicy policy,
+                                          HttpServletRequest request) {
+        if (policy.trustProxy()) {
             String forwarded = request.getHeader("X-Forwarded-For");
             if (forwarded != null && !forwarded.isBlank()) {
                 String hop = rightmost(forwarded);
@@ -174,12 +178,14 @@ public class PushApiSecurityFilter extends OncePerRequestFilter {
 
     /**
      * 输出审计日志
+     * @param policy 本请求照用的安全取值
      * @param path 接口路径
      * @param clientIp 客户端 IP
      * @param reason 拒绝原因
      */
-    private void audit(String path, String clientIp, String reason) {
-        if (properties.isAuditLog()) {
+    private static void audit(OneBotAdapterPluginProperties.Security.RequestPolicy policy,
+                              String path, String clientIp, String reason) {
+        if (policy.auditLog()) {
             log.warn("推送接口 {} 拒绝了来自 {} 的请求: {}", path, clientIp, reason);
         }
     }

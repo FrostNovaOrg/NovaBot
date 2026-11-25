@@ -62,18 +62,18 @@ public class NovaBilibiliProperties {
         /**
          * 是否记录直播间原始消息的调试日志。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("直播间原始消息调试日志")
         @ConfigSummary(value = "", details = false)
-        private boolean liveRoomRawMessageLog = false;
+        private volatile boolean liveRoomRawMessageLog = false;
 
         /**
          * 是否记录动态接口原始响应的调试日志。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("动态接口原始响应调试日志")
         @ConfigSummary(value = "", details = false)
-        private boolean dynamicRawMessageLog = false;
+        private volatile boolean dynamicRawMessageLog = false;
 
         /**
          * 动态去重定键的取证探针，每条动态记一行三个标识符、不记正文；取证用，用完即关并清理日志。
@@ -81,10 +81,10 @@ public class NovaBilibiliProperties {
         // 每行记 id / rid / type，用来判定「同一条内容被推两次时两条记录的 rid 是否
         // 相同」。与上一项（整份原始响应，含关注列表里所有人的动态内容与昵称）刻意
         // 不同。默认关闭；取证结束即关闭并清理日志，探针行里的 id/rid 按关联信息处置。
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("动态去重排查日志")
         @ConfigSummary("开启后每轮轮询都会把每条动态的编号写入日志，排查结束后请关闭。")
-        private boolean dynamicDedupProbe = false;
+        private volatile boolean dynamicDedupProbe = false;
     }
 
     /**
@@ -99,26 +99,26 @@ public class NovaBilibiliProperties {
         // 改版本号时，配置模板 dist/templates/application.example.yml 里那份要一起改。
         // 模板里的值会覆盖这里的默认值——2026-08-07 就发现模板停在 Chrome/119 而这里
         // 已是 150，生产按模板部署，实际发出去的一直是落后三年的那个。
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("B站接口 · User-Agent")
         @ConfigSummary("")
-        private String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
+        private volatile String userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
 
         /**
          * 网络出错或只读接口暂时失败时，这一轮最多试几次，单位：次。被拦下改等冷却，不看这项。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("B站接口 · 最多重试次数")
         @ConfigSummary("仅用于临时失败；触发风控后改为等待冷却。")
-        private int apiRetryMaxTimes = 3;
+        private volatile int apiRetryMaxTimes = 3;
 
         /**
          * 上一项那种当次重试，两次请求之间等的毫秒数，单位：毫秒。被拦下后的等待不看这项。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("B站接口 · 重试间隔")
         @ConfigSummary("仅作用于单次请求内的重试，不影响风控冷却。")
-        private int apiRetryInterval = 3000;
+        private volatile int apiRetryInterval = 3000;
     }
 
     /**
@@ -203,10 +203,10 @@ public class NovaBilibiliProperties {
         // 了续期链路。续期仅在服务端明确提示需要时才执行，检查随复检一并进行，受
         // verify-interval 控制。
         @ConfigLevel(ConfigLevel.Level.COMMON)
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("登录凭据 · 自动续期")
         @ConfigSummary("关闭后凭据到期需重新扫码登录；关闭复检时同样不会续期。")
-        private boolean autoRefreshCookie = true;
+        private volatile boolean autoRefreshCookie = true;
 
         /**
          * 扫码登录方式：tv（默认）拿到的凭据能长期自动续期；web 拿不到可续期令牌，到期只能重新扫码。没有异常别改成 web。
@@ -214,11 +214,11 @@ public class NovaBilibiliProperties {
         // tv 走 TV 端登录接口，连同 Cookie 一并返回可续期的令牌（有效期 180 天）；
         // web 走网页端接口，实测服务端返回的刷新口令恒为空串，自动续期不可用。
         @ConfigLevel(ConfigLevel.Level.COMMON)
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("扫码登录方式")
         @ConfigSummary("tv 支持自动续期；web 方式在凭据到期后需重新扫码。")
         @ConfigChoices({"tv", "web"})
-        private String qrCodeLoginMode = "tv";
+        private volatile String qrCodeLoginMode = "tv";
     }
 
     /**
@@ -229,10 +229,10 @@ public class NovaBilibiliProperties {
     public static class Live {
         /** 重连认证成功后，用历史弹幕与屏上醒目留言补充本场统计和原文。 */
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("重连后补录")
         @ConfigSummary("补录仅进入统计与原文留档；接口失败时放弃本次补录。")
-        private boolean reconnectRecovery = true;
+        private volatile boolean reconnectRecovery = true;
 
         /**
          * 是否连直播间的长连接；被风控连不上时可关掉，只用备用直播推送。
@@ -257,40 +257,40 @@ public class NovaBilibiliProperties {
         /**
          * 连下一个直播间的间隔，单位：毫秒；连太快可能触发风控。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("直播间连接间隔")
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
         @ConfigSummary(value = "连接过快可能触发平台风控。", details = false)
-        private int liveRoomConnectInterval = 1000;
+        private volatile int liveRoomConnectInterval = 1000;
 
         /**
          * 重连直播间的间隔，单位：毫秒。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("直播间重连间隔")
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
         @ConfigSummary(value = "", details = false)
-        private int liveRoomReconnectInterval = 1000;
+        private volatile int liveRoomReconnectInterval = 1000;
 
         /**
          * 数据包解压后允许的最大字节数，单位：字节；非正数回退到默认 32MB；正常包只有几十 KB，这是防异常大包的防御上限，小内存机器可调小。
          */
         // 做成可配的理由是内存——默认堆 -Xmx512m，而这个上限允许单次解压吃掉
         // 32 MB 连续字节数组，在小内存机器上防御上限自己就可能是那根稻草。
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("数据包解压 · 字节上限")
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
         @ConfigSummary("0 或负数使用默认值 32 MB。")
-        private int maxDecompressedBytes = 32 * 1024 * 1024;
+        private volatile int maxDecompressedBytes = 32 * 1024 * 1024;
 
         /**
          * 递归展开压缩包的最大层数，单位：层；非正数回退到默认 3；正常数据不超过一层。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("数据包解压 · 最大层数")
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
         @ConfigSummary("0 或负数使用默认值 3。")
-        private int maxDecodeNestingDepth = 3;
+        private volatile int maxDecodeNestingDepth = 3;
 
         /**
          * 断线摘要的汇总窗口，单位：秒，0 关闭；逐次断线行只进调试日志，按此窗口汇总成一条带归因的摘要。
@@ -316,11 +316,11 @@ public class NovaBilibiliProperties {
         /**
          * 是否自动补全事件信息；开启后缺少昵称、头像的事件会额外请求接口补全。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("自动补全事件信息")
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
         @ConfigSummary("开启后会增加接口请求。")
-        private boolean completeEvent = false;
+        private volatile boolean completeEvent = false;
 
         /**
          * 是否在连续多个窗口只见到进房、见不到弹幕礼物时提醒。
@@ -465,20 +465,20 @@ public class NovaBilibiliProperties {
         /**
          * 是否自动保存画出来的动态图片。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("动态图片自动保存")
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigSummary(value = "", details = false)
-        private boolean autoSaveImage = false;
+        private volatile boolean autoSaveImage = false;
 
         /**
          * 动态发布超过多少分钟就不推了，单位：分钟；防止首次启动补推大量历史动态。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("动态补推时限")
         @ConfigSummary(value = "超过时限的历史动态不补推。", details = false)
-        private int pushMinutes = 1440;
+        private volatile int pushMinutes = 1440;
 
         /**
          * 动态屏蔽词，每行一个；正文、标题或转发原文里含任一词的动态不推送。保存后立刻生效。
@@ -497,11 +497,11 @@ public class NovaBilibiliProperties {
         // 动态流里又晚 21 分钟，一共迟到半小时）、带标题与封面、能 at 全体成员，
         // 开播动态只是它的劣化重复。只配动态推送、没配开播推送时，关掉本开关就
         // 再也收不到他的开播消息了。
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("推送开播动态")
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigSummary("与开播推送同时启用时，同一群可能收到重复通知。")
-        private boolean pushLiveDynamic = false;
+        private volatile boolean pushLiveDynamic = false;
     }
 
 }
