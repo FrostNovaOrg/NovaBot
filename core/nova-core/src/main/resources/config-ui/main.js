@@ -876,6 +876,14 @@ document.querySelectorAll('#nav a').forEach(a => {
   a.addEventListener('click', () => { if (location.hash === a.getAttribute('href')) applyRoute(); });
 });
 
+// 保存栏折行或隐藏时，用它的实际高度调整正文留白和默认模板保存栏的位置。
+const changeBar = $('#changebar');
+if (typeof ResizeObserver === 'function') {
+  new ResizeObserver(() => {
+    document.documentElement.style.setProperty('--changebar-height', changeBar.getBoundingClientRect().height + 'px');
+  }).observe(changeBar, {box: 'border-box'});
+}
+
 // 存去哪问的是改动条那份供数方名单，不另走一条 pages.find：两份名单分叉的那天，
 // 保存按钮会在一页上显示着却点了不管用，而两处的代码看起来都对
 $('#save').addEventListener('click', () => {
