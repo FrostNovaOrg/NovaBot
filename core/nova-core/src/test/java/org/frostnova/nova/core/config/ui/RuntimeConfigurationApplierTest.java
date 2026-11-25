@@ -122,19 +122,19 @@ class RuntimeConfigurationApplierTest {
     @DisplayName("改回启动时配置文件里的原样再存：那次重启当场不欠了；改成别的值仍欠着")
     void revertingToStartupValueClearsPendingRestart(@TempDir Path dir) throws Exception {
         ConfigurationFileService file = handWritten(dir,
-                "novabot:\n  core:\n    alert:\n      convergence-interval: 300\n");
+                "novabot:\n  core:\n    alert:\n      retry-interval: 300\n");
         RuntimeConfigurationApplier tracker = trackerStartedOn(file);
 
-        save(file, tracker, "novabot.core.alert.convergence-interval", "7200");
-        assertTrue(tracker.getPendingRestart().contains("novabot.core.alert.convergence-interval"),
+        save(file, tracker, "novabot.core.alert.retry-interval", "7200");
+        assertTrue(tracker.getPendingRestart().contains("novabot.core.alert.retry-interval"),
                 "改成 7200 后应记入待重启");
 
-        save(file, tracker, "novabot.core.alert.convergence-interval", "300");
+        save(file, tracker, "novabot.core.alert.retry-interval", "300");
         assertEquals(List.of(), tracker.getPendingRestart(),
                 "改回启动时的原样，重启再读一遍读到的与现在分毫不差，不该再挂着");
 
-        save(file, tracker, "novabot.core.alert.convergence-interval", "3600");
-        assertEquals(List.of("novabot.core.alert.convergence-interval"), tracker.getPendingRestart(),
+        save(file, tracker, "novabot.core.alert.retry-interval", "3600");
+        assertEquals(List.of("novabot.core.alert.retry-interval"), tracker.getPendingRestart(),
                 "改成第三个值仍要欠一次重启");
     }
 
@@ -229,13 +229,13 @@ class RuntimeConfigurationApplierTest {
     @Test
     @DisplayName("⚠️ 阴性：不在名单里的配置项只写文件，运行中的值一动不动")
     void doesNotTouchRestartOnlyProperties() {
-        int before = properties.getAlert().getConvergenceInterval();
+        int before = properties.getAlert().getRetryInterval();
 
-        List<String> restart = applier.applyAndTrack(Map.of("novabot.core.alert.convergence-interval", "7200"));
+        List<String> restart = applier.applyAndTrack(Map.of("novabot.core.alert.retry-interval", "7200"));
 
-        assertEquals(before, properties.getAlert().getConvergenceInterval(),
+        assertEquals(before, properties.getAlert().getRetryInterval(),
                 "这一项要等重启，此刻不该被改到运行中的配置上");
-        assertEquals(List.of("novabot.core.alert.convergence-interval"), restart);
+        assertEquals(List.of("novabot.core.alert.retry-interval"), restart);
     }
 
     @Test
@@ -252,11 +252,11 @@ class RuntimeConfigurationApplierTest {
     @Test
     @DisplayName("欠着的那次重启会一直记着，直到进程换一个")
     void tracksPendingRestartAcrossSaves() {
-        applier.applyAndTrack(Map.of("novabot.core.alert.convergence-interval", "7200"));
+        applier.applyAndTrack(Map.of("novabot.core.alert.retry-interval", "7200"));
         applier.applyAndTrack(Map.of("novabot.core.push.enabled", "false"));
-        applier.applyAndTrack(Map.of("novabot.core.paint.auto-expand-height", "6000"));
+        applier.applyAndTrack(Map.of("novabot.core.live.auto-save-live-data-interval", "600"));
 
-        assertEquals(List.of("novabot.core.alert.convergence-interval", "novabot.core.paint.auto-expand-height"),
+        assertEquals(List.of("novabot.core.alert.retry-interval", "novabot.core.live.auto-save-live-data-interval"),
                 applier.getPendingRestart(), "即时生效的那一项不该混进待重启名单");
 
         // 记录挂在实例上，实例的寿命就是进程的寿命——换一个实例等于程序重启了一次
@@ -277,8 +277,8 @@ class RuntimeConfigurationApplierTest {
                 "已生效的那一项不该继续挂在待重启名单上");
 
         // 阳性对照：够不着运行值的键仍按原样留在名单里，划掉不得误伤它们
-        applier.applyAndTrack(Map.of("novabot.core.alert.convergence-interval", "7200"));
-        assertEquals(List.of("novabot.core.alert.convergence-interval"), applier.getPendingRestart(),
+        applier.applyAndTrack(Map.of("novabot.core.alert.retry-interval", "7200"));
+        assertEquals(List.of("novabot.core.alert.retry-interval"), applier.getPendingRestart(),
                 "无即时生效口的键仍要留在待重启名单里");
     }
 

@@ -79,6 +79,9 @@ novabot:
             - "--name={uname}"
 ```
 
+`enabled` 与 `timeout` 也能在设置页「外部程序触发」「外部程序触发 · 超时」里改，保存后下一个事件就按新值处理，不用重启；
+`rules` 与 `max-concurrent` 改了仍要重启。
+
 `event` 填事件类名，简名或全限定名都行，**沿继承链匹配**——填 `LiveOnEvent`
 就能同时命中各平台的具体开播事件。可用占位符：
 `{event}` `{platform}` `{uid}` `{uname}` `{room_id}` `{timestamp}` `{json}`。

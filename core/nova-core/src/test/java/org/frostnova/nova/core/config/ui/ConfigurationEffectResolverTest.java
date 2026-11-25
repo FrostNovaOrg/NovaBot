@@ -63,10 +63,10 @@ class ConfigurationEffectResolverTest {
         try (AnnotationConfigApplicationContext context = context()) {
             ConfigurationEffectResolver resolver = new ConfigurationEffectResolver(context);
 
-            assertEquals(List.of("novabot.core.alert.convergence-interval"),
+            assertEquals(List.of("novabot.core.alert.retry-interval"),
                     resolver.restartRequired(List.of(
                             "novabot.core.push.enabled",
-                            "novabot.core.alert.convergence-interval")));
+                            "novabot.core.alert.retry-interval")));
         }
     }
 

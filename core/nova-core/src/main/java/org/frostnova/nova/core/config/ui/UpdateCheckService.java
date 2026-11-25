@@ -229,12 +229,16 @@ public class UpdateCheckService {
     /**
      * 此刻该不该提示新版
      * <p>
-     * 四个条件都成立才提示：取到过最新版本、它比当前的新、它也比被「先不提醒」跳过的那个新、
+     * 五个条件都成立才提示：检查开着、取到过最新版本、它比当前的新、它也比被「先不提醒」跳过的那个新、
      * 当前版本本身非空。跳过的比对用 {@link VersionOrder} 而不是字符串相等：
      * 「跳过 1.11.0」不该挡住 1.12.0，也不该被 {@code v1.11.0} 这种带前缀的写法绕过。
      * @return 该提示的新版，不该提示时为空
      */
     public Optional<UpdateInfo> pendingUpdate() {
+        // 开关现读：设置页上关掉之后，此前取到的那一条当场不再提示，不等重启
+        if (!properties.getConfigUi().getUpdate().isEnabled()) {
+            return Optional.empty();
+        }
         String latest = latestVersion;
         String current = currentVersion();
         if (latest == null || current.isBlank() || VersionOrder.compare(latest, current) <= 0) {

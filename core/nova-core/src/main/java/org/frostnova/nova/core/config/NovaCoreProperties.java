@@ -125,10 +125,10 @@ public class NovaCoreProperties {
          * 事件时间线的保留天数，单位：天，含当天，设为 0 或负数不自动清理。时间线是排障线索，要长期保存的场次数据在 sessions.jsonl 里，不会被删。
          */
         // 两周之前「某条推送失败过」已经没有人会再去查，留着只是让日志页越翻越长、磁盘越占越多。
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("事件时间线保留天数")
         @ConfigSummary("含当天；0 或负数不自动清理。")
-        private int retentionDays = 14;
+        private volatile int retentionDays = 14;
     }
 
     /**
@@ -146,21 +146,21 @@ public class NovaCoreProperties {
         /**
          * 是否启用事件触发外部命令。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigDanger(value = "true", title = "开启外部程序触发？",
                 consequence = "这是能执行任意程序的口子：规则里写的程序会以本程序的身份运行，"
                         + "拿得到它拿得到的一切。")
         @ConfigLabel("外部程序触发")
         @ConfigSummary(value = "", details = false)
-        private boolean enabled = false;
+        private volatile boolean enabled = false;
 
         /**
          * 单条命令的最长执行时间，单位：秒，超时后强制结束命令本身；它拉起的程序不受影响，会继续运行。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("外部程序触发 · 超时")
         @ConfigSummary("超时后仅强制结束命令本身，由它启动的程序可能继续运行。")
-        private int timeout = 30;
+        private volatile int timeout = 30;
 
         /**
          * 同时执行的命令数上限，单位：条，超出的直接丢弃；弹幕一秒能来几十条，没有上限一次刷屏就能拖垮机器。
@@ -224,10 +224,20 @@ public class NovaCoreProperties {
          */
         // 机器人的主人未必是每个群的管理员，因此有不依赖群角色的这一份名单。
         @ConfigLevel(ConfigLevel.Level.COMMON)
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("超级管理员")
         @ConfigSummary("每行一个账号；权限跨群生效。")
-        private List<Long> admins = new ArrayList<>();
+        private volatile List<Long> admins = new ArrayList<>();
+
+        /**
+         * 换上一份新名单
+         * <p>
+         * 存的是不可变的副本：保存设置时整份换掉，判权限的那条线程拿到的要么是旧表、要么是新表。
+         * @param admins 账号表
+         */
+        public void setAdmins(List<Long> admins) {
+            this.admins = admins == null ? List.of() : List.copyOf(admins);
+        }
     }
 
     /**
@@ -264,21 +274,21 @@ public class NovaCoreProperties {
         // 这份额度由该账号推送的全部会话共享（实测：往一个群发一次，其他群看到的
         // 剩余次数同步减一）。默认 10 与平台实测值一致，它才是真正会先卡住的那一道。
         @ConfigLevel(ConfigLevel.Level.COMMON)
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("@全体成员 每日上限 · 账号")
         @ConfigSummary("0 或负数表示不限；此额度由该账号的所有会话共用。")
-        private int atAllDailyLimit = 10;
+        private volatile int atAllDailyLimit = 10;
 
         /**
          * 单个群每日最多 @全体成员 的次数，单位：次，0 或负数不限制；与账号那份额度是两个维度，通常先撞到的是账号额度。
          */
         // 群的额度由群里所有有权限的人共用，机器人只是其中之一。默认 20 与平台实测值一致，
         // 本项是第二道保险。
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("@全体成员 每日上限 · 单群")
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigSummary("0 或负数表示不限；同时受账号每日上限约束。")
-        private int atAllSessionDailyLimit = 20;
+        private volatile int atAllSessionDailyLimit = 20;
 
         /**
          * 静音时段的开始时间，格式 HH:mm；与结束时间任一为空即不启用全局静音，单独设了静音时段的会话照它自己的来。改完立即生效，不必重启。静音只拦普通推送，告警照发——出了问题要叫人的那条，不该被静音。
@@ -313,25 +323,23 @@ public class NovaCoreProperties {
          * 是否启用告警。关闭后登录失效、连接中断这类问题都不再主动通知。
          */
         @ConfigLevel(ConfigLevel.Level.COMMON)
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("启用告警")
         @ConfigSummary(value = "关闭后，发生故障、直播流被平台切断或直播间被封禁时均不再发送通知。", details = false)
-        private boolean enabled = true;
+        private volatile boolean enabled = true;
 
         /**
          * 同一问题的最短告警间隔，单位：秒。故障往往持续存在，不收敛会反复推同一条，让人对告警脱敏。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("同一问题告警最短间隔")
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigSummary(value = "", details = false)
-        private int convergenceInterval = 3600;
+        private volatile int convergenceInterval = 3600;
 
         /**
          * Webhook 告警地址，留空不启用。它不依赖机器人链路——机器人掉线时恰恰需要它；适配 Bark、Server 酱、钉钉、飞书、Telegram。改完立即生效，不必重启。
          */
-        // 请求方式与字段名那几项不在此列：它们是「怎么发」，改动通常伴随一次对接调试，
-        // 等一次重启是可以接受的
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("Webhook · 告警地址")
@@ -340,29 +348,29 @@ public class NovaCoreProperties {
         /**
          * Webhook 请求方式：POST 或 GET。POST 提交 JSON，GET 把标题与内容拼进查询串，适配 Bark 这类服务。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("Webhook · 请求方式")
         @ConfigLevel(ConfigLevel.Level.COMMON)
-        private String webhookMethod = "POST";
+        private volatile String webhookMethod = "POST";
 
         /**
          * Webhook JSON 里承载标题的字段名；各服务不统一（Server 酱用 title/desp），所以可配。
          */
         // 钉钉与飞书用嵌套结构，自建接口各有各的约定，因此做成可配置而非写死。
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("Webhook · 标题字段名")
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigSummary(value = "", details = false)
-        private String webhookTitleField = "title";
+        private volatile String webhookTitleField = "title";
 
         /**
          * Webhook JSON 里承载内容的字段名。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("Webhook · 内容字段名")
         @ConfigLevel(ConfigLevel.Level.COMMON)
         @ConfigSummary(value = "", details = false)
-        private String webhookContentField = "content";
+        private volatile String webhookContentField = "content";
 
         /**
          * Webhook 附加请求头，用于需要鉴权的服务，形如 Authorization: Bearer xxx。
@@ -388,20 +396,46 @@ public class NovaCoreProperties {
          * 待重投队列的容量上限，单位：条。满了丢最旧的并在日志里说明，不静默截断。
          */
         // 悄悄丢掉的告警比没有重投更糟，它会让人以为队列在正常工作。
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("失败重发 · 队列容量")
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
         @ConfigSummary(value = "队列满后丢弃最旧的告警，并记录日志。", details = false)
-        private int retryQueueSize = 50;
+        private volatile int retryQueueSize = 50;
 
         /**
          * 单条告警的最大重投次数，单位：次，超过后放弃并写日志。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("失败重发 · 最多次数")
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
         @ConfigSummary(value = "超过上限后停止重发，并记录日志。", details = false)
-        private int retryMaxAttempts = 10;
+        private volatile int retryMaxAttempts = 10;
+
+        /**
+         * Webhook 这一次怎么发：请求方式与两个字段名，一起取
+         * <p>
+         * 三项可能在同一次保存里一起改。与保存设置时的写回同一把锁（本对象），
+         * 发一条告警时拿到的不会是新的请求方式配旧的字段名。
+         * @return 此刻的一组取值
+         */
+        public synchronized WebhookFormat webhookFormat() {
+            return new WebhookFormat(webhookMethod, webhookTitleField, webhookContentField);
+        }
+
+        /**
+         * Webhook 的请求方式与两个字段名
+         * @param method 请求方式
+         * @param titleField 标题字段名
+         * @param contentField 内容字段名
+         */
+        public record WebhookFormat(String method, String titleField, String contentField) {
+            /**
+             * @return 是不是 GET
+             */
+            public boolean get() {
+                return "GET".equalsIgnoreCase(method);
+            }
+        }
     }
 
     /**
@@ -570,22 +604,22 @@ public class NovaCoreProperties {
             /**
              * 是否检查新版。关掉后侧栏与首页的新版提醒都不再出现；程序不会自己更新，这是得知该换新版了的唯一入口。
              */
-            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
             @ConfigLabel("检查新版本")
             @ConfigLevel(ConfigLevel.Level.COMMON)
             @ConfigSummary("仅检查并提醒，不会自动更新程序。")
-            private boolean enabled = true;
+            private volatile boolean enabled = true;
 
             /**
              * 新版信息的来源地址，默认指向发布仓的 latest release 接口；自建镜像时改这里。取不到时静默跳过，不变成控制台故障。
              */
             // 取回的 JSON 里要有 tag_name（版本）、body（更新说明）与 html_url（链接）；
             // 取回的东西认不出来时也静默跳过——「查不到新版」不该变成控制台上的一条故障。
-            @ConfigEffect(ConfigEffect.Effect.RESTART)
+            @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
             @ConfigLabel("检查新版本 · 来源地址")
             @ConfigLevel(ConfigLevel.Level.ADVANCED)
             @ConfigSummary("")
-            private String source = DEFAULT_SOURCE;
+            private volatile String source = DEFAULT_SOURCE;
         }
 
         /**
@@ -760,11 +794,11 @@ public class NovaCoreProperties {
         /**
          * 画布不够用时一次扩展的高度，单位：像素；设得过大占内存，设得过小会频繁扩展拖慢速度。
          */
-        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("画布扩展步长")
         @ConfigLevel(ConfigLevel.Level.ADVANCED)
         @ConfigSummary("")
-        private int autoExpandHeight = 5000;
+        private volatile int autoExpandHeight = 5000;
 
         /**
          * 绘图底部附加的自定义版权信息。

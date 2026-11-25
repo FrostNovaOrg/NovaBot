@@ -85,6 +85,195 @@ public class RuntimeConfigurationApplier {
     }
 
     /**
+     * 带取值校验的核心即时生效项
+     * <p>
+     * 这几项的读取方都是用到时现读（各项旁边写着读处），写回即生效。与 {@link #APPLIERS} 的不同在两处：
+     * <ul>
+     *   <li>保存前先过 {@link #validateValues}：取值读不懂的整批拒绝、配置文件不动。
+     *       写进文件再让运行时去碰的话，重启时绑定就会失败。</li>
+     *   <li>一批里的这几项<b>先全部解析、再一起写回</b>，写回期间持有 {@link NovaCoreProperties.Alert} 的锁：
+     *       Webhook 的请求方式与两个字段名一起改时，读方经 {@link NovaCoreProperties.Alert#webhookFormat()}
+     *       拿到的不会是半新半旧的一组。</li>
+     * </ul>
+     * 取值按 Spring 绑定那一路转换，与重启后读到的是同一个值。删键（{@code null}）回到默认值。
+     */
+    private static final Map<String, CheckedSetting> CHECKED = new LinkedHashMap<>();
+
+    static {
+        NovaCoreProperties defaults = new NovaCoreProperties();
+
+        // ---- @全体成员额度：AtAllQuotaService 每次记账前现读 ----
+        checked("novabot.core.push.at-all-daily-limit", "@全体成员 每日上限 · 账号",
+                defaults.getPush().getAtAllDailyLimit(), RuntimeConfigurationApplier::integer,
+                (p, v) -> p.getPush().setAtAllDailyLimit(v));
+        checked("novabot.core.push.at-all-session-daily-limit", "@全体成员 每日上限 · 单群",
+                defaults.getPush().getAtAllSessionDailyLimit(), RuntimeConfigurationApplier::integer,
+                (p, v) -> p.getPush().setAtAllSessionDailyLimit(v));
+
+        // ---- 告警：AlertService 每条告警、每趟重投、每次入队都现读 ----
+        checked("novabot.core.alert.enabled", "启用告警",
+                defaults.getAlert().isEnabled(), RuntimeConfigurationApplier::bool,
+                (p, v) -> p.getAlert().setEnabled(v));
+        checked("novabot.core.alert.convergence-interval", "同一问题告警最短间隔",
+                defaults.getAlert().getConvergenceInterval(), RuntimeConfigurationApplier::integer,
+                (p, v) -> p.getAlert().setConvergenceInterval(v));
+        checked("novabot.core.alert.retry-max-attempts", "失败重发 · 最多次数",
+                defaults.getAlert().getRetryMaxAttempts(), RuntimeConfigurationApplier::integer,
+                (p, v) -> p.getAlert().setRetryMaxAttempts(v));
+        checked("novabot.core.alert.retry-queue-size", "失败重发 · 队列容量",
+                defaults.getAlert().getRetryQueueSize(), RuntimeConfigurationApplier::integer,
+                (p, v) -> p.getAlert().setRetryQueueSize(v));
+        // Webhook 每发一次现取一组（webhookFormat）
+        checked("novabot.core.alert.webhook-method", "Webhook · 请求方式",
+                defaults.getAlert().getWebhookMethod(), RuntimeConfigurationApplier::webhookMethod,
+                (p, v) -> p.getAlert().setWebhookMethod(v));
+        checked("novabot.core.alert.webhook-title-field", "Webhook · 标题字段名",
+                defaults.getAlert().getWebhookTitleField(), RuntimeConfigurationApplier::fieldName,
+                (p, v) -> p.getAlert().setWebhookTitleField(v));
+        checked("novabot.core.alert.webhook-content-field", "Webhook · 内容字段名",
+                defaults.getAlert().getWebhookContentField(), RuntimeConfigurationApplier::fieldName,
+                (p, v) -> p.getAlert().setWebhookContentField(v));
+
+        // ---- 超级管理员：CommandDispatcher 每条命令判权限时现读。换成一份新的不可变表，不在原表上改 ----
+        checked("novabot.core.command.admins", "超级管理员",
+                List.<Long>of(), RuntimeConfigurationApplier::accounts,
+                (p, v) -> p.getCommand().setAdmins(v));
+
+        // ---- 直播：开播事件与场次恢复判断重连时现读 ----
+        checked("novabot.core.live.reconnect-interval", "短暂下播视为同一场",
+                defaults.getLive().getReconnectInterval(), RuntimeConfigurationApplier::integer,
+                (p, v) -> p.getLive().setReconnectInterval(v));
+
+        // ---- 绘图：每次扩画布时现读 ----
+        checked("novabot.core.paint.auto-expand-height", "画布扩展步长",
+                defaults.getPaint().getAutoExpandHeight(), RuntimeConfigurationApplier::positive,
+                (p, v) -> p.getPaint().setAutoExpandHeight(v));
+
+        // ---- 新版检查：每次检查现读；关掉时提醒当场收起（UpdateCheckService#pendingUpdate） ----
+        checked("novabot.core.config-ui.update.enabled", "检查新版本",
+                defaults.getConfigUi().getUpdate().isEnabled(), RuntimeConfigurationApplier::bool,
+                (p, v) -> p.getConfigUi().getUpdate().setEnabled(v));
+        checked("novabot.core.config-ui.update.source", "检查新版本 · 来源地址",
+                defaults.getConfigUi().getUpdate().getSource(), value -> value,
+                (p, v) -> p.getConfigUi().getUpdate().setSource(v));
+
+        // ---- 网络日志：HttpUtil 每个请求现读，读的就是本配置对象里的那一节（coreLogProperties） ----
+        checked("novabot.core.log.network-log", "网络日志",
+                defaults.getLog().isNetworkLog(), RuntimeConfigurationApplier::bool,
+                (p, v) -> p.getLog().setNetworkLog(v));
+        checked("novabot.core.log.network-log-suppress-window", "网络日志 · 去重窗口",
+                defaults.getLog().getNetworkLogSuppressWindow(), RuntimeConfigurationApplier::integer,
+                (p, v) -> p.getLog().setNetworkLogSuppressWindow(v));
+
+        // ---- 事件时间线：每日清理时现读 ----
+        checked("novabot.core.timeline.retention-days", "事件时间线保留天数",
+                defaults.getTimeline().getRetentionDays(), RuntimeConfigurationApplier::integer,
+                (p, v) -> p.getTimeline().setRetentionDays(v));
+
+        // ---- 外部程序触发：每个事件、每条命令现读。规则本身仍要重启 ----
+        checked("novabot.core.exec.enabled", "外部程序触发",
+                defaults.getExec().isEnabled(), RuntimeConfigurationApplier::bool,
+                (p, v) -> p.getExec().setEnabled(v));
+        checked("novabot.core.exec.timeout", "外部程序触发 · 超时",
+                defaults.getExec().getTimeout(), RuntimeConfigurationApplier::integer,
+                (p, v) -> p.getExec().setTimeout(v));
+    }
+
+    /**
+     * 写文件那一步已经逐项查过的数字名单：报错指得出第几项、原文是什么，这里不再抢先另说一遍
+     * （见 {@code ConfigurationFileService#rejectInvalidNumericListItems}），整批同样一项都不写
+     */
+    private static final Set<String> CHECKED_ON_WRITE = Set.of("novabot.core.command.admins");
+
+    /**
+     * 一项带校验的核心设置：怎么读懂取值、读懂之后怎么写回
+     * @param label 设置页上的名字，拒收时那句话里用
+     * @param fallback 删键时回到的默认值
+     * @param parse 读懂取值，读不懂时抛 {@link IllegalArgumentException}，消息是给人看的半句
+     * @param write 写回运行中的配置对象
+     */
+    private record CheckedSetting(String label, Object fallback, Function<String, Object> parse,
+                                  BiConsumer<NovaCoreProperties, Object> write) {
+        Object read(String value) {
+            return value == null ? fallback : parse.apply(value);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> void checked(String key, String label, T fallback, Function<String, T> parse,
+                                    BiConsumer<NovaCoreProperties, T> write) {
+        CHECKED.put(key, new CheckedSetting(label, fallback, parse::apply,
+                (properties, value) -> write.accept(properties, (T) value)));
+    }
+
+    private static <T> T converted(String value, Class<T> type) {
+        T result;
+        try {
+            result = org.springframework.boot.convert.ApplicationConversionService.getSharedInstance()
+                    .convert(value, type);
+        } catch (RuntimeException e) {
+            result = null;
+        }
+        if (result == null) {
+            throw new IllegalArgumentException(type == Boolean.class ? "请选择开启或关闭" : "请填写整数");
+        }
+        return result;
+    }
+
+    private static Integer integer(String value) {
+        return converted(value, Integer.class);
+    }
+
+    private static Integer positive(String value) {
+        int parsed = integer(value);
+        if (parsed <= 0) {
+            throw new IllegalArgumentException("请填写大于 0 的整数");
+        }
+        return parsed;
+    }
+
+    private static Boolean bool(String value) {
+        return converted(value, Boolean.class);
+    }
+
+    private static String webhookMethod(String value) {
+        String method = value.strip();
+        if (!"POST".equalsIgnoreCase(method) && !"GET".equalsIgnoreCase(method)) {
+            throw new IllegalArgumentException("只能是 POST 或 GET");
+        }
+        return method;
+    }
+
+    private static String fieldName(String value) {
+        if (value.isBlank()) {
+            throw new IllegalArgumentException("不能留空");
+        }
+        return value.strip();
+    }
+
+    /**
+     * 每行一个账号，空行跳过。逐项按绑定那一路转成数字，项内带空白的不收：那会把两个号码并成一个
+     */
+    private static List<Long> accounts(String value) {
+        List<Long> accounts = new ArrayList<>();
+        for (String line : value.split("\n")) {
+            String item = line.strip();
+            if (item.isEmpty()) {
+                continue;
+            }
+            if (item.codePoints().anyMatch(Character::isWhitespace)) {
+                throw new IllegalArgumentException("「" + item + "」不是有效的账号，每行填一个数字账号");
+            }
+            try {
+                accounts.add(converted(item, Long.class));
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("「" + item + "」不是有效的账号，每行填一个数字账号");
+            }
+        }
+        return List.copyOf(accounts);
+    }
+
+    /**
      * 即时生效、但落地动作不在本类的配置项
      * <p>
      * 有几项<b>根本不经过设置页那条保存通道</b>：它们是列表，而设置页按设计不展示列表元素，
@@ -331,6 +520,7 @@ public class RuntimeConfigurationApplier {
                                         Map<String, BatchApplier> batches,
                                         Map<String, String> elsewhere) {
         if (APPLIERS.containsKey(key)
+                || CHECKED.containsKey(key)
                 || APPLIED_ELSEWHERE.containsKey(key)
                 || appliers.containsKey(key)
                 || batches.containsKey(key)
@@ -423,6 +613,7 @@ public class RuntimeConfigurationApplier {
      */
     public Set<String> supportedKeys() {
         Set<String> keys = new LinkedHashSet<>(APPLIERS.keySet());
+        keys.addAll(CHECKED.keySet());
         keys.addAll(APPLIED_ELSEWHERE.keySet());
         keys.addAll(contributedAppliers.keySet());
         keys.addAll(contributedBatches.keySet());
@@ -440,8 +631,19 @@ public class RuntimeConfigurationApplier {
      */
     public List<String> validateValues(Map<String, String> changes) {
         List<String> problems = new ArrayList<>();
-        if (changes == null || changes.isEmpty() || contributedValidators.isEmpty()) {
+        if (changes == null || changes.isEmpty()) {
             return problems;
+        }
+        for (Map.Entry<String, String> change : changes.entrySet()) {
+            CheckedSetting setting = CHECKED.get(change.getKey());
+            if (setting == null || change.getValue() == null || CHECKED_ON_WRITE.contains(change.getKey())) {
+                continue;
+            }
+            try {
+                setting.read(change.getValue());
+            } catch (IllegalArgumentException e) {
+                problems.add(change.getKey() + "（" + setting.label() + "）：" + e.getMessage());
+            }
         }
         for (Map.Entry<String, String> change : changes.entrySet()) {
             Function<String, String> validator = contributedValidators.get(change.getKey());
@@ -469,9 +671,15 @@ public class RuntimeConfigurationApplier {
         List<String> applied = new ArrayList<>();
         Map<String, Object> savedValues = null;
         Set<String> failedBatchKeys = applyBatches(changes);
+        Set<String> failedCheckedKeys = applyChecked(changes);
 
         for (Map.Entry<String, String> change : changes.entrySet()) {
             String key = change.getKey();
+            if (CHECKED.containsKey(key)) {
+                if (failedCheckedKeys.contains(key)) restartRequired.add(key);
+                else recordApplied(key, applied);
+                continue;
+            }
             if (contributedBatches.containsKey(key)) {
                 if (failedBatchKeys.contains(key)) restartRequired.add(key);
                 else recordApplied(key, applied);
@@ -532,6 +740,41 @@ public class RuntimeConfigurationApplier {
             }
         });
         return failed;
+    }
+
+    /**
+     * 把这批里带校验的核心项一起写回：先全部读懂，有一项读不懂就一项也不写
+     * <p>
+     * 保存口在写文件前已经校验过，走到这里还读不懂的只会来自别的调用方；那时整批按待重启处理，
+     * 不留下「一半新一半旧」的运行状态。
+     * @param changes 已写入的配置项名到取值
+     * @return 没能写回的那些键
+     */
+    private Set<String> applyChecked(Map<String, String> changes) {
+        Map<CheckedSetting, Object> parsed = new LinkedHashMap<>();
+        Set<String> keys = new LinkedHashSet<>();
+        try {
+            changes.forEach((key, value) -> {
+                CheckedSetting setting = CHECKED.get(key);
+                if (setting != null) {
+                    keys.add(key);
+                    parsed.put(setting, setting.read(value));
+                }
+            });
+        } catch (IllegalArgumentException e) {
+            log.warn("配置项 {} 里有取值读不懂, 这一批都按需重启处理: {}", keys, e.getMessage());
+            Set<String> all = new LinkedHashSet<>();
+            changes.keySet().stream().filter(CHECKED::containsKey).forEach(all::add);
+            return all;
+        }
+        if (parsed.isEmpty()) {
+            return Set.of();
+        }
+        // Webhook 那一组的读方在同一把锁下取值，见 NovaCoreProperties.Alert#webhookFormat
+        synchronized (properties.getAlert()) {
+            parsed.forEach((setting, value) -> setting.write().accept(properties, value));
+        }
+        return Set.of();
     }
 
     private void recordApplied(String key, List<String> applied) {
