@@ -1,7 +1,7 @@
 /** 连接页与设置引导共用：地址一行，HTTP 与 WS 各一行端口和 Token。 */
 import {esc} from './core.js';
 
-export function botFieldsHtml(p, parameters = {}, tokenType = 'text') {
+export function botFieldsHtml(p, parameters = {}, tokenType = 'password') {
   const input = (key, label, value, type = 'text', hint = '') =>
     '<div class="bot-field"><label for="' + p + '-' + key + '">' + label + '</label>'
     + '<input id="' + p + '-' + key + '" type="' + type + '" value="' + esc(value)

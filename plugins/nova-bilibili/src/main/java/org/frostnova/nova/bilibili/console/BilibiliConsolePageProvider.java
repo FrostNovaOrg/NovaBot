@@ -33,6 +33,11 @@ public class BilibiliConsolePageProvider implements ConsolePageProvider {
     }
 
     @Override
+    public int order() {
+        return 10;
+    }
+
+    @Override
     public ConsolePageSlot slot() {
         return ConsolePageSlot.LINKS;
     }

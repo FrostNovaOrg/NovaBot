@@ -11,7 +11,8 @@
  */
 
 import {ask} from './confirm.js';
-import {$, api, esc, PREFIX, say} from './core.js';
+import {$, api, el, esc, PREFIX} from './core.js';
+import {showLinkResult, trackLinkEdits} from './link-feedback.js';
 import {refreshLinks} from './links.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {store} from './store.js';
@@ -28,7 +29,9 @@ import {explain, revokeOutcome} from './tokens-model.js';
  */
 export function loadTokens() {
   $('#token-issue').innerHTML = issueFormHtml();
-  $('#tk-issue').addEventListener('click', issue);
+  const fields = [$('#tk-label'), $('#tk-pass'), $('#tk-code')].filter(Boolean);
+  const updateDirty = trackLinkEdits(fields, $('#tk-unsaved'));
+  $('#tk-issue').addEventListener('click', () => issue(fields, updateDirty));
   $('#tk-label').addEventListener('keydown', e => { if (e.key === 'Enter') $('#tk-pass').focus(); });
 }
 
@@ -51,7 +54,7 @@ export function clearIssuedToken() {
 }
 
 function issueFormHtml() {
-  return '<div class="row"><label for="tk-label">令牌名称</label>'
+  return '<div class="lc-fields"><div class="lc-field"><label for="tk-label">令牌名称</label>'
     + '<input id="tk-label" name="label" maxlength="40" placeholder="例如：客厅的电脑" autocomplete="off"></div>'
 
     // 浏览器把紧挨着密码框的文本框当成登录名。「签给谁」里的名字会原样留在清单里，
@@ -62,81 +65,77 @@ function issueFormHtml() {
     + ' tabindex="-1" aria-hidden="true"'
     + ' style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0">'
 
-    + '<div class="row"><label for="tk-pass">密码</label>'
+    + '<div class="lc-field"><label for="tk-pass">密码</label>'
     + '<input type="password" id="tk-pass" name="password" autocomplete="current-password"></div>'
 
     // 验证器没绑就不显示这一格。上一次事故正出在这里：说明文字写的是「没开两步验证就直接回车」，
     // 而那台机器的二次验证是开着的，照做必然失败，且使用者没有任何办法自己发现说明写错了
     + (store.totpRequired
-        ? '<div class="row"><label for="tk-code">动态验证码</label>'
+        ? '<div class="lc-field"><label for="tk-code">动态验证码</label>'
           + '<input id="tk-code" inputmode="numeric" pattern="[0-9]*" maxlength="6"'
           + ' placeholder="验证器应用中的 6 位数字" autocomplete="one-time-code"></div>'
         : '')
 
-    + '<div class="row"><label></label><button type="button" class="primary" id="tk-issue">签发令牌</button></div>'
-    + '<div class="out" id="tk-msg"></div>'
+    + '</div><div class="lc-actions"><button type="button" class="primary" id="tk-issue">签发令牌</button>'
+    + '<span class="lc-unsaved" id="tk-unsaved" hidden>未保存</span>'
+    + '<span class="lc-result" id="tk-msg" role="status" hidden></span></div>'
     + '<div id="token-issued"></div>';
 }
 
-async function issue() {
-  const label = $('#tk-label').value.trim();
-  const password = $('#tk-pass').value;
-  const codeInput = $('#tk-code');
+async function issue(fields, updateDirty) {
+  const [labelInput, passInput, codeInput] = fields;
+  const label = labelInput.value.trim();
+  const password = passInput.value;
   const code = codeInput ? codeInput.value.trim() : '';
+  const result = $('#tk-msg');
+  const issued = $('#token-issued');
+  const fail = message => showLinkResult(result, message, 'err');
 
   if (!label) return fail('请填写令牌名称。没有名称就无法单独吊销，只能全部吊销，其他外部面板也将无法再连接');
   if (!password) return fail('请输入控制台密码');
   if (store.totpRequired && !/^\d{6}$/.test(code)) return fail('动态验证码为 6 位数字，请从验证器应用中读取');
 
   const body = {label, password};
-  // 契约定的是「不传」而非空串——服务端对这两种写法走的是两条路径
   if (code) body.code = code;
-
   const button = $('#tk-issue');
   button.disabled = true;
-  fail('');
+  fields.forEach(field => { field.disabled = true; });
+  showLinkResult(result, '正在签发…');
   try {
     const response = await fetch(PREFIX + '/nova/readonly-token', {
       method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
     });
     const data = await response.json().catch(() => ({}));
-
+    passInput.value = '';
     if (response.ok && data.token) {
-      showIssued(data.token, label);
-      $('#tk-pass').value = '';
       if (codeInput) codeInput.value = '';
-      refreshTokens();
+      labelInput.defaultValue = labelInput.value;
+      if (store.tab === 'bot' && issued === $('#token-issued')) {
+        showIssued(issued, data.token);
+        showLinkResult(result, '已签发：' + label, 'ok');
+        refreshLinks();
+      }
     } else {
-      // 失败时也把口令框清空：留着上一次输错的内容，再点一次还是同样的错
-      $('#tk-pass').value = '';
       fail(explain(response.status, data, store.vocab));
     }
   } catch (e) {
     fail('无法连接到服务器');
   } finally {
     button.disabled = false;
+    fields.forEach(field => { field.disabled = false; });
+    updateDirty();
   }
 }
 
-function fail(text) {
-  const box = $('#tk-msg');
-  box.textContent = text || '';
-  box.className = 'out' + (text ? ' err' : '');
-}
-
-function showIssued(token, label) {
-  const box = $('#token-issued');
+function showIssued(box, token) {
   box.innerHTML = '<div class="issued">'
-    + '<b>已签发：' + esc(label) + '</b>'
     + '<p>令牌明文<b>仅显示这一次</b>，离开本页后无法再次查看：服务器只保存指纹，不保存明文，'
     + '之后无法再次取回。遗失后只能吊销并重新签发。</p>'
-    + '<div class="secret">'
-    + '<input id="tk-value" type="password" readonly>'
-    + '<button type="button" class="ghost sm" id="tk-copy">复制</button>'
-    + '<button type="button" class="ghost sm" id="tk-reveal">显示</button>'
-    + '</div>'
-    + '<span class="status" id="tk-copy-msg">令牌默认隐藏，无需显示即可复制，直播过程中也可安全操作</span>'
-    + '</div>';
+    + '<div class="lc-field"><input id="tk-value" type="password" aria-label="刚签发的令牌" readonly></div>'
+    + '<div class="lc-actions"><button type="button" class="ghost" id="tk-reveal">显示</button>'
+    + '<button type="button" class="primary" id="tk-copy">复制</button>'
+    + '<span class="lc-result" id="tk-copy-msg" role="status" hidden></span>'
+    + '</div></div>';
 
   // 明文直接赋给 value，不拼进 innerHTML：少一次转义与反转义的往返，
   // 也就少一个「口令里恰好含特殊字符」的假设——复制出去的必须与签发的那一把逐字符相同
@@ -145,35 +144,24 @@ function showIssued(token, label) {
 
   const reveal = bindPasswordReveal(field, $('#tk-reveal'), '令牌');
 
+  const copyResult = $('#tk-copy-msg');
   $('#tk-copy').addEventListener('click', async () => {
+    showLinkResult(copyResult);
     try {
       await navigator.clipboard.writeText(field.value);
-      note('已复制到剪贴板', 'ok');
+      showLinkResult(copyResult, '已复制到剪贴板', 'ok');
     } catch (e) {
       // 非 https 访问或浏览器不给权限时剪贴板用不了。这里不能只报一句失败：
       // 手上这把口令没有第二次机会，得把它交到人手里
       reveal.setRevealed(true);
       field.select();
-      note('当前浏览器不允许写入剪贴板，令牌已选中，请按 Ctrl / ⌘ + C 手动复制', 'err');
+      showLinkResult(copyResult, '当前浏览器不允许写入剪贴板，令牌已选中，请按 Ctrl / ⌘ + C 手动复制', 'err');
     }
   });
 }
 
-function note(text, kind) {
-  const box = $('#tk-copy-msg');
-  box.textContent = text;
-  box.className = 'status ' + kind;
-}
-
-/**
- * 签发或吊销之后重取本页
- *
- * 走整页重取而不是只重画清单：那张外部面板卡上写着「几把有效」，只更新清单的话，
- * 刚签出来的这一把在清单里出现了，而卡上的数字还停在上一刻——两块说的是同一件事。
- */
-function refreshTokens() {
-  refreshLinks();
-}
+const revokeResults = new Map();
+const revoking = new Set();
 
 function renderTokenList(tokens) {
   const box = $('#token-list');
@@ -186,7 +174,8 @@ function renderTokenList(tokens) {
   // 新的在上：要吊销的多半是刚签错的那一把
   const sorted = tokens.slice().sort((a, b) => (b.issuedAt || 0) - (a.issuedAt || 0));
 
-  box.innerHTML = '<table><thead><tr><th>令牌名称</th><th>指纹</th><th>签发时间</th>'
+  box.innerHTML = '<div class="tblwrap lc-table" role="region" aria-label="令牌列表" tabindex="0">'
+    + '<table aria-label="已签发的令牌"><thead><tr><th>令牌名称</th><th>指纹</th><th>签发时间</th>'
     + '<th>状态</th><th></th></tr></thead><tbody>'
     + sorted.map(token =>
         '<tr' + (token.active ? '' : ' class="revoked"') + '>'
@@ -194,34 +183,51 @@ function renderTokenList(tokens) {
         + '<td class="fp">' + esc(token.fingerprint) + '</td>'
         + '<td>' + fmtTime(token.issuedAt) + '</td>'
         + '<td>' + (token.active ? '有效' : '已吊销 · ' + fmtTime(token.revokedAt)) + '</td>'
-        + '<td class="act">' + (token.active
-            ? '<button type="button" class="ghost sm" data-fp="' + esc(token.fingerprint) + '">吊销</button>' : '')
-        + '</td></tr>').join('')
-    + '</tbody></table>'
+        + '<td class="act"><div class="lc-actions" data-fp="' + esc(token.fingerprint) + '">' + (token.active
+            ? '<button type="button" class="danger sm"' + (revoking.has(token.fingerprint) ? ' disabled' : '') + '>吊销</button>' : '')
+        + '</div></td></tr>').join('')
+    + '</tbody></table></div>'
     // 指纹不是秘密（是口令的哈希前缀），列出来是为了对账：鉴权失败的日志里印的就是它，
     // 否则「有个面板连不上」只能靠猜是哪一把
     + '<p class="hint" style="margin:10px 0 0">鉴权失败的日志中会记录指纹，'
     + '可据此确定是哪个令牌无法连接。吊销会<b>立即断开用该令牌认证的所有已有连接</b>，其他连接不受影响。</p>';
 
-  box.querySelectorAll('button[data-fp]').forEach(button => {
-    const token = sorted.find(t => t.fingerprint === button.dataset.fp);
-    button.addEventListener('click', () => revoke(token));
+  box.querySelectorAll('[data-fp]').forEach(actions => {
+    const token = sorted.find(t => t.fingerprint === actions.dataset.fp);
+    const result = revokeResults.get(token.fingerprint);
+    if (result) actions.appendChild(result);
+    const button = actions.querySelector('button');
+    button?.addEventListener('click', () => revoke(token, button, actions));
   });
 }
 
-async function revoke(token) {
+async function revoke(token, button, actions) {
   if (!await ask({title: '吊销此令牌？',
     body: '吊销「' + token.label + '」后，该令牌无法再建立新连接，用它认证的所有已有连接也会立即断开。其他连接不受影响。'})) return;
 
+  const fingerprint = token.fingerprint;
+  if (revoking.has(fingerprint)) return;
+  revoking.add(fingerprint);
+  let result = revokeResults.get(fingerprint);
+  if (!result) {
+    result = el('span', 'lc-result');
+    result.setAttribute('role', 'status');
+    actions.appendChild(result);
+    revokeResults.set(fingerprint, result);
+  }
+  button.disabled = true;
+  showLinkResult(result, '正在吊销…');
   try {
-    const result = await api('/event-tokens/' + encodeURIComponent(token.fingerprint) + '/revoke',
-        {method: 'POST'});
-    // 显哪句、什么颜色、要不要重取，都在 revokeOutcome 里判——这里只管接线
-    const outcome = revokeOutcome(result);
-    say(outcome.text, outcome.kind);
-    if (outcome.refresh) refreshTokens();
+    const response = await api('/event-tokens/' + encodeURIComponent(fingerprint) + '/revoke', {method: 'POST'});
+    const outcome = revokeOutcome(response);
+    showLinkResult(result, outcome.text, outcome.kind);
+    if (outcome.refresh) await refreshLinks();
   } catch (e) {
-    say('吊销失败：' + e.message, 'err');
+    showLinkResult(result, '吊销失败：' + e.message, 'err');
+  } finally {
+    revoking.delete(fingerprint);
+    const current = result.parentElement?.querySelector('button');
+    if (current) current.disabled = false;
   }
 }
 

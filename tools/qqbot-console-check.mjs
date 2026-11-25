@@ -24,14 +24,24 @@ store.tab = 'bot';
 store.csrfToken = 'fixture-csrf';
 let linkRefreshes = 0;
 globalThis.noteLinkRefresh = () => { linkRefreshes++; };
+let confirmRevocation = false;
+const questions = [];
+globalThis.askAboutRevocation = async question => {
+  questions.push(question);
+  return confirmRevocation;
+};
+const confirm = encodeModule('export const ask = globalThis.askAboutRevocation;');
 const links = encodeModule('export function refreshLinks() { globalThis.noteLinkRefresh(); }');
 const {render, refresh} = await import(encodeModule(source
   .replace("'./core.js'", JSON.stringify(new URL('core.js', ui).href))
   .replace("'./store.js'", JSON.stringify(new URL('store.js', ui).href))
-  .replace("'./links.js'", JSON.stringify(links))));
+  .replace("'./links.js'", JSON.stringify(links))
+  .replace("'./confirm.js'", JSON.stringify(confirm))
+  .replace("'./link-feedback.js'", JSON.stringify(new URL('link-feedback.js', ui).href))));
 
 const state = {success: true, configured: false, intervalMillis: 2000, groups: []};
 let welcomeEnabled = true;
+let rejectWelcome = false;
 const prefix = '/test/config/api/qqbot/';
 let reached = '/';
 const posted = [];
@@ -62,7 +72,8 @@ globalThis.fetch = async (path, options) => {
       response.warning = warning;
     } else if (reached === 'welcome') {
       assert.equal(typeof body.enabled, 'boolean');
-      welcomeEnabled = response.enabled = body.enabled;
+      if (rejectWelcome) response = {success: false, message: '配置无法写入'};
+      else welcomeEnabled = response.enabled = body.enabled;
     } else if (reached === 'admin-claims/code') {
       state.claimCodeActive = true;
       state.claimCodeExpiresAt = expiry;
@@ -82,10 +93,15 @@ class Node {
   constructor(inputs = []) {
     this.listeners = new Map();
     this.inputs = inputs;
+    this.result = {};
     this.value = this.defaultValue = '';
   }
   addEventListener(event, handler) { this.listeners.set(event, handler); }
-  querySelector(selector) { return selector === 'input' ? this.inputs[0] : undefined; }
+  querySelector(selector) {
+    if (selector === 'input') return this.inputs[0];
+    if (selector === '.lc-result') return this.result;
+  }
+  closest() { return null; }
   querySelectorAll(selector) { return selector === 'input' ? this.inputs : []; }
 }
 
@@ -97,17 +113,16 @@ const interval = new Node([millis]);
 const welcomeToggle = new Node();
 welcomeToggle.checked = welcomeToggle.defaultChecked = false;
 welcomeToggle.disabled = true;
-const welcome = new Node([welcomeToggle]);
-const welcomeSave = new Node();
-welcomeSave.disabled = true;
 const welcomeResult = new Node();
 const groups = new Node();
 const reload = new Node();
 const result = new Node();
+const intervalResult = new Node();
 const unconfigured = new Node();
 const elements = {'app-id': appId, secret: password, millis, credentials, interval, groups,
-  welcome, 'welcome-enabled': welcomeToggle, 'welcome-save': welcomeSave, 'welcome-result': welcomeResult,
-  refresh: reload, result, unconfigured, load: new Node(),
+  'welcome-enabled': welcomeToggle, 'welcome-result': welcomeResult,
+  refresh: reload, 'refresh-result': new Node(), result, 'interval-result': intervalResult, unconfigured, load: new Node(),
+  'credentials-unsaved': new Node(), 'interval-unsaved': new Node(),
   'claim-status': new Node(), issued: new Node(), 'claim-command': new Node(),
   'claimed-admins': new Node(), 'claim-result': new Node(), 'claim-generate': new Node()};
 const section = {querySelector: selector => elements[selector.slice('#qqbot-'.length)]};
@@ -124,8 +139,50 @@ async function submit(host, target = host) {
   const submitter = new Node();
   await host.listeners.get('submit')({target, submitter, preventDefault() { prevented = true; }});
   assert.ok(prevented);
-  assert.equal(submitter.disabled, false);
+  assert.ok(!submitter.disabled);
+  return submitter;
 }
+
+const check = process.argv[3];
+if (check === 'welcome') {
+  // 拨动后立即发出保存请求。写入失败时恢复上一次成功保存的值。
+  welcomeToggle.checked = false;
+  await welcomeToggle.listeners.get('change')?.();
+  assert.deepEqual(posted.at(-1), ['welcome', {enabled: false}], '拨开关后没有保存欢迎语');
+  assert.equal(welcomeEnabled, false);
+  assert.match(welcomeResult.textContent, /已保存/);
+  rejectWelcome = true;
+  welcomeToggle.checked = true;
+  await welcomeToggle.listeners.get('change')?.();
+  assert.equal(welcomeToggle.checked, false, '保存失败后欢迎语开关没有拨回');
+  assert.match(welcomeResult.textContent, /配置无法写入/);
+  assert.match(welcomeResult.className, /\berr\b/);
+  console.log('进群欢迎语：拨动立即保存，失败拨回并显示原因');
+} else if (check === 'revoke') {
+  // 误点撤销后取消时，超级管理员名单不能被修改。
+  const revoke = new Node();
+  revoke.dataset = {memberNum: memberNumber};
+  await submit(elements['claimed-admins'], revoke);
+  assert.equal(posted.length, 0, '取消确认仍发出了撤销请求');
+  assert.match(questions.at(-1)?.title || '', /撤销/);
+  confirmRevocation = true;
+  await submit(elements['claimed-admins'], revoke);
+  assert.deepEqual(posted.at(-1), ['admin-claims/' + memberNumber + '/revoke', {}]);
+  assert.match(revoke.result.textContent, /已撤销/);
+  console.log('撤销超管：取消无写入，确认后撤销');
+} else if (check === 'result') {
+  // 发送间隔的回包要出现在本节保存按钮旁，凭据区保持原样。
+  millis.valueAsNumber = 1000;
+  await submit(interval);
+  assert.match(section.innerHTML, /<button[^>]*type="submit"[^>]*>保存<\/button>\s*<[^>]*id="qqbot-interval-result"/,
+    '发送间隔的保存按钮旁没有结果');
+  assert.match(intervalResult.textContent || '', /60 条/);
+  assert.match(intervalResult.className, /\bwarn\b/);
+  assert.equal(result.textContent || '', '');
+  console.log('保存发送间隔：提示显示在本节按钮旁');
+}
+
+if (check && check !== 'main') process.exit(0);
 
 appId.value = '12345678';
 password.value = secret;
@@ -149,7 +206,7 @@ millis.valueAsNumber = 1000;
 await submit(interval);
 assert.deepEqual(posted[1], ['interval', {millis: 1000}]);
 assert.equal(millis.value, '1000');
-assert.equal(result.textContent, warning);
+assert.ok(intervalResult.textContent.includes(warning));
 
 const groupInput = new Node();
 groupInput.value = '节目组';
@@ -168,24 +225,7 @@ assert.equal(linkRefreshes, 2);
 assert.equal(password.value, '');
 console.log('官方机器人卡：空态、密码遮罩与清空、群名只读与转义、间隔提醒、备注保存与清空、状态刷新通过');
 
-assert.match(section.innerHTML, /机器人进群时发欢迎语/);
-assert.equal(welcomeToggle.checked, true);
-assert.equal(welcomeSave.disabled, false);
-welcomeToggle.checked = false;
-await refresh();
-assert.equal(welcomeToggle.checked, false);
-assert.equal(welcomeEnabled, true);
-await submit(welcome);
-assert.deepEqual(posted.at(-1), ['welcome', {enabled: false}]);
-assert.match(welcomeResult.textContent, /已保存/);
-assert.equal(welcomeToggle.defaultChecked, false);
-welcomeToggle.checked = true;
-await submit(welcome);
-assert.deepEqual(posted.at(-1), ['welcome', {enabled: true}]);
-assert.equal(welcomeToggle.defaultChecked, true);
-console.log('进群欢迎语：默认开启、刷新保留草稿、关闭和开启保存通过');
-
-assert.match(section.innerHTML, /官方机器人超级管理员/);
+assert.match(section.innerHTML, /超级管理员/);
 assert.match(elements['claim-status'].textContent, /没有有效的认领码/);
 assert.match(elements['claimed-admins'].innerHTML, /还没有人认领/);
 await submit(elements['claim-generate']);
@@ -208,8 +248,11 @@ assert.match(claimedAdmins.innerHTML, /认领时间.*datetime="2026-11-24T10:00:
 assert.doesNotMatch(claimedAdmins.innerHTML, /<img|<b>群昵称/);
 const revoke = new Node();
 revoke.dataset = {memberNum: memberNumber};
-await submit(claimedAdmins, revoke);
+confirmRevocation = true;
+const revokedButton = await submit(claimedAdmins, revoke);
+assert.equal(revokedButton.hidden, true);
 assert.deepEqual(posted.at(-1), ['admin-claims/' + memberNumber + '/revoke', {}]);
+await refresh();
 assert.match(claimedAdmins.innerHTML, /还没有人认领/);
 console.log('超管认领：生成时显示认领码，刷新后只显示状态，名单转义与撤销通过');
 
@@ -218,7 +261,7 @@ const setupAppId = new Node();
 const setupSecret = new Node();
 const setupCredentials = new Node([setupAppId, setupSecret]);
 const setupElements = {'app-id': setupAppId, secret: setupSecret, credentials: setupCredentials,
-  result: new Node(), unconfigured: new Node(), load: new Node()};
+  result: new Node(), 'credentials-unsaved': new Node(), unconfigured: new Node(), load: new Node()};
 const setupSection = {querySelector: selector => setupElements[selector.slice('#setup-qqbot-'.length)]};
 const connectionChanges = [];
 render(setupSection, {onConnectionChange: saving => connectionChanges.push(saving)});

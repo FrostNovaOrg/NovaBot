@@ -610,14 +610,6 @@ tr:last-child td{border-bottom:none}
 .account .who span{color:var(--dim);font-size:var(--fs-sm)}
 .account img{width:240px;height:240px;background:var(--paper);border-radius:var(--r-ctl);padding:8px}
 .account button{margin-left:auto}
-/* .fbox 表单控件样式：机器人连接与只读口令签发两处复用 */
-.fbox .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
-.fbox label{font-size:var(--fs-sm);color:var(--dim);min-width:88px}
-.fbox input{background:var(--ground);color:var(--text);border:1px solid var(--line);
-  border-radius:var(--r-ctl);padding:6px 9px;font-size:var(--fs-sm);width:190px}
-.fbox .out{margin-top:10px;font-size:var(--fs-sm);white-space:pre-wrap}
-.fbox .out.ok{color:var(--ok)}
-.fbox .out.err{color:var(--err)}
 details.adv{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
   box-shadow:var(--shadow);margin-top:22px}
 details.adv>summary{padding:12px 16px;cursor:pointer;font-size:var(--fs-md);font-weight:600;list-style:none}
@@ -636,12 +628,6 @@ details.adv .inner{padding:0 16px 16px}
   background:var(--soft)}
 .issued>b{font-size:var(--fs-md)}
 .issued>p{margin:6px 0 10px;font-size:var(--fs-sm);color:var(--dim)}
-.issued .secret{margin-bottom:6px}
-/* 口令要等宽字体才分得清 l 与 1；.fbox input 的固定宽度在这里得让位给 flex */
-.issued .secret input{font-family:var(--mono);width:auto;letter-spacing:.5px}
-.issued .status{font-size:var(--fs-xs);color:var(--dim)}
-.issued .status.ok{color:var(--ok)}
-.issued .status.err{color:var(--err)}
 #token-list td.fp{font-family:var(--mono);color:var(--dim)}
 #token-list tr.revoked td{color:var(--dim)}
 @media (max-width:680px){.field{grid-template-columns:1fr}}
@@ -842,36 +828,62 @@ details.adv .inner{padding:0 16px 16px}
 .tl-more{display:block;margin-top:8px;font-size:var(--fs-sm);color:var(--accent);text-decoration:none}
 .tl-more:hover{text-decoration:underline}
 
-/* ==================== 连接页：三张卡 ====================
-   卡的色调跟着灯走，与首页同一条规则：同一个事实在两页上判成两种颜色，
-   会让人以为是两件事。熄灯那一档不描色——它既不是好也不是坏，是这一段此刻无从谈起。 */
-.lcard{padding:0;margin-bottom:16px;overflow:hidden}
+/* ==================== 连接页 ==================== */
+.lcard{padding:0;margin-bottom:16px;min-width:0}
 .lcard.l-warn{border-color:var(--warn)}
 .lcard.l-err{border-color:var(--err)}
-/* 标题是白底，与别页的卡同一种（见「卡片标题」）；色调由卡的边框与灯来表，不再给标题铺底 */
-.lc-hd{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:12px 16px;
+.lc-hd{display:flex;align-items:baseline;gap:6px 9px;flex-wrap:wrap;padding:12px 16px;
   border-bottom:1px solid var(--line)}
-.lc-hd .lc-cap{color:var(--dim);font-size:var(--fs-sm);flex:1 1 200px;min-width:0}
-/* 要人动手时那几句。空着时整块不占位——一条边框围着的空白会被当成加载失败 */
-.lc-note{padding:10px 16px;font-size:var(--fs-sm);line-height:1.6;border-bottom:1px solid var(--line);
-  background:var(--ground)}
-.lc-note div+div{margin-top:4px;color:var(--dim)}
-.lc-note .lc-go{display:inline-block;margin-top:6px;color:var(--accent-text);text-decoration:none;font-size:var(--fs-sm)}
-.lc-note .lc-go:hover{text-decoration:underline}
-.lc-body{padding:14px 16px}
-.lc-body>.hint:last-child{margin-bottom:0}
-.lc-h{margin:18px 0 8px;font-size:var(--fs-md);font-weight:600}
-.lc-h:first-of-type{margin-top:4px}
+.lc-hd .lamp{align-self:center}
+.lc-cap{color:var(--dim);font-size:var(--fs-sm);flex:1 1 180px;min-width:0;overflow-wrap:anywhere}
+.lc-body{padding:14px 16px;min-width:0;overflow-wrap:anywhere}
+.lc-intro{line-height:1.6;margin:0}
+.lc-note{margin:10px 0 0;font-size:var(--fs-sm);line-height:1.6;color:var(--dim)}
+.lc-note div+div{margin-top:4px}
+.lc-note .lc-go{display:inline-block;margin-top:6px;color:var(--accent-text)}
+#bot-intro[hidden]+.lc-note{display:none}
+.lc-h{margin:0 0 10px;font-size:var(--fs-md);font-weight:600}
 .lc-sub{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
-/* 二维码还没来的那一档：留出与二维码同样大的一块，来了之后版式不跳 */
-.qrwait{width:240px;height:240px;border:1px dashed var(--line);border-radius:var(--r-ctl);
+.lc-sub>.hint:last-child,.lc-field>.hint{margin:0}
+.lc-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.lc-intro:not([hidden])~#bot-channel,#bot-toggle-settings,.lc-table,
+.lc-actions+.hint:not(:empty){margin-top:10px}
+.lc-actions button[hidden],#bot-toggle-settings[hidden]{display:none}
+.lc-actions .switch{min-width:0}
+.lc-unsaved,.lc-result{font-size:var(--fs-sm);color:var(--dim);line-height:1.5;min-width:0;
+  max-width:100%;overflow-wrap:anywhere}
+.lc-result{white-space:pre-line}
+.lc-unsaved,.lc-result.warn{color:var(--warn)}
+.lc-result.ok{color:var(--ok)}
+.lc-result.err{color:var(--err)}
+.lc-result ul{margin:6px 0 0;padding-left:20px}
+.lc-result li+li{margin-top:4px}
+#test-result{display:contents}
+#test-result>.lc-result{flex-basis:100%}
+#test-result .bubble{color:var(--text);padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-ctl)}
+.lc-table{max-width:100%;border:1px solid var(--line);border-radius:var(--r-ctl)}
+.lc-table:empty{display:none}
+.lc-table>.hint{margin:0;padding:10px 12px}
+.lc-table table{margin:0;min-width:600px}
+.lc-table table th{white-space:nowrap}
+#qqbot-groups table{min-width:740px}
+#qqbot-groups th:first-child,#qqbot-groups th:nth-child(5),#qqbot-groups th:nth-child(6){min-width:9em}
+#token-list th:first-child{min-width:9em}
+#token-list .fp,#token-list td:nth-child(3){white-space:nowrap}
+.lc-table .lc-result{max-width:220px}
+.lc-remark{min-width:150px}
+.lc-remark .lc-actions{margin-top:6px}
+#qqbot-claimed-admins .todo{flex-wrap:wrap}
+#qqbot-claimed-admins .lc-actions{justify-content:flex-end}
+#token-issued .issued{max-width:660px}
+#tk-value{font-family:var(--mono);letter-spacing:.5px}
+#token-issued .lc-actions{margin-top:8px}
+.qrwait{width:min(240px,100%);aspect-ratio:1;border:1px dashed var(--line);border-radius:var(--r-ctl);
   display:grid;place-items:center;color:var(--dim);font-size:var(--fs-sm)}
-/* 卡里的账号块不再自带边框与阴影：它已经在一张卡里了，再套一层看起来像嵌了个窗口 */
-.lc-body .account{border:none;box-shadow:none;background:transparent;padding:0;margin:0 0 10px}
+.lc-body .account{display:grid;gap:10px;border:none;box-shadow:none;background:transparent;padding:0;margin:0}
+.lc-body .account button{margin-left:0}
+.lc-body .account img{max-width:100%;height:auto}
 .lc-body .health{margin-bottom:0}
-/* 发一条试试：目标下拉要能放下群名，140px 只够显示一半 */
-#selftest #test-target{flex:1 1 260px;min-width:200px;max-width:420px}
-/* 回显的气泡。它答的是「那边收到的是不是这句」，一行「已发送」答不了这个问题 */
 .bubble{margin-top:10px;max-width:420px}
 .bubble .bb-to{font-size:var(--fs-xs);color:var(--dim);margin-bottom:4px}
 .bubble .bb-body{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);
@@ -983,10 +995,10 @@ details.adv .inner{padding:0 16px 16px}
 .ask-card-doc{width:min(640px,100%)}
 
 /* 连接参数在两处使用同一份排布。 */
-.bot-fields{width:100%;max-width:660px;display:grid;gap:12px;margin-bottom:12px}
-.bot-field{min-width:0;display:flex;flex-direction:column;gap:4px}
-.bot-field label{font-size:var(--fs-sm);color:var(--dim)}
-.bot-field input{width:100%;min-width:0;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--ground);color:var(--text);font:inherit;font-size:var(--fs-md)}
+.bot-fields,.lc-fields{width:100%;max-width:660px;display:grid;gap:12px;margin-bottom:12px}
+.bot-field,.lc-field{min-width:0;display:flex;flex-direction:column;gap:4px}
+.bot-field label,.lc-field label{font-size:var(--fs-sm);color:var(--dim)}
+.bot-field input,.lc-field input,.lc-field select{width:100%;min-width:0;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r-ctl);background:var(--ground);color:var(--text);font:inherit;font-size:var(--fs-md)}
 .bot-protocol{display:grid;grid-template-columns:minmax(100px,1fr) minmax(0,2fr);gap:12px}
 #setup-send{margin-top:10px}
 .event-group{margin:14px 0 6px;font-size:var(--fs-md);color:var(--dim)}
@@ -997,7 +1009,7 @@ details.adv .inner{padding:0 16px 16px}
 .tl-event>summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-ctl)}
 .tl-detail{margin:0 0 12px 80px;font-size:var(--fs-sm)}
 .tl-detail .kv{margin:0}
-.token-help{font-size:var(--fs-sm);margin:-6px 0 12px}
+.token-help{font-size:var(--fs-sm);margin:0 0 12px}
 .token-help>summary{cursor:pointer;color:var(--accent-text);width:max-content}
 .eng-actions{display:flex;gap:8px;flex-wrap:wrap}
 #eng-tools{gap:6px}
@@ -1009,5 +1021,7 @@ details.adv .inner{padding:0 16px 16px}
 #logeng .loghead{display:block;margin-bottom:16px}
 @media(max-width:560px){
   .bot-protocol{grid-template-columns:minmax(0,1fr)}
+  #page-links .health .advice{margin-left:0}
+  .lc-cap{flex-basis:100%;padding-left:17px}
   .tl-detail{margin-left:0}
 }

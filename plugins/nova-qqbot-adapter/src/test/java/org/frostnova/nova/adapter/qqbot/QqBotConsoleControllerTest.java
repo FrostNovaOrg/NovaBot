@@ -8,6 +8,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.command.BilibiliAtListCommand;
 import org.frostnova.nova.bilibili.command.BilibiliStreamerChoice;
+import org.frostnova.nova.bilibili.console.BilibiliConsolePageProvider;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandDispatcher;
 import org.frostnova.nova.core.command.CommandReply;
@@ -27,6 +28,7 @@ import org.frostnova.nova.core.config.ui.ConfigUiSetupController;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.page.ConsolePageProvider;
+import org.frostnova.nova.core.config.ui.page.ConsolePages;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.health.PushActivityRecorder;
@@ -385,6 +387,15 @@ class QqBotConsoleControllerTest {
             assertTrue(app.getBeansOfType(ConsolePageProvider.class).isEmpty());
             assertNotNull(app.getBean(QqBotCredentials.class));
         });
+    }
+
+    @Test
+    void connectionCardsFollowDeclaredOrderWithReverseRegistration() {
+        var officialBot = new QqBotConsolePageProvider();
+        var bilibili = new BilibiliConsolePageProvider();
+
+        assertTrue(bilibili.order() < officialBot.order(), "连接卡必须按插件申报的顺序值排列");
+        assertEquals(List.of(bilibili, officialBot), ConsolePages.valid(List.of(officialBot, bilibili)));
     }
 
     @Test

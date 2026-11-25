@@ -426,7 +426,7 @@ for (const [name, bot, claims, level, source, napLevel, platform, cards, onlyOff
   const qq = model.cards.find(card => card.id === official.id);
   const nap = model.cards.find(card => card.key === 'bot');
   const fails = [];
-  if (qq.kind !== 'bot-plugin' || qq.level !== level || qq.caption !== (source?.summary || '')
+  if (qq.kind !== 'bot-plugin' || qq.level !== level || qq.caption !== (source?.summary || '尚未配置')
       || qq.advice !== (source?.advice || '')) {
     fails.push('官方卡实得 ' + JSON.stringify(qq));
   }

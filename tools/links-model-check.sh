@@ -81,7 +81,7 @@ check_syntax() {
 }
 
 # —— 语法 ——
-for f in "$UI"/links-model.js "$UI"/links.js "$UI"/tokens.js "$UI"/bot.js "$UI"/bot-fields.js \
+for f in "$UI"/links-model.js "$UI"/links.js "$UI"/tokens.js "$UI"/bot.js "$UI"/bot-fields.js "$UI"/link-feedback.js \
          "$PAGES"/bilibili.js; do
     check_syntax "$f"
 done
@@ -96,10 +96,11 @@ node tools/links-model-check.mjs
 if [ $? -ne 0 ]; then
     RED=1
 fi
-node tools/qqbot-console-check.mjs "$PAGES/qqbot.js"
-if [ $? -ne 0 ]; then
-    RED=1
-fi
+for scenario in main welcome revoke result; do
+    if ! node tools/qqbot-console-check.mjs "$PAGES/qqbot.js" "$scenario"; then
+        RED=1
+    fi
+done
 
 # —— 末行汇总 ——
 # 档尺（.mjs）的末句只数它自己的格，语法红盖不进去：语法红而档全对时，

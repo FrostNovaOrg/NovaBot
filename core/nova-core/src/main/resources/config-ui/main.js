@@ -371,13 +371,13 @@ export function pageStatus(data) {
 function applyConnectionVocab() {
   const title = $('#card-bot .lc-hd b');
   if (title) {
-    title.textContent = phrase('bot.impl', v => '机器人（' + v + ' 等）', '机器人');
+    title.textContent = phrase('bot.impl', v => '机器人（' + v + '）', '机器人');
   }
-  const hint = $('#card-bot .lc-body > p.hint');
+  const hint = $('#bot-intro');
   if (hint) {
     hint.innerHTML = phrase('bot.impl.hint', v => '机器人指 ' + esc(v), '机器人指机器人程序')
       + phrase('bot.platform', v => '，NovaBot 通过它将消息发送到 ' + esc(v), '，NovaBot 通过它将消息发送到聊天平台')
-      + '。两个 Token 留空时<b>保留原值</b>，不会被清空。';
+      + '。';
   }
   const entryHint = $('#bot-entry p.hint');
   if (entryHint) {
@@ -831,7 +831,7 @@ function applyRoute(withData = true) {
   // 首页四份数据一起取，见 refreshHome
   if (name === 'home') { holdPageHeight(refreshHome()); refreshPages(); }
   // 每次进入都重建只读口令那一块：顺带抹掉上一次留在屏幕上的口令明文。
-  // 三张卡与名单跟着一起重取——群随时会被踢，缓存的名单会让人对着一个已经不在的群发测试消息
+  // 卡片状态与名单一起重取，避免用旧名单向已经不在的群发送测试消息。
   else if (name === 'links') { loadTokens(); holdPageHeight(refreshLinks(true)); refreshPages(); }
   // 翻天、改筛选、进出工程日志走的都是改地址栏这一条路，因此每次进来都重取：
   // 日志页的「现在是哪一天、筛了什么」全部只存在地址栏里，本页自己不记

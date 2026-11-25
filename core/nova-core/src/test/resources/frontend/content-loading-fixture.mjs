@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {MiniNode, bracedFrom} from './layout-dom.mjs';
+import {showLinkResult} from '../../../main/resources/config-ui/link-feedback.js';
 import {resolveTarget, targetOptions} from '../../../main/resources/config-ui/links-model.js';
 
 const ui = new URL('../../../main/resources/config-ui/', import.meta.url);
@@ -37,8 +38,8 @@ const hasLoading = node => assert.ok(node?.querySelector('.content-loading'), 'å
 
 function testMessageCard(api) {
   const script = read('links.js').replace(/^import .*;$/gm, '').replace(/^export /gm, '');
-  return new Function('$', 'api', 'esc', 'loadingHtml', 'targetOptions', 'resolveTarget',
-    script + '\nreturn {loadTargets, sendTestMessage};')($, api, esc, loadingHtml, targetOptions, resolveTarget);
+  return new Function('$', 'api', 'esc', 'loadingHtml', 'targetOptions', 'resolveTarget', 'el', 'showLinkResult',
+    script + '\nreturn {loadTargets, sendTestMessage};')($, api, esc, loadingHtml, targetOptions, resolveTarget, el, showLinkResult);
 }
 
 if (process.argv[2] === 'cards') {
