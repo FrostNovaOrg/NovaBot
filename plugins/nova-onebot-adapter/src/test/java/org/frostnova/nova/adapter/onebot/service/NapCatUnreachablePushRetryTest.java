@@ -5,11 +5,11 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
+import org.frostnova.nova.adapter.onebot.config.OneBotHttpAdapterRegistrar;
 import org.frostnova.nova.adapter.onebot.converter.OneBotMessageConverter;
 import org.frostnova.nova.adapter.onebot.dto.MessageDTO;
 import org.frostnova.nova.adapter.onebot.health.OneBotConnectionState;
 import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapter;
-import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapterProxy;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.enums.PushTargetType;
@@ -27,25 +27,35 @@ import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.core.util.HttpUtil;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.mock.http.client.MockClientHttpRequest;
+import org.springframework.mock.http.client.MockClientHttpResponse;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.test.web.client.ExpectedCount;
+import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.ByteArrayInputStream;
+import java.io.EOFException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.SequenceInputStream;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.SocketException;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -64,6 +74,10 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 /**
  * NapCat 重启、掉线重登的那几秒，纯文字推送（开播通知、下播、命令回复）会不会丢。
@@ -79,6 +93,8 @@ class NapCatUnreachablePushRetryTest {
 
     private static final String NOTICE = "主播开播了";
 
+    private static final String SEND_GROUP_URL = "http://127.0.0.1:3000/send_group_msg";
+
     private FakeOneBotHttpServer napcat;
 
     private HttpServer hang;
@@ -88,11 +104,6 @@ class NapCatUnreachablePushRetryTest {
     private ThreadPoolTaskExecutor executor;
 
     private int closedPort;
-
-    @BeforeEach
-    void assumeLoopbackPortAllowed() {
-        LoopbackPort.assumeAllowed();
-    }
 
     @AfterEach
     void tearDown() {
@@ -141,6 +152,7 @@ class NapCatUnreachablePushRetryTest {
                     () -> assertEquals(1, rig.gate.sends.get(),
                             "读超时不该重发，实际 " + rig.gate.sends.get() + " 次；异常 " + rig.gate.chain()),
                     () -> assertTrue(logged.contains("送达不明"), "日志应写明送达不明: " + logged),
+                    () -> assertTrue(result.getBooleanValue(Sender.LocalDelivery.DELIVERY_UNKNOWN), result.toJSONString()),
                     () -> assertNotEquals(0, result.getIntValue("code"), result.toJSONString())
             );
         } finally {
@@ -149,18 +161,25 @@ class NapCatUnreachablePushRetryTest {
     }
 
     @Test
-    @DisplayName("读超时的回包带送达不明标记；一般异常的不带")
-    void onlyReadTimeoutIsMarkedDeliveryUnknown() throws Exception {
-        JSONObject broken = open(Mode.BOOM).sender.sendNow(notice());
-        tearDown();
-        JSONObject timedOut = open(Mode.HANG).sender.sendNow(notice());
+    @DisplayName("HTTP 回应读到一半连接重置时标记送达不明")
+    void interruptedResponseBodyIsMarkedDeliveryUnknown() {
+        RestTemplate client = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(client).build();
+        InputStream reset = new InputStream() {
+            @Override
+            public int read() throws IOException {
+                throw new SocketException("Connection reset");
+            }
+        };
+        InputStream body = new SequenceInputStream(new ByteArrayInputStream(new byte[]{'{'}), reset);
+        server.expect(requestTo(SEND_GROUP_URL)).andRespond(request -> new MockClientHttpResponse(body, 500));
 
+        JSONObject broken = open(Mode.PASS_THROUGH, client, 3000).sender.sendNow(notice());
+
+        server.verify();
         assertAll(
-                () -> assertTrue(timedOut.getBooleanValue("delivery_unknown"),
-                        "等回包超时应标上送达不明: " + timedOut),
                 () -> assertNotEquals(0, broken.getIntValue("code"), broken.toJSONString()),
-                () -> assertFalse(broken.getBooleanValue("delivery_unknown"),
-                        "一般异常不是送达不明，核心照旧剥图重发: " + broken)
+                () -> assertTrue(broken.getBooleanValue(Sender.LocalDelivery.DELIVERY_UNKNOWN), broken.toJSONString())
         );
     }
 
@@ -178,9 +197,58 @@ class NapCatUnreachablePushRetryTest {
     }
 
     @Test
+    @DisplayName("群里收到带封面的开播通知后连接断开：送达不明，群里只收到一条")
+    void lostReplyDoesNotDuplicateGroupNotice() {
+        RestTemplate client = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(client).build();
+        List<String> received = new ArrayList<>();
+        server.expect(ExpectedCount.manyTimes(), requestTo(SEND_GROUP_URL))
+                .andRespond(request -> {
+                    received.add(((MockClientHttpRequest) request).getBodyAsString());
+                    throw new EOFException("connection closed before response headers");
+                });
+        Rig rig = open(Mode.PASS_THROUGH, client, 3000);
+
+        JSONObject result = rig.sender.sendNow(Message.create(PLATFORM, PushTargetType.GROUP,
+                FakeOneBotHttpServer.GROUP_NUM, NOTICE + "{image_url=https://example.com/cover.jpg}").get(0));
+
+        assertAll(
+                () -> assertEquals(1, received.size(), "群里收到的通知条数"),
+                () -> assertTrue(received.get(0).contains(NOTICE)),
+                () -> assertTrue(result.getBooleanValue(Sender.LocalDelivery.DELIVERY_UNKNOWN), result.toJSONString())
+        );
+    }
+
+    @Test
+    @DisplayName("OneBot 回 HTTP 500 明确说封面下载失败时，群里仍能收到纯文字开播通知")
+    void imageDownloadFailureStillDeliversTextNotice() {
+        RestTemplate client = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(client).build();
+        server.expect(requestTo(SEND_GROUP_URL))
+                .andExpect(jsonPath("$.message[1].type").value("image"))
+                .andRespond(withServerError().contentType(MediaType.APPLICATION_JSON).body("""
+                        {"retcode":100.0,"status":"failed","message":"image download failed"}
+                        """));
+        server.expect(requestTo(SEND_GROUP_URL))
+                .andExpect(jsonPath("$.message[0].type").value("text"))
+                .andExpect(jsonPath("$.message[0].data.text").value(NOTICE))
+                .andExpect(jsonPath("$.message[1]").doesNotExist())
+                .andRespond(withSuccess("""
+                        {"retcode":0,"status":"ok","data":{"message_id":42}}
+                        """, MediaType.APPLICATION_JSON));
+        Message message = Message.create(PLATFORM, PushTargetType.GROUP, FakeOneBotHttpServer.GROUP_NUM,
+                NOTICE + "{image_url=https://example.com/cover.jpg}").get(0);
+
+        open(Mode.PASS_THROUGH, client, 3000).sender.sendNow(message);
+
+        assertEquals("42", message.getId(), "群里收到的纯文字通知编号");
+        server.verify();
+    }
+
+    @Test
     @DisplayName("NapCat 回了业务失败码：不重试")
     void businessFailureIsNotRetried() throws Exception {
-        Rig rig = open(Mode.BUSINESS);
+        Rig rig = open(Mode.PASS_THROUGH);
         napcat.failGroupMessageAt(1);
 
         JSONObject result = rig.sender.sendNow(notice());
@@ -189,41 +257,49 @@ class NapCatUnreachablePushRetryTest {
                 () -> assertEquals(1, rig.gate.sends.get(),
                         "业务失败码不该重试，实际 " + rig.gate.sends.get() + " 次"),
                 () -> assertNotEquals(0, result.getIntValue("code"), result.toJSONString()),
+                () -> assertFalse(result.getBooleanValue(Sender.LocalDelivery.DELIVERY_UNKNOWN), result.toJSONString()),
                 () -> assertEquals(1, napcat.groupMessages().size(),
                         "失败那一次打出去了就该停，实际 " + napcat.groupMessages().size())
         );
     }
 
     private Rig open(Mode mode) throws IOException {
+        LoopbackPort.assumeAllowed();
         napcat = new FakeOneBotHttpServer();
-        closedPort = closedPort();
+        if (mode == Mode.REFUSE_TWICE) {
+            closedPort = closedPort();
+        }
         if (mode == Mode.HANG) {
             startHang();
         }
+        return open(mode, oneBotClient(), napcat.port());
+    }
 
+    private Rig open(Mode mode, RestTemplate client, int port) {
         executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(2);
         executor.setMaxPoolSize(4);
         executor.initialize();
 
-        HttpUtil http = new HttpUtil(executor, oneBotClient(), new LogProperties());
+        HttpUtil http = new HttpUtil(executor, client, new LogProperties());
         OneBotConnectionState state = new OneBotConnectionState();
-        InvocationHandler real = new OneBotHttpAdapterProxy(http, state);
+        OneBotAdapterPluginProperties properties = new OneBotAdapterPluginProperties();
+        properties.getDetect().setEnableHttpDetect(false);
+        InvocationHandler real = new OneBotHttpAdapterRegistrar().oneBotHttpAdapterProxy(
+                executor, client, new LogProperties(), state, properties);
         Gate gate = new Gate(mode, real, http, closedPort, hangUrl());
         OneBotHttpAdapter adapter = (OneBotHttpAdapter) Proxy.newProxyInstance(
                 OneBotHttpAdapter.class.getClassLoader(),
                 new Class[]{OneBotHttpAdapter.class},
                 gate);
 
-        OneBotAdapterPluginProperties properties = new OneBotAdapterPluginProperties();
-        properties.getDetect().setEnableHttpDetect(false);
         OneBotHttpService service = new OneBotHttpService(mock(TaskScheduler.class), executor, properties, adapter,
                 new OneBotMessageConverter(), state);
 
         OneBotSender onebot = new OneBotSender();
         onebot.setName(PLATFORM);
         onebot.setOneBotAddress("127.0.0.1");
-        onebot.setOneBotHttpPort(napcat.port());
+        onebot.setOneBotHttpPort(port);
         onebot.setOneBotHttpToken("token");
         service.register(onebot);
 
@@ -348,8 +424,7 @@ class NapCatUnreachablePushRetryTest {
     private enum Mode {
         REFUSE_TWICE,
         HANG,
-        BUSINESS,
-        BOOM
+        PASS_THROUGH
     }
 
     private record Rig(NovaMessageSender sender, Gate gate) {
@@ -390,8 +465,6 @@ class NapCatUnreachablePushRetryTest {
                     miss(hangUrl, args[1]);
                 } else if (mode == Mode.REFUSE_TWICE && n <= 2) {
                     miss("http://127.0.0.1:" + closedPort + "/send_group_msg", args[1]);
-                } else if (mode == Mode.BOOM) {
-                    throw new IllegalStateException("回包读不懂");
                 }
             }
             return real.invoke(proxy, method, args);

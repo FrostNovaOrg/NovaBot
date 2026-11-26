@@ -9,6 +9,7 @@ import org.frostnova.nova.adapter.onebot.enums.ResultCode;
 import org.frostnova.nova.adapter.onebot.exception.OneBotApiException;
 import org.frostnova.nova.adapter.onebot.health.OneBotConnectionState;
 import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapter;
+import org.frostnova.nova.adapter.onebot.http.OneBotResponseErrorHandler;
 import org.frostnova.nova.adapter.onebot.dto.MessageDTO;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
 import org.frostnova.nova.core.enums.PushTargetType;
@@ -31,7 +32,6 @@ import java.net.PortUnreachableException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.net.http.HttpConnectTimeoutException;
-import java.net.http.HttpTimeoutException;
 import java.nio.channels.UnresolvedAddressException;
 import java.time.Duration;
 import java.time.Instant;
@@ -202,25 +202,26 @@ public class OneBotHttpService {
             log.warn("{} 的 OneBot HTTP Token 配置不正确, 请检查 Token 配置", message.getPlatform());
             return new JSONObject().fluentPut("code", ResultCode.UNAUTHORIZED.getCode()).fluentPut("message", "Token 配置不正确").fluentPut("id", null);
         } catch (Exception e) {
+            boolean unreachable = requestNeverReached(e);
+            String missingReply = unreachable ? null : OneBotResponseErrorHandler.missingReplyReason(e);
+            if (missingReply != null) {
+                // NapCat 可能已经发进群，剥图补发也会让群里多一条。
+                log.error("OneBot HTTP 送达不明: {}, 不重发", missingReply, e);
+                return new JSONObject().fluentPut("code", ResultCode.UNKNOWN.getCode())
+                        .fluentPut("message", "送达不明: " + missingReply)
+                        .fluentPut("id", null)
+                        .fluentPut(Sender.LocalDelivery.DELIVERY_UNKNOWN, true);
+            }
             if (properties.channelDisabled()) return PlatformDeliveryGate.blockedResponse(OneBotAdapterPluginProperties.NapCat.DISABLED_REASON);
             // 没送到（连接被拒、连接超时、找不到主机）不能包成普通结果。
             // 核心只在抛异常或结果为空时才按原有次数重试；包成非空结果，
             // NapCat 重启那几秒发出的开播通知就丢了。
-            if (requestNeverReached(e)) {
+            if (unreachable) {
                 log.warn("OneBot HTTP 请求未送到, 交回核心重试: {}", e.getMessage());
                 if (e instanceof RuntimeException runtime) {
                     throw runtime;
                 }
                 throw new IllegalStateException(e);
-            }
-            // 请求已经写出去、等回包超时：NapCat 可能已经发进群，再发一次就是两条。
-            // 标上送达不明，核心才分得出它与下面的一般异常，不剥图重发纯文字
-            if (responseNotReceived(e)) {
-                log.error("OneBot HTTP 送达不明: 请求已送出, 等回包超时, 不重发", e);
-                return new JSONObject().fluentPut("code", ResultCode.UNKNOWN.getCode())
-                        .fluentPut("message", "送达不明: 请求已送出, 等回包超时")
-                        .fluentPut("id", null)
-                        .fluentPut(Sender.LocalDelivery.DELIVERY_UNKNOWN, true);
             }
             log.error("OneBot HTTP 发送消息异常", e);
             return new JSONObject().fluentPut("code", ResultCode.UNKNOWN.getCode()).fluentPut("message", "OneBot HTTP 发送消息异常, 请检查插件日志错误信息").fluentPut("id", null);
@@ -304,27 +305,6 @@ public class OneBotHttpService {
                 return true;
             }
             if (current instanceof SocketTimeoutException && mentionsConnect(current.getMessage())) {
-                return true;
-            }
-            Throwable next = current.getCause();
-            if (next == current) {
-                break;
-            }
-            current = next;
-        }
-        return false;
-    }
-
-    /**
-     * 请求已经送出，回包没等到。连接超时不算在这里：那一种请求还没送出。
-     */
-    private static boolean responseNotReceived(Throwable error) {
-        if (requestNeverReached(error)) {
-            return false;
-        }
-        Throwable current = error;
-        for (int depth = 0; current != null && depth < 8; depth++) {
-            if (current instanceof HttpTimeoutException || current instanceof SocketTimeoutException) {
                 return true;
             }
             Throwable next = current.getCause();
