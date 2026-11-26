@@ -3,6 +3,9 @@ package org.frostnova.nova.bilibili.protocol;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.event.live.BilibiliDanmuEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliGuardEntryEffectEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliLotteryEndEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliLotteryStartEvent;
 import org.frostnova.nova.bilibili.model.BilibiliEmojiInfo;
 import org.frostnova.nova.bilibili.model.BilibiliUserInfo;
 import org.frostnova.nova.bilibili.model.FansMedal;
@@ -82,6 +85,8 @@ public final class NovaEventMapper {
      * @return 协议信封，不认识的事件返回 {@code null}——协议只承载它列出的那些
      */
     public static JSONObject map(NovaBaseLiveEvent event) {
+        if (event instanceof BilibiliLotteryStartEvent || event instanceof BilibiliLotteryEndEvent
+                || event instanceof BilibiliGuardEntryEffectEvent) return null;
         if (event instanceof RandomGiftEvent e) return blindBox(e);
         if (event instanceof FreeGiftEvent e) return freeGift(e);
         if (event instanceof PaidGiftEvent e) return paidGift(e);

@@ -90,6 +90,8 @@ public class BilibiliApiUtil {
 
     private static final String MASTER_INFO_API = "https://api.live.bilibili.com/live_user/v1/Master/info?uid=";
 
+    private static final String ONLINE_GOLD_RANK_API = "https://api.live.bilibili.com/xlive/general-interface/v1/rank/getOnlineGoldRank";
+
     private static final String ROOM_INFO_API = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=";
 
     /**
@@ -227,6 +229,8 @@ public class BilibiliApiUtil {
         registerKnownKeys(table, COOKIE_REFRESH_API, "COOKIE_REFRESH_API", "refresh_token");
         registerKnownKeys(table, CONFIRM_REFRESH_API, "CONFIRM_REFRESH_API");
         registerKnownKeys(table, MASTER_INFO_API, "MASTER_INFO_API", "info", "room_id", "follower_num");
+        registerKnownKeys(table, ONLINE_GOLD_RANK_API, "ONLINE_GOLD_RANK_API", "onlineNum");
+        registerResidentKeys(table, ONLINE_GOLD_RANK_API, "list");
         registerKnownKeys(table, FANS_MEDAL_RANK_API, "FANS_MEDAL_RANK_API", "num");
         registerKnownKeys(table, GUARD_TAB_API, "GUARD_TAB_API", "info", "top3", "list");
         registerKnownKeys(table, GUARD_LIST_API, "GUARD_TAB_API", "info");
@@ -1716,10 +1720,22 @@ public class BilibiliApiUtil {
     public Up getUpInfoByUid(@NonNull Long uid) {
         JSONObject data = requestBilibiliApi(MASTER_INFO_API + uid);
 
-        JSONObject info = Optional.ofNullable(data.getJSONObject("info")).orElseGet(JSONObject::new);
-        Long roomId = Optional.ofNullable(data.getLong("room_id")).filter(id -> id != 0L).orElse(null);
-        // follower_num 与 info、room_id 同在这份响应里，顺路取走就不必为粉丝数再打一趟
-        return new Up(uid, info.getString("uname"), roomId, info.getString("face"), data.getLong("follower_num"));
+        JSONObject info = Optional.ofNullable(readMasterInfoField(() -> data.getJSONObject("info")))
+                .orElseGet(JSONObject::new);
+        String nickname = readMasterInfoField(() -> info.getString("uname"));
+        String face = readMasterInfoField(() -> info.getString("face"));
+        Long roomId = Optional.ofNullable(readMasterInfoField(() -> data.getLong("room_id")))
+                .filter(id -> id != 0L).orElse(null);
+        Long fans = readMasterInfoField(() -> data.getLong("follower_num"));
+        return new Up(uid, nickname, roomId, face, fans);
+    }
+
+    private static <T> T readMasterInfoField(Supplier<T> reader) {
+        try {
+            return reader.get();
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     /**
@@ -1767,6 +1783,12 @@ public class BilibiliApiUtil {
             log.debug("获取直播间 {} 的大航海人数失败: {}", roomId, e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /** 在线高能榜的总人数。榜单只取第一页，名单长度可能小于总数。 */
+    public Optional<Integer> getOnlineRankCount(@NonNull Long roomId, @NonNull Long uid) {
+        JSONObject data = requestBilibiliApi(ONLINE_GOLD_RANK_API + "?page=1&pageSize=1&roomId=" + roomId + "&ruid=" + uid);
+        return Optional.ofNullable(data.getInteger("onlineNum"));
     }
 
     /**

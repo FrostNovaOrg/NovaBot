@@ -100,6 +100,16 @@ class LiveRoomRawMessageLogNoiseTest {
     }
 
     @Test
+    @DisplayName("排查天选或大航海进场时能看到对应原文，已识别的消息不会报成未知")
+    void roomSignalsRemainTraceable() {
+        for (String cmd : List.of("ANCHOR_LOT_START", "ANCHOR_LOT_END", "ANCHOR_LOT_AWARD", "ENTRY_EFFECT")) {
+            JSONObject frame = JSONObject.of("cmd", cmd, "data", JSONObject.of("id", 41, "uid", 777, "privilege_type", 3));
+            assertFalse(parser.parseMessage(frame, SOURCE).degraded());
+            assertTrue(rawLines().stream().anyMatch(line -> line.startsWith(cmd + ":")));
+        }
+    }
+
+    @Test
     @DisplayName("全站下播名单不记——它与本机关注的房间无关")
     void stopLiveRoomListIsNotLogged() {
         for (int i = 0; i < 5; i++) {
