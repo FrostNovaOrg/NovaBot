@@ -303,8 +303,15 @@ public class TimelineStore implements TimelineWriter, SmartLifecycle {
 
     public Map<TimelineEventType, Integer> countsOn(@NonNull LocalDate day, java.util.function.Predicate<TimelineEvent> visible) {
         Map<TimelineEventType, Integer> counts = new EnumMap<>(TimelineEventType.class);
-        for (TimelineEvent event : readDay(day)) {
-            if (visible.test(event)) counts.merge(event.type(), 1, Integer::sum);
+        try (Stream<String> lines = JsonlFiles.lines(dayFile(day))) {
+            lines.forEach(line -> {
+                TimelineEvent event = parse(line);
+                if (event != null && visible.test(event)) counts.merge(event.type(), 1, Integer::sum);
+            });
+        } catch (NoSuchFileException e) {
+            return counts;
+        } catch (IOException e) {
+            log.error("读取事件时间线 {} 失败", day, e);
         }
         return counts;
     }

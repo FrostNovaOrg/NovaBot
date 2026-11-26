@@ -69,7 +69,8 @@ public class LiveSessionArchive {
      * 首页与状态接口常轮询，都要问这一项；每问一次读一遍整份归档不值得。
      * 文件的路径、修改时刻与大小都没变时直接用上次的结果，变了才重读。
      */
-    private volatile LatestNames latestNames;
+    private LatestNames latestNames;
+    private final Object namesLock = new Object();
 
     /**
      * 坏行的提示：主播页一开就读好几遍，同一份文件只报第一次，变了再报
@@ -350,6 +351,12 @@ public class LiveSessionArchive {
     }
 
     private Map<StreamerId, String> latestNames() {
+        synchronized (namesLock) {
+            return loadLatestNames();
+        }
+    }
+
+    private Map<StreamerId, String> loadLatestNames() {
         Path path = path();
         BasicFileAttributes attributes;
         try {
@@ -368,9 +375,22 @@ public class LiveSessionArchive {
 
         // 读失败的这一次不记下来：文件的修改时刻与大小都没变，记下空结果的话，
         // 直到下一场归档写进来之前都答不上来
-        List<LiveSession> sessions;
-        try {
-            sessions = read(0, Long.MAX_VALUE);
+        FileState state = new FileState(path, attributes.lastModifiedTime(), attributes.size());
+        Map<StreamerId, NameAt> latest = new HashMap<>();
+        JSONReader.Context context = JSONFactory.createReadContext();
+        try (Stream<String> lines = JsonlFiles.lines(path)) {
+            for (String line : (Iterable<String>) lines::iterator) {
+                LiveSession session = parse(withoutUserIds(line, context), state);
+                if (session == null || session.startTime() < 0 || session.startTime() == Long.MAX_VALUE) {
+                    continue;
+                }
+                var id = new StreamerId(session.platform(), session.uid());
+                NameAt previous = latest.get(id);
+                // 原来按开播时刻稳定排序后覆盖昵称；并列时仍以文件中靠后的场次为准。
+                if (previous == null || session.startTime() >= previous.startTime()) {
+                    latest.put(id, new NameAt(session.startTime(), session.uname()));
+                }
+            }
         } catch (NoSuchFileException e) {
             return Map.of();
         } catch (IOException | RuntimeException e) {
@@ -379,11 +399,63 @@ public class LiveSessionArchive {
         }
 
         Map<StreamerId, String> names = new HashMap<>();
-        for (LiveSession session : sessions) {
-            names.put(new StreamerId(session.platform(), session.uid()), session.uname());
-        }
+        latest.forEach((id, name) -> names.put(id, name.uname()));
         latestNames = new LatestNames(path, attributes.lastModifiedTime(), attributes.size(), names);
         return names;
+    }
+
+    /**
+     * 跳过归档写出的数字名单，保留其余内容交给同一个场次解析器判定坏行。
+     * 旧格式、非数字名单与无法扫描的行仍按原格式解析。
+     */
+    private static String withoutUserIds(String line, JSONReader.Context context) {
+        // 引用可能指向名单里的数据，这类行须交给原解析器完整处理。
+        if (!line.contains("\"userSets\"") || line.contains("\"$") || line.contains("\\u0024") || line.contains("\\x24")) {
+            return line;
+        }
+        StringBuilder compact = new StringBuilder();
+        int keptFrom = 0;
+        try (JSONReader reader = JSONReader.of(line, context)) {
+            if (!reader.nextIfObjectStart()) return line;
+            while (!reader.nextIfObjectEnd()) {
+                if (!"userSets".equals(reader.readFieldName()) || !reader.nextIfObjectStart()) {
+                    reader.skipValue();
+                    continue;
+                }
+                while (!reader.nextIfObjectEnd()) {
+                    reader.readFieldName();
+                    int start = reader.current() == '[' ? reader.getOffset() - 1 : -1;
+                    reader.skipValue();
+                    if (start >= 0) {
+                        // 读指针已越过分隔符，向前找刚跳过的名单末尾。
+                        int end = line.lastIndexOf(']', reader.getOffset() - 2) + 1;
+                        if (end > start && isUserIdArray(line, start, end)) {
+                            compact.append(line, keptFrom, start).append("[]");
+                            keptFrom = end;
+                        }
+                    }
+                }
+            }
+        } catch (RuntimeException e) {
+            return line;
+        }
+        return keptFrom == 0 ? line : compact.append(line, keptFrom, line.length()).toString();
+    }
+
+    /** JSON 结构已由读取器检查，这里只确认值是归档会写出的整数。 */
+    private static boolean isUserIdArray(String line, int start, int end) {
+        int digits = 0;
+        for (int i = start + 1; i < end - 1; i++) {
+            char ch = line.charAt(i);
+            if (ch >= '0' && ch <= '9') {
+                if (++digits > 19) return false;
+            } else if (ch == ',' || ch == '-' || ch == ' ' || ch == '\t') {
+                digits = 0;
+            } else {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -571,6 +643,8 @@ public class LiveSessionArchive {
     }
 
     private record StreamerId(String platform, Long uid) { }
+
+    private record NameAt(long startTime, String uname) { }
 
     private record LatestNames(Path path, FileTime modified, long size, Map<StreamerId, String> names) {
         boolean matches(Path current, BasicFileAttributes attributes) {

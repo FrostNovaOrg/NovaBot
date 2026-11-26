@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.timeline;
 
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.lang.JsonlFiles;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,6 +17,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -23,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mockStatic;
 
 /**
  * 事件时间线存储测试
@@ -53,6 +56,35 @@ class TimelineStoreTest {
         assertTrue(store.days().isEmpty());
         assertTrue(store.recent().isEmpty());
         assertEquals(0, query(null).matched());
+        assertTrue(store.countsOn(LocalDate.now()).isEmpty());
+    }
+
+    @Test
+    @DisplayName("首页今日推送边读边统计，重的日志日也不会先攒下整天记录，且成员只数可见事件")
+    void countsCheckVisibilityBeforeReadingTheNextEvent() {
+        LocalDate day = LocalDate.now();
+        String sent = """
+                {"at":1,"type":"PUSH_SENT","level":"info","detail":{"streamerUid":"1"}}
+                """.strip();
+        String other = """
+                {"at":2,"type":"PUSH_SENT","level":"info","detail":{"streamerUid":"2"}}
+                """.strip();
+        String failed = """
+                {"at":3,"type":"PUSH_FAILED","level":"error","detail":{"streamerUid":"1"}}
+                """.strip();
+        var checked = new AtomicInteger();
+        try (var files = mockStatic(JsonlFiles.class)) {
+            files.when(() -> JsonlFiles.lines(file(day))).thenReturn(Stream.of(sent, "{\"type\":", other, failed)
+                    .peek(line -> {
+                        if (line.equals(other)) assertEquals(1, checked.get(), "下一条读入前应处理完上一条");
+                    }));
+            assertEquals(Map.of(TimelineEventType.PUSH_SENT, 1, TimelineEventType.PUSH_FAILED, 1),
+                    store.countsOn(day, event -> {
+                        checked.incrementAndGet();
+                        return "1".equals(event.detail().get("streamerUid"));
+                    }));
+            assertEquals(3, checked.get(), "坏行应跳过");
+        }
     }
 
     @Test

@@ -7,6 +7,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.lang.JsonlFiles;
 import org.frostnova.nova.core.model.LiveSession;
 import org.frostnova.nova.core.model.RoomInfoSnapshot;
 import org.frostnova.nova.core.model.SeriesPeak;
@@ -18,19 +19,27 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 
+import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mockStatic;
 
 /**
  * 直播场次归档测试
@@ -91,6 +100,63 @@ class LiveSessionArchiveTest {
     void emptyWhenNoFile() {
         assertTrue(archive.find(0, Long.MAX_VALUE).isEmpty());
         assertEquals(0, archive.summary().count());
+        assertTrue(archive.latestUname("bilibili", STREAMER_UID).isEmpty());
+    }
+
+    @Test
+    @DisplayName("两次状态刷新同时补昵称时，共用一次归档读取，避免重复读盘拖慢首页")
+    void concurrentNameLookupsShareArchiveScan() throws Exception {
+        Path file = dir.resolve("sessions.jsonl");
+        String row = JSON.toJSONString(session(1_000_000L, 100));
+        Files.writeString(file, row + "\n");
+        var reading = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var secondStarted = new CountDownLatch(1);
+        var scans = new AtomicInteger();
+
+        var first = new FutureTask<>(() -> {
+            try (var files = mockStatic(JsonlFiles.class)) {
+                files.when(() -> JsonlFiles.lines(file)).thenAnswer(call -> {
+                    scans.incrementAndGet();
+                    reading.countDown();
+                    assertTrue(release.await(45, TimeUnit.SECONDS), "等待第二次刷新");
+                    return Stream.of(row);
+                });
+                return archive.latestUname("bilibili", STREAMER_UID);
+            }
+        });
+        var second = new FutureTask<>(() -> {
+            try (var files = mockStatic(JsonlFiles.class)) {
+                files.when(() -> JsonlFiles.lines(file)).thenAnswer(call -> {
+                    scans.incrementAndGet();
+                    return Stream.of(row);
+                });
+                secondStarted.countDown();
+                return archive.latestUname("bilibili", STREAMER_UID);
+            }
+        });
+        var firstThread = new Thread(first);
+        var secondThread = new Thread(second);
+        firstThread.start();
+        try {
+            assertTrue(reading.await(15, TimeUnit.SECONDS), "等待第一次刷新读取归档");
+            secondThread.start();
+            assertTrue(secondStarted.await(15, TimeUnit.SECONDS), "等待第二次刷新开始");
+            var threads = ManagementFactory.getThreadMXBean();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (!second.isDone()) {
+                var info = threads.getThreadInfo(secondThread.getId());
+                if (info != null && info.getLockOwnerId() == firstThread.getId()) break;
+                assertTrue(System.nanoTime() < deadline, "等待第二次刷新读盘或等待第一次刷新");
+                Thread.sleep(10);
+            }
+        } finally {
+            release.countDown();
+        }
+        var expected = Optional.of(session(1_000_000L, 100).uname());
+        assertEquals(expected, first.get(15, TimeUnit.SECONDS));
+        assertEquals(expected, second.get(15, TimeUnit.SECONDS));
+        assertEquals(1, scans.get(), "两次刷新同时读取了整份归档");
     }
 
     @Test
