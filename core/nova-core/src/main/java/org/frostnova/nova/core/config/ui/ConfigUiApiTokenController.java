@@ -6,6 +6,7 @@ import com.alibaba.fastjson2.JSONWriter;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.api.NovaApiFilter;
+import org.frostnova.nova.core.api.NovaApiMemberSignIn;
 import org.frostnova.nova.core.api.NovaApiRegistry;
 import org.frostnova.nova.core.api.NovaApiScope;
 import org.frostnova.nova.core.api.NovaApiToken;
@@ -40,6 +41,9 @@ import java.util.Set;
  * 管理员看得到、吊销得了全部账号的。别人的令牌对成员一律回「没有找到」，不透露它在不在。
  * <p>
  * 明文只在签发那一次的回包里出现；列表、吊销、日志与操作记录只用编号，摘要从不出现。
+ * <p>
+ * {@link NovaApiScope#adminOnly() 仅管理员}的范围只有管理员签得出来；成员的列表里照样列出它，标明成员勾不了。
+ * 列表里每一把的状态与统一接口认不认它是同一个判法：成员此刻登不进控制台时，成员名下的令牌显示「暂不可用」。
  */
 @Slf4j
 @RestController
@@ -51,16 +55,27 @@ public class ConfigUiApiTokenController {
 
     static final String NOT_FOUND = "没有找到这把令牌";
 
+    /** 成员此刻登不进控制台时，成员名下的令牌在列表里写的原因 */
+    static final String SIGN_IN_CLOSED = "单点登录此刻没有开启，成员登录不了控制台，这把令牌也暂停使用；"
+            + "重新开启后自动恢复，不用重签";
+
+    /** 所属账号已停用或已删除、令牌却还没吊销时写的原因 */
+    static final String OWNER_GONE = "所属账号已停用或已删除，这把令牌不被认";
+
     private final NovaApiTokenStore tokens;
 
     private final NovaApiRegistry registry;
 
     private final ConfigUiAccountStore accounts;
 
-    public ConfigUiApiTokenController(NovaApiTokenStore tokens, NovaApiRegistry registry, ConfigUiAccountStore accounts) {
+    private final NovaApiMemberSignIn memberSignIn;
+
+    public ConfigUiApiTokenController(NovaApiTokenStore tokens, NovaApiRegistry registry, ConfigUiAccountStore accounts,
+                                      NovaApiMemberSignIn memberSignIn) {
         this.tokens = tokens;
         this.registry = registry;
         this.accounts = accounts;
+        this.memberSignIn = memberSignIn;
     }
 
     @GetMapping
@@ -68,6 +83,7 @@ public class ConfigUiApiTokenController {
         ConfigUiAccount me = account(request);
         boolean admin = me.role() == ConfigUiAccount.Role.ADMIN;
         Instant now = Instant.now();
+        boolean signInOpen = memberSignIn.open();
         Map<String, ConfigUiAccount> owners = new java.util.HashMap<>();
         accounts.list().forEach(account -> owners.put(account.id(), account));
 
@@ -75,11 +91,13 @@ public class ConfigUiApiTokenController {
         tokens.list().stream()
                 .filter(token -> admin || token.accountId().equals(me.id()))
                 .sorted(Comparator.comparing(NovaApiToken::issuedAt).reversed())
-                .forEach(token -> items.add(item(token, owners.get(token.accountId()), me, now)));
+                .forEach(token -> items.add(item(token, owners.get(token.accountId()), me, now, signInOpen)));
 
         JSONArray scopes = new JSONArray();
         for (NovaApiScope scope : registry.scopes()) {
-            scopes.add(JSONObject.of("id", scope.id(), "name", scope.name(), "description", scope.description()));
+            JSONObject item = JSONObject.of("id", scope.id(), "name", scope.name(), "description", scope.description());
+            item.put("adminOnly", scope.adminOnly());
+            scopes.add(item);
         }
 
         JSONObject result = new JSONObject();
@@ -111,6 +129,15 @@ public class ConfigUiApiTokenController {
                     return refuse(HttpStatus.BAD_REQUEST, "勾选的范围里有一项不存在，请刷新页面后重选");
                 }
                 scopes.add(id);
+            }
+        }
+        if (me.role() != ConfigUiAccount.Role.ADMIN) {
+            for (String id : scopes) {
+                NovaApiScope scope = registry.scope(id).orElseThrow();
+                if (scope.adminOnly()) {
+                    return refuse(HttpStatus.FORBIDDEN, "「" + scope.name() + "」（" + scope.id()
+                            + "）只有管理员能勾选：它管的是整个实例，不是哪一位主播。请去掉这一项再签发");
+                }
             }
         }
 
@@ -148,7 +175,7 @@ public class ConfigUiApiTokenController {
         JSONObject result = new JSONObject();
         result.put("success", true);
         result.put("token", issued.plaintext());
-        result.put("item", item(token, me, me, Instant.now()));
+        result.put("item", item(token, me, me, Instant.now(), memberSignIn.open()));
         result.put("message", "这是这把令牌唯一一次显示，请立即复制保存；离开本页后无法再次查看");
         return json(HttpStatus.OK, result);
     }
@@ -174,7 +201,8 @@ public class ConfigUiApiTokenController {
 
         JSONObject result = new JSONObject();
         result.put("success", true);
-        result.put("item", item(outcome.token(), accounts.find(outcome.token().accountId()).orElse(null), me, Instant.now()));
+        result.put("item", item(outcome.token(), accounts.find(outcome.token().accountId()).orElse(null), me, Instant.now(),
+                memberSignIn.open()));
         result.put("message", !outcome.changed() ? "这把令牌早已吊销"
                 : outcome.saved() ? "已吊销，从下一个请求起不再认它"
                 : "已吊销，从下一个请求起不再认它；但这一次没能写进磁盘，稍后自动保存时会再写");
@@ -192,8 +220,12 @@ public class ConfigUiApiTokenController {
      * 列表里的一行
      * <p>
      * 🔴 只有编号，没有摘要：摘要从不出 {@link NovaApiTokenStore}。
+     * <p>
+     * 状态四种：{@code revoked}、{@code expired}、{@code unavailable}（没吊销也没过期，但此刻不被认，
+     * {@code unavailableReason} 写明为什么）、{@code active}。判法与统一接口认不认它是同一套。
      */
-    private static JSONObject item(NovaApiToken token, ConfigUiAccount owner, ConfigUiAccount viewer, Instant now) {
+    private static JSONObject item(NovaApiToken token, ConfigUiAccount owner, ConfigUiAccount viewer, Instant now,
+                                   boolean signInOpen) {
         JSONObject item = new JSONObject();
         item.put("id", token.id());
         item.put("name", token.name());
@@ -202,7 +234,11 @@ public class ConfigUiApiTokenController {
         item.put("expiresAt", token.expiresAt() == null ? null : token.expiresAt().toEpochMilli());
         item.put("lastUsedAt", token.lastUsedAt() == null ? null : token.lastUsedAt().toEpochMilli());
         item.put("revokedAt", token.revokedAt() == null ? null : token.revokedAt().toEpochMilli());
-        item.put("state", token.revoked() ? "revoked" : token.expired(now) ? "expired" : "active");
+        String unavailable = owner == null || owner.status() != ConfigUiAccount.Status.ENABLED ? OWNER_GONE
+                : owner.role() != ConfigUiAccount.Role.ADMIN && !signInOpen ? SIGN_IN_CLOSED : null;
+        item.put("state", token.revoked() ? "revoked" : token.expired(now) ? "expired"
+                : unavailable != null ? "unavailable" : "active");
+        item.put("unavailableReason", token.active(now) ? unavailable : null);
         item.put("mine", token.accountId().equals(viewer.id()));
         JSONObject who = new JSONObject();
         who.put("id", token.accountId());

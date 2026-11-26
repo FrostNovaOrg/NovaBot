@@ -84,12 +84,14 @@ class ConfigUiApiTokenControllerTest extends OidcTestSupport {
 
         @Override
         public List<NovaApiScope> scopes() {
-            return List.of(new NovaApiScope("report:read", "读取报告", "读取直播报告"));
+            return List.of(new NovaApiScope("report:read", "读取报告", "读取直播报告"),
+                    NovaApiScope.adminOnly("report:write", "写入报告", "改写全部直播报告"));
         }
 
         @Override
         public List<NovaApiRoute> routes() {
-            return List.of(NovaApiRoute.get("latest", "report:read", request -> JSONObject.of("ok", true)));
+            return List.of(NovaApiRoute.get("latest", "report:read", request -> JSONObject.of("ok", true)),
+                    NovaApiRoute.post("rebuild", "report:write", request -> JSONObject.of("rebuilt", true)));
         }
     }
 
@@ -116,10 +118,12 @@ class ConfigUiApiTokenControllerTest extends OidcTestSupport {
         var interceptor = new ConfigUiApiInterceptor(auth, properties, platforms);
         var security = new ConfigUiSecurityFilter("test-operator-token", new IpMatcher(List.of("127.0.0.0/8")), auth,
                 properties.getConfigUi().getAuth(), properties.getConfigUi().getAgreement(), () -> { });
-        var api = new NovaApiFilter(new ConsoleAllowList(properties.getConfigUi()), tokens, accounts, registry,
-                new NovaApiThrottle(), platforms::platforms, List::of);
-        mvc = MockMvcBuilders.standaloneSetup(new ConfigUiApiTokenController(tokens, registry, accounts),
-                        new ConfigUiAuthController(auth, files, properties))
+        var api = new NovaApiFilter(new ConsoleAllowList(properties.getConfigUi()), tokens, accounts,
+                auth::memberSignInOpen, registry, new NovaApiThrottle(), platforms::platforms, List::of);
+        mvc = MockMvcBuilders.standaloneSetup(
+                        new ConfigUiApiTokenController(tokens, registry, accounts, auth::memberSignInOpen),
+                        new ConfigUiAuthController(auth, files, properties),
+                        new ConfigUiAccountController(accounts, auth, client, platforms, tokens))
                 .addInterceptors(interceptor)
                 .addFilter(new ConfigUiOperationFilter(new ConfigUiOperationStore(properties)), "/config/*")
                 .addFilter(security, "/config", "/config/*")
@@ -272,7 +276,8 @@ class ConfigUiApiTokenControllerTest extends OidcTestSupport {
         var open = new NovaCoreProperties.ConfigUi.Auth();
         var tokenMode = new ConfigUiAuthService(open, sessions, new LoginThrottle(5, Duration.ofMinutes(15)), null);
         assertFalse(tokenMode.isEnabled());
-        var bare = MockMvcBuilders.standaloneSetup(new ConfigUiApiTokenController(tokens, registry, accounts))
+        var bare = MockMvcBuilders.standaloneSetup(new ConfigUiApiTokenController(tokens, registry, accounts,
+                        tokenMode::memberSignInOpen))
                 .addInterceptors(new ConfigUiApiInterceptor(tokenMode))
                 .addFilter(new ConfigUiSecurityFilter("test-operator-token", new IpMatcher(List.of("127.0.0.0/8")), tokenMode,
                         open, properties.getConfigUi().getAgreement(), () -> { }), "/config", "/config/*")
@@ -308,6 +313,109 @@ class ConfigUiApiTokenControllerTest extends OidcTestSupport {
                 .content("{\"password\":\"example password\"}")).andReturn().getResponse();
         assertNotEquals(200, locked.getStatus(), "控制台的锁定应当生效，否则这一格量不到东西");
         assertEquals(200, me(valid).getStatus());
+    }
+
+    // 抓的故障：因为泄露停用的账号，重新启用后泄露的令牌又能用了。
+    @Test
+    void disablingAMemberRevokesEveryTokenForGood() throws Exception {
+        ConfigUiAccount account = member("subject-a", "成员甲");
+        ConfigUiSession member = oidc(account);
+        List<String> leaked = new java.util.ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            leaked.add(issue(member, "脚本" + i, List.of(), null).getString("token"));
+        }
+        String bystander = issue(oidc(member("subject-b", "成员乙")), "乙的脚本", List.of(), null).getString("token");
+        for (String token : leaked) {
+            assertEquals(200, me(token).getStatus());
+        }
+
+        ConfigUiSession admin = auth.issueForPassword("127.0.0.1");
+        MockHttpServletResponse disabled = console(post("/config/api/accounts/" + account.id() + "/disable"), admin);
+        assertEquals(200, disabled.getStatus(), disabled.getContentAsString());
+        assertEquals(List.of("revoked", "revoked", "revoked"), states(admin, account.id()));
+
+        assertEquals(200, console(post("/config/api/accounts/" + account.id() + "/enable"), admin).getStatus());
+        assertEquals(List.of("revoked", "revoked", "revoked"), states(admin, account.id()), "重新启用不该让吊销的令牌复活");
+        for (String token : leaked) {
+            assertEquals(401, me(token).getStatus(), "重新启用后旧令牌仍不该认");
+        }
+        assertEquals(200, me(bystander).getStatus(), "别的账号的令牌不受连累");
+
+        JSONObject row = auditRows().stream().filter(r -> "ACCOUNT_DISABLE".equals(r.getString("action")))
+                .findFirst().orElseThrow();
+        assertEquals("SUCCESS", row.getString("result"));
+        assertEquals(3, row.getJSONObject("target").getIntValue("revokedTokens"), row.toJSONString());
+        String audit = auditText();
+        for (String token : leaked) {
+            assertFalse(audit.contains(token), "操作记录里出现了令牌明文");
+            assertFalse(audit.contains(sha256(token)), "操作记录里出现了令牌摘要");
+        }
+    }
+
+    // 抓的故障：删掉账号之后，它名下没吊销的令牌在列表里还显示「有效」。
+    @Test
+    void deletingAnAccountRevokesWhatIsLeft() throws Exception {
+        ConfigUiAccount account = member("subject-a", "成员甲");
+        String token = issue(oidc(account), "脚本", List.of(), null).getString("token");
+        // 停用直接落在账号表上，不经控制台：删除那一步自己也得把令牌收拾干净
+        accounts.status(account.id(), ConfigUiAccount.Status.DISABLED);
+
+        ConfigUiSession admin = auth.issueForPassword("127.0.0.1");
+        MockHttpServletResponse deleted = console(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .delete("/config/api/accounts/" + account.id()), admin);
+        assertEquals(200, deleted.getStatus(), deleted.getContentAsString());
+        assertEquals(401, me(token).getStatus());
+        assertEquals(List.of("revoked"), states(admin, account.id()));
+
+        JSONObject row = auditRows().stream().filter(r -> "ACCOUNT_DELETE".equals(r.getString("action")))
+                .findFirst().orElseThrow();
+        assertEquals(1, row.getJSONObject("target").getIntValue("revokedTokens"), row.toJSONString());
+    }
+
+    // 抓的故障：成员签发时勾上「仅管理员」的范围也照样签出来了，签发页上也看不出那一项成员勾不了。
+    @Test
+    void membersCannotIssueAdminOnlyScopes() throws Exception {
+        ConfigUiSession member = oidc(member("subject-a", "成员甲"));
+        JSONObject list = body(console(get("/config/api/api-tokens"), member));
+        assertTrue(scope(list, "report:write").getBooleanValue("adminOnly"));
+        assertFalse(scope(list, "report:read").getBooleanValue("adminOnly"));
+
+        MockHttpServletResponse refused = console(issueRequest("越权", List.of("report:read", "report:write"), null), member);
+        assertEquals(403, refused.getStatus(), refused.getContentAsString());
+        String message = body(refused).getString("message");
+        assertTrue(message.contains("写入报告") && message.contains("管理员"), message);
+        assertTrue(body(console(get("/config/api/api-tokens"), member)).getJSONArray("tokens").isEmpty(),
+                "被拒的那一把不该签出来");
+
+        ConfigUiSession admin = auth.issueForPassword("127.0.0.1");
+        JSONObject issued = issue(admin, "管理员的", List.of("report:write"), null);
+        assertEquals(List.of("report:write"), issued.getJSONObject("item").getList("scopes", String.class));
+        assertEquals(200, mvc.perform(post("/nova/api/v1/report/rebuild")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + issued.getString("token"))).andReturn().getResponse().getStatus());
+    }
+
+    private List<String> states(ConfigUiSession viewer, String accountId) throws Exception {
+        return body(console(get("/config/api/api-tokens"), viewer)).getJSONArray("tokens").stream()
+                .map(JSONObject.class::cast)
+                .filter(row -> accountId.equals(row.getJSONObject("owner").getString("id")))
+                .map(row -> row.getString("state")).toList();
+    }
+
+    private static JSONObject scope(JSONObject list, String id) {
+        return list.getJSONArray("scopes").stream().map(JSONObject.class::cast)
+                .filter(scope -> id.equals(scope.getString("id"))).findFirst().orElseThrow();
+    }
+
+    private String auditText() throws Exception {
+        try (Stream<Path> files = Files.list(directory.resolve("console-audit"))) {
+            StringBuilder all = new StringBuilder();
+            for (Path file : files.toList()) all.append(Files.readString(file, StandardCharsets.UTF_8));
+            return all.toString();
+        }
+    }
+
+    private List<JSONObject> auditRows() throws Exception {
+        return auditText().lines().map(JSONObject::parseObject).toList();
     }
 
     private ConfigUiAccount member(String subject, String name) {

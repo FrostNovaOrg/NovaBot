@@ -11,8 +11,8 @@ import {ask} from './confirm.js';
 import {$, api, esc, PREFIX} from './core.js';
 import {showLinkResult} from './link-feedback.js';
 import {bindPasswordReveal} from './password-reveal.js';
-import {DEFAULT_VALIDITY, expiryText, fmtDate, fmtTime, issueBody, ownerText, scopeText, sortTokens, stateText, VALIDITY}
-  from './api-tokens-model.js';
+import {DEFAULT_VALIDITY, expiryText, fmtDate, fmtTime, issueBody, ownerText, revocable, scopeSelectable, scopeText,
+  sortTokens, stateText, unavailableText, VALIDITY} from './api-tokens-model.js';
 
 /** 最近一次取到的清单回包 */
 let latest = null;
@@ -47,12 +47,18 @@ export function clearIssuedApiToken() {
 function renderForm(data) {
   const box = $('#at-issue');
   const scopes = data.scopes || [];
+  // 仅管理员的范围对成员照样列出来，只是勾不了，并说清为什么：免得成员以为插件没装好
   const scopeHtml = scopes.length
-    ? '<fieldset class="at-scopes"><legend>范围</legend>' + scopes.map(scope =>
-        '<label class="at-scope"><input type="checkbox" name="at-scope" value="' + esc(scope.id) + '">'
-        + '<span><b>' + esc(scope.name) + '</b> <code>' + esc(scope.id) + '</code>'
-        + (scope.description ? '<br><span class="hint">' + esc(scope.description) + '</span>' : '')
-        + '</span></label>').join('') + '</fieldset>'
+    ? '<fieldset class="at-scopes"><legend>范围</legend>' + scopes.map(scope => {
+        const selectable = scopeSelectable(scope, data.admin);
+        return '<label class="at-scope"><input type="checkbox" name="at-scope" value="' + esc(scope.id) + '"'
+          + (selectable ? '' : ' disabled') + '>'
+          + '<span><b>' + esc(scope.name) + '</b> <code>' + esc(scope.id) + '</code>'
+          + (scope.adminOnly ? ' <span class="nv-pill">仅管理员</span>' : '')
+          + (scope.description ? '<br><span class="hint">' + esc(scope.description) + '</span>' : '')
+          + (selectable ? '' : '<br><span class="hint">这一项管的是整个实例，只有管理员能勾选。</span>')
+          + '</span></label>';
+      }).join('') + '</fieldset>'
     : '<p class="hint">目前没有插件登记可勾选的范围。不勾范围的令牌只能调用自查接口 '
       + '<code>/nova/api/v1/me</code>。</p>';
 
@@ -78,7 +84,7 @@ function quotaText(data) {
 
 async function issue() {
   const name = $('#at-name').value.trim();
-  const scopes = Array.from(document.querySelectorAll('input[name="at-scope"]:checked')).map(box => box.value);
+  const scopes = Array.from(document.querySelectorAll('input[name="at-scope"]:checked:not(:disabled)')).map(box => box.value);
   const days = $('#at-validity').value;
   const result = $('#at-msg');
   if (!name) return showLinkResult(result, '请给令牌起个名字，日后好认出是哪一把', 'err');
@@ -156,9 +162,10 @@ function renderList(data) {
         + '<td>' + fmtDate(token.issuedAt) + '</td>'
         + '<td>' + esc(expiryText(token)) + '</td>'
         + '<td>' + fmtTime(token.lastUsedAt) + '</td>'
-        + '<td>' + stateText(token) + (token.state === 'revoked' ? ' · ' + fmtDate(token.revokedAt) : '') + '</td>'
+        + '<td>' + stateText(token) + (token.state === 'revoked' ? ' · ' + fmtDate(token.revokedAt) : '')
+        + (unavailableText(token) ? '<span class="hint at-reason">' + esc(unavailableText(token)) + '</span>' : '') + '</td>'
         + '<td class="act"><div class="lc-actions" data-id="' + esc(token.id) + '">'
-        + (token.state === 'revoked' ? ''
+        + (!revocable(token) ? ''
           : '<button type="button" class="danger sm"' + (revoking.has(token.id) ? ' disabled' : '') + '>吊销</button>')
         + '</div></td></tr>').join('')
     + '</tbody></table></div>';
