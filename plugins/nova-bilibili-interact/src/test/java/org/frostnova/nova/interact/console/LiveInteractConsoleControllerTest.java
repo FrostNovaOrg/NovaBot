@@ -170,6 +170,37 @@ class LiveInteractConsoleControllerTest {
     }
 
     @Test
+    @DisplayName("修改答谢后刷新丢失，或保存了不能渲染的话术和越界的窗口")
+    void persistsThanksAndRejectsInvalidChangesAtomically() throws Exception {
+        String route = "/config/api/interact/danmaku/settings";
+        JSONObject thanks = JSONObject.of("giftMinYuan", 0.5, "giftWindowSeconds", 3,
+                "giftIncludeFree", true, "followWindowSeconds", 120, "shareWindowSeconds", 10,
+                "templates", JSONObject.of("gift", "{主播}谢谢{用户}的{礼物}", "share", " "));
+        JSONObject settings = JSONObject.of("enabled", true, "features", JSONObject.of("gift", true), "thanks", thanks);
+        JSONObject payload = JSONObject.of("uid", "501", "settings", settings);
+        mvc.perform(post(route).contentType("application/json").content(payload.toJSONString())).andExpect(status().isOk());
+        JSONObject saved = body(mvc.perform(get(route).param("uid", "501")).andReturn()).getJSONObject("settings");
+        assertTrue(saved.containsKey("thanks"));
+        assertEquals(0.5, saved.getJSONObject("thanks").getDoubleValue("giftMinYuan"));
+        assertTrue(saved.getJSONObject("thanks").getBooleanValue("giftIncludeFree"));
+        assertEquals("{主播}谢谢{用户}的{礼物}", saved.getJSONObject("thanks").getJSONObject("templates").getString("gift"));
+        for (var change : List.of(JSONObject.of("giftWindowSeconds", 2), JSONObject.of("giftWindowSeconds", 61),
+                JSONObject.of("shareWindowSeconds", 121), JSONObject.of("followWindowSeconds", 9),
+                JSONObject.of("giftMinYuan", -1))) {
+            settings.put("thanks", change);
+            mvc.perform(post(route).contentType("application/json").content(payload.toJSONString())).andExpect(status().isBadRequest());
+        }
+        for (String key : List.of("gift", "membership", "superChat", "follow", "share")) {
+            String invalid = key.equals("gift") ? "{等级}" : "{礼物}";
+            settings.put("thanks", JSONObject.of("templates", JSONObject.of(key, "谢谢" + invalid)));
+            var error = body(mvc.perform(post(route).contentType("application/json").content(payload.toJSONString()))
+                    .andExpect(status().isBadRequest()).andReturn());
+            assertTrue(error.getString("message").contains(invalid));
+        }
+        assertEquals(saved, body(mvc.perform(get(route).param("uid", "501")).andReturn()).getJSONObject("settings"));
+    }
+
+    @Test
     @DisplayName("字数上限：只查已添加的主播的房间")
     void limitOnlyForAddedStreamers() throws Exception {
         when(danmaku.lengthLimit(1001L)).thenReturn(new LiveDanmakuService.LengthLimit(30, true));

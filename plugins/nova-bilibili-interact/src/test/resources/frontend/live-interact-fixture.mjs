@@ -50,9 +50,14 @@ let state = {
   rooms: [{uid: '501', name: '示例主播', roomId: '1001'}, {uid: '502', name: '另一位', roomId: '1002'}],
   minInterval: 3, pauseMinutes: 5, defaultLimit: 20,
 };
-const blankSettings = {enabled: false, perMinute: 6, features: {}, plans: []};
+const defaultThanksTemplates = {gift: '感谢 {用户} 赠送的 {礼物}', membership: '感谢 {用户} 开通{等级}',
+  superChat: '感谢 {用户} 的醒目留言', follow: '感谢 {用户} 的关注', share: '感谢 {用户} 的分享直播间'};
+const blankSettings = {enabled: false, perMinute: 6, features: {}, plans: [], thanks: {
+  giftWindowSeconds: 8, giftIncludeFree: false, giftMinYuan: 0, followWindowSeconds: 30, shareWindowSeconds: 30, templates: {},
+}};
 const settingsByRoom = {};
 const calls = [];
+let thanksHistory = false;
 let release = null;
 let sendReply = {success: true, sent: true, message: '已发出：「你好」'};
 let valuesReplies = [];
@@ -61,7 +66,7 @@ globalThis.__api = async (path, options) => {
   if (path === '/interact/danmaku/state') return state;
   if (path.startsWith('/interact/danmaku/settings?uid=')) {
     const uid = path.split('=').pop();
-    return {success: true, settings: structuredClone(settingsByRoom[uid] || blankSettings)};
+    return {success: true, defaultThanksTemplates, settings: structuredClone(settingsByRoom[uid] || blankSettings)};
   }
   if (path === '/interact/danmaku/settings') {
     const {uid, settings} = JSON.parse(options.body);
@@ -71,6 +76,12 @@ globalThis.__api = async (path, options) => {
   }
   if (path.startsWith('/interact/danmaku/history?')) {
     const params = new URLSearchParams(path.split('?')[1]);
+    if (thanksHistory) {
+      const rows = Object.keys(defaultThanksTemplates).map(feature => ({
+        time: 1795680000000, text: '示例记录', feature, outcome: 'SENT', reason: '已发出',
+      }));
+      return {success: true, rows, total: rows.length, pageSize: 20};
+    }
     const filtered = params.get('outcome') === 'DROPPED';
     const text = filtered ? '迟到的弹幕' : params.get('page') === '2' ? '上一页的试发' : '第一条';
     return {success: true, rows: [{time: 1795680000000, text, feature: filtered ? 'timed' : 'test',
@@ -239,6 +250,45 @@ byId('li-outcome').value = 'DROPPED';
 byId('li-outcome').dispatchEvent({type: 'change'});
 await flush();
 check('筛选后回第一页并显示原因', byId('li-page').textContent.includes('1 / 1') && byId('li-history').textContent.includes('排队已满'));
+
+// 切换主播后预览用了试发房间的上限，或改了话术和免费礼物开关却没有保存。
+const thanksKeys = Object.keys(defaultThanksTemplates);
+check('五种答谢都有独立开关且默认关闭', thanksKeys.every(key => byId('li-' + key) && !byId('li-' + key).checked));
+if (byId('li-gift')) {
+  byId('li-enabled').checked = true;
+  byId('li-enabled').dispatchEvent({type: 'change'});
+  byId('li-room').value = '501';
+  byId('li-room').dispatchEvent({type: 'change'});
+  await flush();
+  check('预览显示当前设置房间的上限和默认话术', byId('li-gift-preview').textContent.includes('小花花x3')
+    && byId('li-gift-count').textContent.includes('30 字'));
+  byId('li-gift').checked = true;
+  byId('li-giftIncludeFree').checked = true;
+  byId('li-giftWindowSeconds').value = '5';
+  byId('li-follow-template').value = '谢谢{礼物}';
+  byId('li-follow-template').dispatchEvent({type: 'input'});
+  check('无效占位符不会被预览成能发送的话术', byId('li-follow-count').textContent.includes('不能使用')
+    && byId('li-follow-count').textContent.includes('{礼物}'));
+  byId('li-follow-template').value = '';
+  byId('li-follow-template').dispatchEvent({type: 'input'});
+  byId('li-gift-template').value = '😀'.repeat(31) + '{用户}';
+  byId('li-gift-template').dispatchEvent({type: 'input'});
+  check('修改话术立即按字符数显示拆条', byId('li-gift-count').textContent.includes('33 字')
+    && byId('li-gift-count').textContent.includes('2 条') && byId('li-gift-preview').textContent.endsWith('小明'));
+  byId('li-save').click();
+  await flush();
+  check('子选项、话术和开关只存到所选主播', settingsByRoom['502']?.features.gift
+    && settingsByRoom['502'].thanks.giftIncludeFree && settingsByRoom['502'].thanks.giftWindowSeconds === 5
+    && settingsByRoom['502'].thanks.templates.gift.endsWith('{用户}') && !settingsByRoom['501'].features.gift);
+}
+
+// 管理员在记录里分不清是哪一种答谢。
+thanksHistory = true;
+byId('li-outcome').value = '';
+byId('li-reload').click();
+await flush();
+check('五种答谢记录各有中文功能名', ['礼物答谢', '上舰答谢', '醒目留言答谢', '关注答谢', '分享答谢']
+  .every(label => byId('li-history').textContent.includes(label)));
 
 if (failures.length) {
   console.error('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

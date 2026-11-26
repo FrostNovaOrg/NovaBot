@@ -10,11 +10,14 @@ import org.frostnova.nova.interact.danmaku.LiveDanmakuService.Room;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /** 设置立即存盘，发送记录随核心的运行状态定期存盘。 */
 @NovaComponent
 public class InteractStore {
+    private static final String THANKED = "LiveInteractThanked";
     private static final String SETTINGS = "LiveInteractSettings";
     private static final String HISTORY = "LiveInteractHistory";
     private static final int LIMIT = 2000;
@@ -43,6 +46,35 @@ public class InteractStore {
                     value -> section.put(key, value), () -> section.remove(key)));
             throw new IllegalStateException("主播设置未能写入磁盘");
         }
+    }
+
+    /** 只恢复同一开播时间的已答谢观众，合并窗口不写入状态文件。 */
+    Set<String> thanked(long uid, long start, String feature) {
+        String key = String.valueOf(uid);
+        return store.read(THANKED, key, root -> {
+            JSONObject session = root.getJSONObject(key);
+            JSONArray viewers = session.getJSONArray(feature);
+            return session.getLongValue("start") == start && viewers != null
+                    ? new HashSet<>(viewers.toList(String.class)) : new HashSet<String>();
+        }).orElseGet(HashSet::new);
+    }
+
+    void rememberThanked(long uid, long start, String feature, Set<String> viewers) {
+        String key = String.valueOf(uid);
+        store.write(THANKED, root -> {
+            JSONObject session = root.getJSONObject(key);
+            if (session == null || session.getLongValue("start") != start) {
+                session = JSONObject.of("start", start);
+                root.put(key, session);
+            }
+            session.putIfAbsent(feature, new JSONArray());
+            session.getJSONArray(feature).addAll(viewers);
+        });
+    }
+
+    void forgetThanked(long uid) {
+        String key = String.valueOf(uid);
+        if (store.read(THANKED, key, root -> true).isPresent()) store.write(THANKED, root -> root.remove(key));
     }
 
     public void result(Room room, String feature, DanmakuResult result, Instant now) {
