@@ -34,10 +34,12 @@ record OutboxContent(List<Segment> segments, Map<Integer, byte[]> pictures, bool
                 }
                 case "{face=" -> { }
                 case MessagePlaceholders.IMAGE_URL_PREFIX -> {
+                    if (value.isBlank()) break;
                     flushText(segments, text);
                     segments.add(new Segment(SegmentType.IMAGE_URL, value));
                 }
                 case MessagePlaceholders.IMAGE_BASE64_PREFIX -> {
+                    if (value.isEmpty()) break;
                     flushText(segments, text);
                     try {
                         pictures.put(segments.size(), Base64.getDecoder().decode(value));
@@ -50,6 +52,9 @@ record OutboxContent(List<Segment> segments, Map<Integer, byte[]> pictures, bool
         }
         text.append(part, start, part.length());
         flushText(segments, text);
+        if (segments.stream().allMatch(segment -> segment.type() == SegmentType.TEXT && segment.value().isBlank())) {
+            throw new IllegalArgumentException("外发内容为空");
+        }
         return new OutboxContent(segments, pictures, atAll);
     }
 

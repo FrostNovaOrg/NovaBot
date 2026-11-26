@@ -29,6 +29,12 @@
             <artifactId>sqlite-jdbc</artifactId>
             <version>3.54.1.0</version>
         </dependency>
+        <dependency>
+            <groupId>org.frostnova.nova</groupId>
+            <artifactId>nova-bilibili</artifactId>
+            <version>1.0.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

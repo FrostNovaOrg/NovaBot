@@ -52,7 +52,11 @@ public final class WeeklyReport {
     }
     /** 场次仅保留展示字段，不携带名单或隐藏金额。 */
     public record Session(String startedAt, String title, String details, String badge) {}
-    public record Preview(Data data, String summary, String text, byte[] image) {}
+    public record Preview(Data data, String summary, String text, byte[] image, String sourceName) {
+        public Preview(Data data, String summary, String text, byte[] image) {
+            this(data, summary, text, image, data == null ? null : data.streamerName());
+        }
+    }
 
     public static StreamerInsights.Range previousWeek(Instant now) {
         LocalDate monday = StatisticsDay.dateOf(now).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
@@ -123,6 +127,10 @@ public final class WeeklyReport {
     }
 
     public static Preview preview(Data data, Supplier<byte[]> paint) {
+        return preview(data, data.streamerName(), paint);
+    }
+
+    public static Preview preview(Data data, String sourceName, Supplier<byte[]> paint) {
         byte[] image = null;
         if (data.metrics().get("sessions").intValue() > 0) {
             try {
@@ -131,7 +139,7 @@ public final class WeeklyReport {
                 org.slf4j.LoggerFactory.getLogger(WeeklyReport.class).warn("运营周报绘图失败，改用文字版", e);
             }
         }
-        return new Preview(data, summary(data), text(data), image);
+        return new Preview(data, summary(data), text(data), image, sourceName);
     }
 
     private static void put(Map<String, Number> values, String name, Number value) {

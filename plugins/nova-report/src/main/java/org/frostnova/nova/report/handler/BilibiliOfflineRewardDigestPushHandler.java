@@ -116,21 +116,22 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
         ReportPalette.Preset palette = palettes.forChannel(target);
         Optional<String> image = drawn.get(baseEvent, threshold + "|" + showRevenue + "|" + palette.id(),
                 () -> painter.paint(event, showRevenue, palette.palette()));
+        var uname = PushHandlerSupport.lookupUname(api, names, event.getPlatform(), event.getSource());
         String picture = image
                 .map(base64 -> "{image_base64=" + base64 + "}")
                 .orElseGet(() -> {
                     log.warn("{} 的打赏播报图片绘制失败, 改发文字版", event.getSource().getUname());
-                    return MessagePlaceholders.escapeExternalText(painter.textDigest(event, showRevenue));
+                    return MessagePlaceholders.escapeExternalText(painter.textDigest(event, showRevenue, uname.forContent()));
                 });
 
         String template = params.getString("message");
         String content = PushHandlerSupport.replaceOrDropClause(template, "{list}",
                         MessagePlaceholders.escapeExternalText(painter.renderList(event, showRevenue)))
-                .replace("{uname}", PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()))
+                .replace("{uname}", uname.forContent())
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId())
                 .replace("{picture}", picture);
 
-        PushHandlerSupport.sendWithOrigin(sender, target, Message.PushOrigin.from(Message.PushKind.REWARD_DIGEST, event),
+        PushHandlerSupport.sendWithOrigin(sender, target, uname.origin(Message.PushKind.REWARD_DIGEST, event.getPlatform()),
                 PushHandlerSupport.withoutAtBlocks(content));
     }
 

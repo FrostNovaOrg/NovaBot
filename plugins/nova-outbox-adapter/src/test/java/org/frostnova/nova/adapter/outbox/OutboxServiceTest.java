@@ -139,6 +139,28 @@ class OutboxServiceTest {
         assertThrows(IllegalStateException.class, () -> service.claim(first.id(), "乙"));
     }
 
+    @Test @DisplayName("两次维护之间，过期的开播通知半小时后还被发出去")
+    void refusesExpiredNoticeBeforeMaintenance() {
+        var record = put("开播").get(0);
+        var later = Clock.fixed(now.plus(Duration.ofMinutes(30)), ZoneOffset.UTC);
+        var reader = new OutboxService(new OutboxDatabase(root), settings(Map.of()), later, events::add);
+        var reason = assertThrows(IllegalStateException.class, () -> reader.claim(record.id(), "设备"));
+        assertTrue(reason.getMessage().contains("过期"));
+    }
+
+    @Test @DisplayName("已发的通知被当成结果不明，重发后收件人收到两遍")
+    void sentReceiptSurvivesTimeoutAndRestart() {
+        var record = service.claim(put("通知").get(0).id(), "设备");
+        service.receipt(record.id(), record.claimNumber(), SENT, "送达");
+        now = now.plus(Duration.ofMinutes(16));
+        reopen(settings(Map.of()));
+        var stored = service.list(null, 0, 1, owner::equals).get(0);
+        assertEquals(record.id(), stored.id());
+        assertEquals(SENT, stored.status());
+        assertThrows(IllegalStateException.class, () -> service.claim(stored.id(), "设备"));
+        assertThrows(IllegalStateException.class, () -> service.requeue(stored.id()));
+    }
+
     @Test @DisplayName("停机期间过期的开播通知仍能认领，超时未报结果的通知被自动重发")
     void deadlinesAndRecovery() {
         var records = put("私有正文甲{next}私有正文乙");

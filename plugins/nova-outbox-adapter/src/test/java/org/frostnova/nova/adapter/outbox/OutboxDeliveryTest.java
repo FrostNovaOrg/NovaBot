@@ -1,10 +1,17 @@
 package org.frostnova.nova.adapter.outbox;
 
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.bilibili.event.live.BilibiliLiveOnEvent;
+import org.frostnova.nova.bilibili.handler.BilibiliLiveOnPushHandler;
+import org.frostnova.nova.bilibili.model.Room;
+import org.frostnova.nova.bilibili.model.Up;
+import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.health.PushActivityRecorder;
+import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.Message;
+import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.model.Sender;
@@ -13,6 +20,8 @@ import org.frostnova.nova.core.sender.FirstPushTipService;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.sender.PushGate;
 import org.frostnova.nova.core.service.AtAllQuotaService;
+import org.frostnova.nova.core.service.AtSubscriptionService;
+import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.core.service.NovaSenderService;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineWriter;
@@ -31,6 +40,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -62,6 +72,40 @@ class OutboxDeliveryTest {
         message.setChannel(channel);
         message.setPushOrigin(new Message.PushOrigin(Message.PushKind.LIVE_ON, "live", 85L, null));
         return message;
+    }
+
+    @Test @DisplayName("开播通知已有主播昵称，外发记录却认不出是哪位主播")
+    void storesNameResolvedForLiveNotice() {
+        application().run(context -> {
+            long id = context.getBean(OutboxConversations.class).create("早班", "", 0, 0).id();
+            var sender = context.getBean(NovaMessageSender.class);
+            var api = mock(BilibiliApiUtil.class);
+            var up = new Up();
+            up.setUname("新昵称");
+            when(api.getUpInfoByUid(85L)).thenReturn(up);
+            when(api.getLiveInfoByRoomId(42L)).thenReturn(new Room());
+            var handler = new BilibiliLiveOnPushHandler(api, sender, mock(AtSubscriptionService.class),
+                    mock(LiveDataService.class));
+            var target = new PushTarget();
+            target.setPlatform("outbox");
+            target.setType(PushTargetType.GROUP);
+            target.setNum(id);
+            var user = new PushUser();
+            user.setPlatform("bilibili");
+            user.setUid(85L);
+            target.setUser(user);
+            var push = new PushMessage();
+            push.setTarget(target);
+            push.setParamsJsonObject(JSONObject.of("message", "{uname} 开播"));
+            var outbox = context.getBean(OutboxService.class);
+            try {
+                handler.handle(new BilibiliLiveOnEvent(new LiveStreamerInfo(85L, null, 42L)), push);
+                var rows = await().atMost(Duration.ofSeconds(10)).until(
+                        () -> outbox.list(OutboxRecord.Status.PENDING, 0, 1, s -> true), list -> !list.isEmpty());
+                assertEquals("新昵称 开播", rows.get(0).segments().get(0).value());
+                assertEquals("新昵称", rows.get(0).streamer().name());
+            } finally { sender.shutdown(); }
+        });
     }
 
     @Test @DisplayName("入箱成功的通知被重复发送，丢了主播、种类或全体提醒，或者正文被写进推送记录")
@@ -130,21 +174,6 @@ class OutboxDeliveryTest {
             }));
             assertEquals(0, sender.sendNow(ordinary).getIntValue("code"));
             assertEquals("ok", ordinary.getId());
-        });
-    }
-
-    @Test @DisplayName("一批通知后半条图片损坏，前半条留在待发中导致整批重试时重复")
-    void batchFailureRollsBackAndReclaimsImages() {
-        application().run(context -> {
-            long id = context.getBean(OutboxConversations.class).create("早班", "", 0, 0).id();
-            var delivery = registry.getSender("outbox").orElseThrow().getLocalDelivery();
-            var response = delivery.deliver(Map.of(), Map.of("num", id, "content",
-                    "{image_base64=AQID}{next}{image_base64=!}"));
-            assertNotEquals(0, response.getIntValue("code"));
-            var service = context.getBean(OutboxService.class);
-            service.maintain();
-            assertTrue(service.list(null, 0, 10, s -> true).isEmpty());
-            try (var images = Files.list(data.resolve("outbox/images"))) { assertEquals(0, images.count()); }
         });
     }
 }

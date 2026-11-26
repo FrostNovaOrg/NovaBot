@@ -74,7 +74,7 @@ public class BilibiliLiveOnPushHandler implements NovaEventHandler {
             return;
         }
 
-        String uname = PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource());
+        var uname = PushHandlerSupport.lookupUname(api, names, event.getPlatform(), event.getSource());
 
         String title = "";
         String cover = "";
@@ -96,7 +96,7 @@ public class BilibiliLiveOnPushHandler implements NovaEventHandler {
                 : "";
 
         String content = template
-                .replace("{uname}", uname)
+                .replace("{uname}", uname.forContent())
                 .replace("{title}", title)
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId())
                 .replace("{cover}", cover)
@@ -108,7 +108,7 @@ public class BilibiliLiveOnPushHandler implements NovaEventHandler {
         Runnable onImageDegraded = uid == null ? null : () -> liveDataService.incrementLiveMetric(
                 event.getPlatform(), uid, BilibiliLiveMetric.IMAGE_DEGRADED_COUNT, 1);
 
-        PushHandlerSupport.sendWithOrigin(sender, target, Message.PushOrigin.from(Message.PushKind.LIVE_ON, event),
+        PushHandlerSupport.sendWithOrigin(sender, target, uname.origin(Message.PushKind.LIVE_ON, event.getPlatform()),
                 PushHandlerSupport.withAtBlock(mode, target, template, content, subscriberAt), onImageDegraded,
                 PushHandlerSupport.atAllFallback(mode, target, template, subscriberAt), null);
     }

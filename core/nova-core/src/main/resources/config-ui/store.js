@@ -76,6 +76,7 @@ export const store = {
   /** 已配置的机器人平台 */
   senderList: [],
   senderAdapters: {},
+  senderDisplayNames: {},
   /** 扫码登录的轮询计时器 */
   accountTimer: null,
   /**

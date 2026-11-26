@@ -16,6 +16,7 @@ import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.event.NovaExternalBaseEvent;
 import org.frostnova.nova.core.handler.NovaEventHandler;
 import org.frostnova.nova.core.model.HandlerOption;
+import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
@@ -109,8 +110,11 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
         BilibiliLiveReportOptions options = BilibiliLiveReportOptions.of(params, showRevenue);
         // 画法按解析后的版式认：模板文字不同而版式相同的两个通道，画出来是同一张
         ReportPalette.Preset palette = palettes.forChannel(target);
+        var original = event.getSource();
+        String uname = names.uname(event.getPlatform(), original.getUid(), original.getUname());
+        var source = new LiveStreamerInfo(original.getUid(), uname, original.getRoomId(), original.getFace());
         Optional<String> image = drawn.get(event, JSON.toJSONString(options) + "|" + palette.id(),
-                () -> painter.paint(event.getPlatform(), event.getSource(), options, palette.palette()));
+                () -> painter.paint(event.getPlatform(), source, options, palette.palette()));
 
         if (liveData != null) liveData.getLiveStartTime(event.getPlatform(), event.getSource().getUid())
                 .ifPresent(start -> image.ifPresent(base64 -> rendered.putOriginal(event.getPlatform(), event.getSource().getUid(),
@@ -120,7 +124,7 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
                 .map(base64 -> "{image_base64=" + base64 + "}")
                 .orElseGet(() -> {
                     log.warn("{} 的下播报告图片绘制失败, 改发文字版", event.getSource().getUname());
-                    return MessagePlaceholders.escapeExternalText(painter.textReport(event.getPlatform(), event.getSource(), options));
+                    return MessagePlaceholders.escapeExternalText(painter.textReport(event.getPlatform(), source, options));
                 });
 
         Consumer<Message> onSuccess = null;
@@ -129,7 +133,6 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
             try {
                 // 发送可能排队，趁本场统计仍在时取下摘要。
                 var platform = event.getPlatform();
-                var source = event.getSource();
                 var uid = source.getUid();
                 var summary = painter.historySummary(platform, source, options);
                 var summaryWithoutAmounts = showRevenue
@@ -141,7 +144,8 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
                 log.warn("无法生成下播报告的问答摘要", error);
             }
         }
-        PushHandlerSupport.sendWithOrigin(sender, target, Message.PushOrigin.from(Message.PushKind.LIVE_REPORT, event),
+        var origin = new Message.PushOrigin(Message.PushKind.LIVE_REPORT, event.getPlatform(), source.getUid(), uname);
+        PushHandlerSupport.sendWithOrigin(sender, target, origin,
                 report, null, null, onSuccess);
     }
 

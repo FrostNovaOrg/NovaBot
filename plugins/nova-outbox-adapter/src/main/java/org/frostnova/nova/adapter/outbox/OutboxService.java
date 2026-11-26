@@ -49,27 +49,26 @@ public class OutboxService {
         this.timeline = timeline;
     }
 
-    /** 一次投递的分条共同提交。超限的分条留下原因，与前一条成功入箱的记录分开计数。 */
+    /** 每个分条单独入箱并核算会话限量。 */
     public synchronized List<OutboxRecord> enqueue(long conversationId, Streamer streamer, PushKind kind, String content) {
         Objects.requireNonNull(streamer);
         Objects.requireNonNull(kind);
         if (content == null) throw new IllegalArgumentException("外发内容为空");
-        try {
-            return database.transaction(db -> {
-                var conversation = OutboxConversations.active(db, conversationId);
-                var now = clock.instant();
-                var result = new ArrayList<OutboxRecord>();
-                for (String part : NEXT.split(content)) {
-                    if (!part.isEmpty()) result.add(insert(db, conversation, streamer, kind, OutboxContent.parse(part), now));
-                }
-                if (result.isEmpty()) throw new IllegalArgumentException("外发内容为空");
-                return List.copyOf(result);
-            });
-        } catch (RuntimeException failure) {
-            // 文件先于数据库提交。中断在两者之间的图片在下次清理时收走。
-            needsImageCleanup = true;
-            throw failure;
+        var records = new ArrayList<OutboxRecord>();
+        for (String part : NEXT.split(content)) {
+            if (part.isEmpty()) continue;
+            var parsed = OutboxContent.parse(part);
+            try {
+                records.add(database.transaction(db -> insert(db, OutboxConversations.active(db, conversationId),
+                        streamer, kind, parsed, clock.instant())));
+            } catch (RuntimeException failure) {
+                // 单条写入失败时，清理尚未随记录提交的图片。
+                needsImageCleanup = true;
+                throw failure;
+            }
         }
+        if (records.isEmpty()) throw new IllegalArgumentException("外发内容为空");
+        return List.copyOf(records);
     }
 
     private OutboxRecord insert(Connection db, Conversation conversation, Streamer streamer, PushKind kind,
@@ -152,14 +151,25 @@ public class OutboxService {
 
     public synchronized OutboxRecord claim(long id, String claimant) {
         if (claimant == null || claimant.isBlank()) throw new IllegalArgumentException("请填写认领者名称");
-        Instant now = clock.instant();
-        advance(now);
-        return database.transaction(db -> {
-            expect(require(db, id), PENDING);
-            update(db, "UPDATE records SET status='SENDING', claimant=?, claimed_at=?, claim_number=claim_number+1 WHERE id=?",
-                    claimant.strip(), now.toEpochMilli(), id);
+        advance(clock.instant());
+        var record = database.transaction(db -> {
+            long now = clock.millis();
+            int claimed = update(db, """
+                    UPDATE records SET status='SENDING', claimant=?, claimed_at=?, claim_number=claim_number+1
+                    WHERE id=? AND status='PENDING' AND expires_at>?
+                    """, claimant.strip(), now, id, now);
+            if (claimed == 0) {
+                expect(require(db, id), PENDING);
+                // 等写锁期间到期，直接记为过期。
+                update(db, "UPDATE records SET status='EXPIRED' WHERE id=?", id);
+            }
             return require(db, id);
         });
+        if (record.status() == EXPIRED) {
+            timeline.record(event(record, EXPIRED, clock.instant()));
+            expect(record, SENDING);
+        }
+        return record;
     }
 
     /** claimNumber 取自本次 claim 的返回值，旧认领迟到的结果不会覆盖新认领。 */

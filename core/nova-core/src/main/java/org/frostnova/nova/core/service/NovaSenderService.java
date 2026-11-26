@@ -98,6 +98,11 @@ public class NovaSenderService {
         log.info("已注册推送平台 {}", sender.getName());
     }
 
+    /** 各去向在登记时提供的显示名。 */
+    public synchronized Map<String, String> getSenderDisplayNames() {
+        return Map.copyOf(displayNames);
+    }
+
     /**
      * 推送平台给人看的名字
      * <p>

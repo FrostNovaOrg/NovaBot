@@ -61,11 +61,12 @@ public class BilibiliLiveOffPushHandler implements NovaEventHandler {
         // 时长取不到时（如程序在开播后才启动，未记录到开播时间）移除 {time} 所在分句，
         // 避免渲染出「……，本场直播时长 」这样的悬空半句
         String template = params.getString("message");
+        var uname = PushHandlerSupport.lookupUname(api, names, event.getPlatform(), event.getSource());
         String content = PushHandlerSupport.replaceOrDropClause(template, "{time}", formatDuration(event))
-                .replace("{uname}", PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()))
+                .replace("{uname}", uname.forContent())
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId());
 
-        PushHandlerSupport.sendWithOrigin(sender, target, Message.PushOrigin.from(Message.PushKind.LIVE_OFF, event),
+        PushHandlerSupport.sendWithOrigin(sender, target, uname.origin(Message.PushKind.LIVE_OFF, event.getPlatform()),
                 PushHandlerSupport.withoutAtBlocks(content));
     }
 

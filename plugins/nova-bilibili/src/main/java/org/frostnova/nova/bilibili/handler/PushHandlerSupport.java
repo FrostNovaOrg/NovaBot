@@ -275,16 +275,31 @@ public final class PushHandlerSupport {
      * @return 可直接放入消息正文的昵称，花括号已换成全角
      */
     public static String resolveUname(BilibiliApiUtil api, StreamerNames names, String platform, LiveStreamerInfo source) {
+        return lookupUname(api, names, platform, source).forContent();
+    }
+
+    public record ResolvedUname(Long uid, String name) {
+        public String forContent() {
+            return StringUtil.isBlank(name) ? String.valueOf(uid) : MessagePlaceholders.escapeExternalText(name);
+        }
+
+        public Message.PushOrigin origin(Message.PushKind kind, String platform) {
+            return new Message.PushOrigin(kind, platform, uid, name);
+        }
+    }
+
+    /** 正文与投递来源共用本次取到的昵称。 */
+    public static ResolvedUname lookupUname(BilibiliApiUtil api, StreamerNames names, String platform, LiveStreamerInfo source) {
         try {
             String uname = api.getUpInfoByUid(source.getUid()).getUname();
             if (StringUtil.isNotBlank(uname)) {
-                return MessagePlaceholders.escapeExternalText(uname);
+                return new ResolvedUname(source.getUid(), uname);
             }
         } catch (Exception e) {
             log.debug("获取 uid {} 的最新昵称失败: {}", source.getUid(), e.getMessage());
         }
 
         String uname = names.uname(platform, source.getUid(), source.getUname());
-        return StringUtil.isBlank(uname) ? String.valueOf(source.getUid()) : MessagePlaceholders.escapeExternalText(uname);
+        return new ResolvedUname(source.getUid(), uname);
     }
 }
