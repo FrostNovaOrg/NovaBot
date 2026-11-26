@@ -1,11 +1,13 @@
 package org.frostnova.nova.interact.auto;
 
 import org.frostnova.nova.bilibili.BilibiliPlatform;
+import org.frostnova.nova.bilibili.enums.RoomGuardLevel;
 import org.frostnova.nova.core.event.live.NovaBaseLiveEvent;
 import org.frostnova.nova.core.event.live.base.NovaLiveMessageEvent;
 import org.frostnova.nova.core.model.UserInfo;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.interact.auto.RoomActivities.Pause;
 import org.frostnova.nova.interact.danmaku.DanmakuFailure;
 import org.frostnova.nova.interact.danmaku.DanmakuResult;
 import org.frostnova.nova.interact.danmaku.LiveDanmakuService;
@@ -22,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
@@ -53,6 +56,8 @@ public class AutoDanmakuQueue {
         boolean awaitingOfflineStatus;
         TimedDanmakuPlans session;
         RoomThanks thanks;
+        RoomWelcomes welcomes;
+        RoomActivities activities;
 
         RoomState(Room room, RoomSettings settings) {
             this.streamer = room;
@@ -65,8 +70,6 @@ public class AutoDanmakuQueue {
             return recent.size() < settings.perMinute();
         }
     }
-
-    private record Pause(String reason, Instant until) {}
 
     private static final class Item {
         final RoomState room;
@@ -145,6 +148,9 @@ public class AutoDanmakuQueue {
         room.settings = settings;
         if (room.thanks != null) room.thanks.configure(settings);
         Instant now = clock.get();
+        if (!settings.allows(RoomSettings.PAUSE_ACTIVITIES) && room.activities != null) {
+            pauseRoom(room.streamer.roomId(), null, now);
+        }
         syncLive(room, now);
         if (!settings.enabled()) room.session = null;
         else if (room.session != null) room.session.configure(settings, now);
@@ -160,6 +166,7 @@ public class AutoDanmakuQueue {
             room.awaitingOfflineStatus = false;
             if (!reconnect) {
                 room.thanks = null;
+                room.welcomes = null;
                 store.forgetThanked(uid);
             }
             if (!reconnect && room.session != null) {
@@ -182,7 +189,7 @@ public class AutoDanmakuQueue {
         boolean living = live.getLiveStatus(BilibiliPlatform.BILIBILI.id(), room.streamer.uid()).orElse(false);
         if (!living) {
             room.awaitingOfflineStatus = false;
-            if (room.session != null || room.thanks != null || !room.pending.isEmpty()) endSession(room);
+            if (room.session != null || room.thanks != null || room.welcomes != null || !room.pending.isEmpty()) endSession(room);
         } else if (room.session == null && !room.awaitingOfflineStatus && room.settings.enabled()) {
             room.session = new TimedDanmakuPlans();
             room.session.configure(room.settings, now);
@@ -190,6 +197,7 @@ public class AutoDanmakuQueue {
     }
 
     private void endSession(RoomState room) {
+        room.welcomes = null;
         room.thanks = null;
         clear(room, "主播未开播");
         room.session = null;
@@ -203,15 +211,66 @@ public class AutoDanmakuQueue {
                 && !sender.isOwnDanmaku(event)) room.session.viewerSpoke();
     }
 
-    synchronized void thank(ThanksKind kind, NovaBaseLiveEvent event, UserInfo viewer) {
-        if (event.getSource() == null) return;
+    private RoomState eventRoom(NovaBaseLiveEvent event) {
+        if (event.getSource() == null) return null;
         RoomState room = rooms.get(event.getSource().getUid());
-        if (room == null || !room.settings.allows(kind.key)) return;
         Long sourceRoom = event.getSource().getRoomId();
-        if (sourceRoom != null && sourceRoom != room.streamer.roomId()) return;
+        return room != null && (sourceRoom == null || sourceRoom == room.streamer.roomId()) ? room : null;
+    }
+
+    synchronized void welcome(NovaBaseLiveEvent event, Long viewerUid, String viewerName, RoomGuardLevel level) {
+        RoomState room = eventRoom(event);
+        if (room == null || !(room.settings.allows(WelcomeSettings.GUARD) || room.settings.allows(WelcomeSettings.LISTED))) return;
         Instant now = clock.get();
         syncLive(room, now);
-        if (room.session == null || (room.pause != null && now.isBefore(room.pause.until()))) return;
+        if (room.session == null) return;
+        if (room.welcomes == null) {
+            long start = live.getLiveStartTime(BilibiliPlatform.BILIBILI.id(), room.streamer.uid()).orElse(0L);
+            room.welcomes = new RoomWelcomes(store, room.streamer.uid(), start);
+        }
+        var greeting = room.welcomes.greeting(room.settings, room.streamer.name(), viewerUid, viewerName, level);
+        if (greeting == null) return;
+        AccountStatus account = sender.automaticAccountStatus();
+        if (viewerUid != null && viewerUid > 0 && viewerUid.equals(account.uid())) return;
+        Instant entered = Instant.ofEpochMilli(event.getTimestamp());
+        Instant expires = (entered.isAfter(now) ? now : entered).plusSeconds(30);
+        if (offer(room, greeting.feature(), greeting.text(), RoomWelcomes.PRIORITY, expires, null, account)) {
+            room.welcomes.remember(greeting.identity());
+        }
+    }
+
+    synchronized void activity(NovaBaseLiveEvent event, BiConsumer<RoomActivities, Instant> change) {
+        RoomState room = eventRoom(event);
+        if (room == null || !room.settings.allows(RoomSettings.PAUSE_ACTIVITIES)) return;
+        Instant now = clock.get();
+        RoomActivities activities = room.activities == null ? new RoomActivities() : room.activities;
+        activities.expire(now);
+        Instant occurred = Instant.ofEpochMilli(event.getTimestamp());
+        change.accept(activities, occurred.isAfter(now) ? now : occurred);
+        Pause pause = activities.pauseAt(now);
+        if (pause == null) {
+            if (room.activities != null) pauseRoom(room.streamer.roomId(), null, now);
+        } else {
+            dropThanksForActivity(room, pause.reason(), now);
+            pauseRoom(room.streamer.roomId(), pause.reason(), pause.until());
+            room.activities = activities;
+        }
+    }
+
+    private void dropThanksForActivity(RoomState room, String reason, Instant now) {
+        if (room.thanks != null && room.thanks.hasPending()) {
+            room.thanks.dropForActivity(room.settings.thanks(), room.streamer.name(),
+                    (kind, text) -> store.drop(room.streamer, kind.key, text, reason, now));
+        }
+    }
+
+    synchronized void thank(ThanksKind kind, NovaBaseLiveEvent event, UserInfo viewer) {
+        RoomState room = eventRoom(event);
+        if (room == null || !room.settings.allows(kind.key)) return;
+        Instant now = clock.get();
+        syncLive(room, now);
+        boolean paused = room.pause != null && now.isBefore(room.pause.until());
+        if (room.session == null || (paused && room.activities == null)) return;
         if (room.thanks == null) {
             long start = live.getLiveStartTime(BilibiliPlatform.BILIBILI.id(), room.streamer.uid()).orElse(0L);
             room.thanks = new RoomThanks(store, room.streamer.uid(), start, (feature, text, expires) ->
@@ -219,6 +278,7 @@ public class AutoDanmakuQueue {
         }
         if (room.thanks.checkAccount(sender.automaticAccountStatus())) {
             room.thanks.accept(kind, event, viewer, room.settings.thanks(), room.streamer.name(), now);
+            if (paused) dropThanksForActivity(room, room.pause.reason(), now);
         }
     }
 
@@ -231,11 +291,11 @@ public class AutoDanmakuQueue {
             return;
         }
         syncLive(room, clock.get());
-        offer(room, feature, text, priority, expiresAt, null);
+        offer(room, feature, text, priority, expiresAt, null, sender.automaticAccountStatus());
     }
 
-    private void offer(RoomState room, String feature, String text, int priority, Instant expires, TimedDanmakuPlans.Timer timer) {
-        AccountStatus account = sender.automaticAccountStatus();
+    private boolean offer(RoomState room, String feature, String text, int priority, Instant expires,
+                          TimedDanmakuPlans.Timer timer, AccountStatus account) {
         Item item = new Item(room, account, feature, text, priority, ++sequence, Objects.requireNonNull(expires), timer);
         Instant now = clock.get();
         // 入队也检查现有条目，避免暂停期间积压，或过期条目占满房间。
@@ -246,18 +306,21 @@ public class AutoDanmakuQueue {
         }
         if (reason != null) {
             drop(item, reason);
-            return;
+            return false;
         }
         room.pending.add(item);
         if (room.pending.size() > CAPACITY) {
             room.pending.stream().filter(i -> i.started == null).min(EVICT).ifPresent(i -> drop(i, "排队已满"));
+            return room.pending.contains(item);
         }
+        return true;
     }
 
     /** 暂停指定房间，到 until 自动解除；传入当前或过去的时间立即解除。 */
     public synchronized void pauseRoom(long roomId, String reason, Instant until) {
         for (RoomState room : rooms.values()) {
             if (room.streamer.roomId() != roomId) continue;
+            finishActivityPause(room, clock.get());
             if (until.isAfter(clock.get())) {
                 room.pause = new Pause(reason == null || reason.isBlank() ? "房间暂停发送" : reason, until);
                 if (room.thanks != null) room.thanks.discardPending();
@@ -266,6 +329,17 @@ public class AutoDanmakuQueue {
                 room.pause = null;
             }
         }
+    }
+
+    private void finishActivityPause(RoomState room, Instant now) {
+        if (room.activities == null) return;
+        // 发送线程可能正在等待别房间的平台响应，先跳过暂停期间已经到点的计划。
+        if (room.session != null) {
+            Instant end = now.isBefore(room.pause.until()) ? now : room.pause.until();
+            room.session.due(end.minusNanos(1), timer -> store.drop(room.streamer, RoomSettings.TIMED,
+                    timer.text(room.streamer.name()), room.pause.reason(), now));
+        }
+        room.activities = null;
     }
 
     private String settingsReason(Item item) {
@@ -345,8 +419,10 @@ public class AutoDanmakuQueue {
             if (room.thanks != null && room.thanks.hasPending() && room.thanks.checkAccount(sender.automaticAccountStatus())) {
                 room.thanks.flush(room.settings.thanks(), room.streamer.name(), now);
             }
+            if (room.activities != null && !now.isBefore(room.pause.until())) finishActivityPause(room, now);
             if (room.session != null) {
-                room.session.due(now, timer -> offer(room, RoomSettings.TIMED, timer.text(room.streamer.name()), 0, timer.due, timer));
+                room.session.due(now, timer -> offer(room, RoomSettings.TIMED, timer.text(room.streamer.name()), 0,
+                        timer.due, timer, sender.automaticAccountStatus()));
             }
         }
         if (rooms.values().stream().allMatch(r -> r.pending.isEmpty())) return null;

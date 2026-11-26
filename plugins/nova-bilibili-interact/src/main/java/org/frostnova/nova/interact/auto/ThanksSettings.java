@@ -5,12 +5,9 @@ import com.alibaba.fastjson2.JSONObject;
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 public record ThanksSettings(int giftWindowSeconds, boolean giftIncludeFree, BigDecimal giftMinYuan,
                             int followWindowSeconds, int shareWindowSeconds, Map<String, String> templates) {
-    // 与话术预览一致，也接受原有的控制分隔符和粘贴文本中的字节顺序标记。
-    private static final Pattern BLANK_TEMPLATE = Pattern.compile("[\\p{IsWhite_Space}\\x1C-\\x1F\\uFEFF]*");
     static final ThanksSettings DEFAULT = new ThanksSettings(8, false, BigDecimal.ZERO, 30, 30, Map.of());
 
     public ThanksSettings {
@@ -20,10 +17,8 @@ public record ThanksSettings(int giftWindowSeconds, boolean giftIncludeFree, Big
         if (giftMinYuan.signum() < 0) throw new IllegalArgumentException("礼物最低金额不能小于 0 元");
         var overrides = new HashMap<String, String>();
         for (ThanksKind kind : ThanksKind.values()) {
-            String template = templates.get(kind.key);
-            if (template == null || BLANK_TEMPLATE.matcher(template).matches()) continue;
-            kind.validate(template);
-            overrides.put(kind.key, template);
+            String template = kind.template.override(templates.get(kind.key));
+            if (!template.isEmpty()) overrides.put(kind.key, template);
         }
         templates = Map.copyOf(overrides);
     }
