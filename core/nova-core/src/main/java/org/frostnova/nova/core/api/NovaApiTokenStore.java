@@ -19,6 +19,7 @@ import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * 访问令牌的签发、吊销与校验
@@ -67,6 +68,8 @@ public class NovaApiTokenStore {
 
     private final Clock clock;
 
+    private final List<Runnable> changeListeners = new CopyOnWriteArrayList<>();
+
     /** 签发的结果：记录本身与只此一次的明文 */
     public record Issued(NovaApiToken token, String plaintext) {
     }
@@ -89,6 +92,33 @@ public class NovaApiTokenStore {
 
     Instant now() {
         return clock.instant();
+    }
+
+    /**
+     * 登记「有令牌刚被吊销」的通知
+     * <p>
+     * 事件输出用它：用这把令牌连着的连接要当场断开，不能等到下一次定时复核。
+     * 吊销先在内存里生效再通知，写盘成没成功都通知。
+     * @param listener 通知，在吊销的那条线程上调，只能做不阻塞的事
+     */
+    public void addChangeListener(Runnable listener) {
+        changeListeners.add(listener);
+    }
+
+    /** 撤掉 {@link #addChangeListener} 登记的通知 */
+    public void removeChangeListener(Runnable listener) {
+        changeListeners.remove(listener);
+    }
+
+    /** 通知出错不连累吊销本身：吊销已经生效，通知不到的由定时复核兜着 */
+    private void changed() {
+        for (Runnable listener : changeListeners) {
+            try {
+                listener.run();
+            } catch (RuntimeException error) {
+                log.warn("访问令牌吊销后的通知出错 ({}), 已忽略", error.getClass().getSimpleName());
+            }
+        }
     }
 
     /**
@@ -163,6 +193,7 @@ public class NovaApiTokenStore {
         if (!saved) {
             log.error("访问令牌 {} 已吊销, 但没能写进磁盘, 定时保存时会再试", id);
         }
+        changed();
         return Optional.of(new Revoked(updated, saved, true));
     }
 
@@ -195,6 +226,7 @@ public class NovaApiTokenStore {
         if (!state.trySave()) {
             log.error("账号 {} 名下的 {} 把访问令牌已吊销, 但没能写进磁盘, 定时保存时会再试", accountId, revoked);
         }
+        changed();
         return revoked;
     }
 

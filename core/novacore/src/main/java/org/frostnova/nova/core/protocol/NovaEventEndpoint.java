@@ -29,6 +29,7 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.ToIntFunction;
 
 /**
@@ -60,6 +61,12 @@ import java.util.function.ToIntFunction;
  * 拦截在握手阶段（见 {@link NovaEventStreamConfiguration}），<b>与 server.address 无关</b>：
  * 即使运维为了对外提供推送接口把监听地址改成 0.0.0.0，事件流也只认来自本机的连接。
  * 跨机访问请自行建立 SSH 隧道。
+ *
+ * <h2>首帧认两种凭据</h2>
+ * 只读口令（{@link EventStreamTokenService}），以及外壳按账号签发的访问令牌（{@link EventStreamAccessTokens}，
+ * 外壳注册了才有）。用访问令牌连着的连接由复核线程定时再核（{@value #RECHECK_INTERVAL_MS} 毫秒一轮），
+ * 外壳通知有改动时当场再核一轮；失效了按吊销只读口令时的样子断开。
+ * 两种凭据走的都是同一条首帧、同一个 {@code auth_failed}，协议上没有任何新东西。
  */
 @Slf4j
 public class NovaEventEndpoint extends TextWebSocketHandler {
@@ -220,6 +227,44 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
 
     private final ToIntFunction<String> revocationListener = this::disconnectToken;
 
+    /**
+     * 定时复核访问令牌的间隔，单位：毫秒
+     * <p>
+     * 吊销、停用、删除账号、改角色这几种改动会当场通知过来（见 {@link EventStreamAccessTokens#addChangeListener}），
+     * 定时复核兜的是没有通知的那几种：到期、以及任何没走通知的改动。连着的访问令牌连接
+     * 因此最迟在失效后这么久内被关掉。
+     */
+    static final long RECHECK_INTERVAL_MS = 15_000;
+
+    /**
+     * 访问令牌。不认访问令牌时为 {@code null}；不要求口令时也为 {@code null}
+     */
+    private final EventStreamAccessTokens accessTokens;
+
+    /** 首帧里访问令牌认证失败的计数 */
+    private final AccessTokenFailures failures;
+
+    /**
+     * 复核访问令牌的线程，不认访问令牌时为 {@code null}
+     * <p>
+     * 不借心跳线程：复核要读外壳的令牌表与账号表，那两处的锁会被写盘的一方攥着，
+     * 而心跳线程是全局共享的单线程，见 {@link #heartbeats}。
+     */
+    private final ScheduledThreadPoolExecutor accessChecks;
+
+    /**
+     * 外壳通知过的改动次数
+     * <p>
+     * 认证时先记下它，登记完连接再看一眼：中间变过，就再排一轮复核。
+     * 挡的是「核对已经通过、连接还没登记」那一瞬间来的吊销——那一轮复核看不见这条连接。
+     */
+    private final AtomicLong accessChanges = new AtomicLong();
+
+    /** 已经排上、还没开始跑的那一轮复核；连着来的通知并成一轮 */
+    private final AtomicBoolean recheckQueued = new AtomicBoolean();
+
+    private final Runnable accessChangeListener = this::accessChanged;
+
     private int disconnectToken(String hash) {
         int disconnected = 0;
         for (Client client : clients.values()) {
@@ -252,8 +297,35 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
 
     NovaEventEndpoint(NovaEventStream stream, EventStreamTokenService tokens, Timings timings,
                       EventStreamProperties properties) {
+        this(stream, tokens, null, timings, properties, RECHECK_INTERVAL_MS, new AccessTokenFailures());
+    }
+
+    /**
+     * @param tokens       只读口令服务
+     * @param accessTokens 访问令牌。传 {@code null} 表示首帧只认只读口令
+     */
+    public NovaEventEndpoint(NovaEventStream stream, EventStreamTokenService tokens,
+                             EventStreamAccessTokens accessTokens) {
+        this(stream, tokens, accessTokens, Timings.DEFAULT, new EventStreamProperties(), RECHECK_INTERVAL_MS,
+                new AccessTokenFailures());
+    }
+
+    NovaEventEndpoint(NovaEventStream stream, EventStreamTokenService tokens, EventStreamAccessTokens accessTokens,
+                      Timings timings, EventStreamProperties properties) {
+        this(stream, tokens, accessTokens, timings, properties, RECHECK_INTERVAL_MS, new AccessTokenFailures());
+    }
+
+    /**
+     * @param recheckInterval 定时复核访问令牌的间隔，毫秒。生产恒为 {@value #RECHECK_INTERVAL_MS}，测试才改
+     * @param failures        访问令牌认证失败的计数
+     */
+    NovaEventEndpoint(NovaEventStream stream, EventStreamTokenService tokens, EventStreamAccessTokens accessTokens,
+                      Timings timings, EventStreamProperties properties, long recheckInterval,
+                      AccessTokenFailures failures) {
         this.stream = stream;
         this.tokens = tokens;
+        this.accessTokens = tokens == null ? null : accessTokens;
+        this.failures = failures;
         this.timings = timings;
         heartbeats.setRemoveOnCancelPolicy(true);
         limits = new EventConnectionLimits(properties, heartbeats);
@@ -265,6 +337,113 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         this.outboxCapacity = stream.getCapacity() + OUTBOX_HEADROOM;
         if (tokens != null) {
             tokens.addRevocationListener(revocationListener);
+        }
+        if (this.accessTokens != null) {
+            accessChecks = new ScheduledThreadPoolExecutor(1, daemon("nova-event-token-check"));
+            accessChecks.setRemoveOnCancelPolicy(true);
+            accessChecks.scheduleWithFixedDelay(this::recheckAccessTokens, recheckInterval, recheckInterval,
+                    TimeUnit.MILLISECONDS);
+            this.accessTokens.addChangeListener(accessChangeListener);
+        } else {
+            accessChecks = null;
+        }
+    }
+
+    /**
+     * 外壳说令牌或账号刚变过
+     * <p>
+     * 跑在改动方的线程上（控制台的请求线程，往往还攥着账号表的锁），所以只记一笔、排一轮复核，不在这里复核。
+     */
+    private void accessChanged() {
+        accessChanges.incrementAndGet();
+        requestRecheck();
+    }
+
+    /** 排一轮复核；已经排着一轮的就不再排 */
+    private void requestRecheck() {
+        if (!recheckQueued.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            accessChecks.execute(() -> {
+                // 先放下这一位再复核：复核途中又来的通知要另排一轮，不能被这一轮吞掉
+                recheckQueued.set(false);
+                recheckAccessTokens();
+            });
+        } catch (RejectedExecutionException e) {
+            // 正在关停，连接都要断了
+            recheckQueued.set(false);
+        }
+    }
+
+    /**
+     * 复核一遍用访问令牌连着的连接，已经不能用的断开
+     * <p>
+     * 断法与吊销只读口令时一样：带原因的正常关闭（{@code 1000}），不发 {@code auth_failed}。
+     * 复核出错时按不能用处理：宁可让面板重连一次，也不让一把可能已经作废的令牌接着收数据。
+     */
+    private void recheckAccessTokens() {
+        try {
+            for (Client client : clients.values()) {
+                EventStreamAccessTokens.Grant grant = client.grant;
+                if (grant == null || client.closed) {
+                    continue;
+                }
+                EventStreamTokenService.Verdict verdict;
+                try {
+                    verdict = accessTokens.recheck(grant);
+                } catch (RuntimeException e) {
+                    // 不记异常的原话：那是外壳的东西，这里管不住里面写了什么
+                    log.warn("事件流复核访问令牌出错 ({}), 按已失效处理: {}", e.getClass().getSimpleName(), grant.label());
+                    verdict = EventStreamTokenService.Verdict.BAD_TOKEN;
+                }
+                if (verdict == EventStreamTokenService.Verdict.OK) {
+                    continue;
+                }
+                if (client.closeAsync(CloseStatus.NORMAL.withReason(invalidated(verdict)))) {
+                    log.info("事件流客户端 {} 所用的{}已失效 ({}), 已断开", client.session.getId(), grant.label(),
+                            verdict.wire());
+                }
+            }
+        } catch (RuntimeException e) {
+            // 定时任务抛出去就不会再排下一轮，这里必须接住
+            log.warn("事件流复核访问令牌出错 ({}), 下一轮照常", e.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * 连着时失效的关闭原因
+     * <p>
+     * 与这把令牌此刻重连会收到的 {@code auth_failed.reason} 一一对应，写成给人看的话
+     */
+    static String invalidated(EventStreamTokenService.Verdict verdict) {
+        return switch (verdict) {
+            case REVOKED -> "口令已吊销";
+            case EXPIRED -> "口令已过期";
+            default -> "口令已失效";
+        };
+    }
+
+    /**
+     * 记一次访问令牌认证失败；正好满额时说一句
+     */
+    private void accessFailed() {
+        if (failures.failed()) {
+            log.warn("事件流: 访问令牌认证失败已满 {} 次, 暂停受理访问令牌 {} 秒; 这段时间里出示访问令牌的连接按暂忙关闭, 只读口令不受影响",
+                    failures.maxFailures(), failures.retryAfterSeconds());
+        }
+    }
+
+    /** 出示的这一串归不归访问令牌管；判不出来就当不归，交给只读口令 */
+    private boolean claimedByAccessTokens(String presented) {
+        if (accessTokens == null) {
+            return false;
+        }
+        try {
+            return accessTokens.claims(presented);
+        } catch (RuntimeException e) {
+            log.warn("事件流判断凭据种类出错 ({}), 按只读口令核对", e.getClass().getSimpleName());
+            return false;
         }
     }
 
@@ -299,6 +478,16 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         };
     }
 
+    /** 只读口令那一路的结论 */
+    private enum ReadonlyOutcome {
+        /** 通过 */
+        ACCEPTED,
+        /** 回了 auth_failed 并关闭 */
+        REJECTED,
+        /** 已经认过、已经拒过或已经关了，这一帧不理 */
+        IGNORED
+    }
+
     /**
      * 单个客户端连接
      */
@@ -322,6 +511,18 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
 
         /** 仅保存认证口令的哈希，免口令连接为 null。 */
         private volatile String tokenHash;
+
+        /**
+         * 用访问令牌认证的那一把，其余为 null
+         * <p>
+         * 只有编号与说明，没有令牌本身；复核按它找，断开时日志按它写
+         */
+        private volatile EventStreamAccessTokens.Grant grant;
+
+        /**
+         * 访问令牌正在核对（在监视器外面核），这时再来的 {@code auth} 帧不理
+         */
+        private boolean authenticating;
 
         private volatile long lastSeenAt = System.currentTimeMillis();
 
@@ -400,13 +601,120 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
          * 写与关在监视器<b>外面</b>——{@code writeDirect} 是阻塞写，而这条连接的
          * {@code closeUnauthenticated} 正跑在<b>全局共享的心跳线程</b>上等同一个监视器。
          * 「先同步写完再关」一点没变，变的只是这两步持不持锁。
+         *
+         * <h3>两种凭据</h3>
+         * 归访问令牌管的（{@link EventStreamAccessTokens#claims}，按开头认）先交给外壳核；
+         * 外壳说「不是事件流凭据」（表里没有、没勾那一项范围）时，照旧交给只读口令去核——
+         * 对这种出示，客户端看到的回应与从前出示同一串时一模一样，看不出令牌在不在；
+         * 某把旧的只读口令碰巧以同样的开头起头，也照旧认得。其余的只交给只读口令，那一路一行没变。
          */
         private void authenticate(String presented) {
+            if (claimedByAccessTokens(presented)) {
+                if (authenticateWithAccessToken(presented)) {
+                    return;
+                }
+                if (authenticateWithReadonlyToken(presented) == ReadonlyOutcome.REJECTED) {
+                    accessFailed();
+                }
+                return;
+            }
+            authenticateWithReadonlyToken(presented);
+        }
+
+        /**
+         * 按访问令牌核
+         * <p>
+         * 🔴 <b>核对在监视器外面</b>：外壳要读令牌表与账号表，那两处的锁会被写盘的一方攥着；
+         * 而这条连接的 {@code closeUnauthenticated} 跑在全局共享的心跳线程上，要的正是这个监视器。
+         * 监视器里只做「占住这一帧」与「按结论迁移状态」两步。
+         * <p>
+         * 失败计数满了（{@link AccessTokenFailures}）时<b>不核对</b>，以「暂忙」关闭：
+         * 不发 {@code auth_failed}，正经面板会照常退避重连，而不是去换一把其实没错的令牌。
+         *
+         * @return 处理完了为 true；不是事件流凭据、要交给只读口令时为 false
+         */
+        private boolean authenticateWithAccessToken(String presented) {
+            synchronized (this) {
+                if (authenticated || closed || authRejected || authenticating) {
+                    return true;
+                }
+                authenticating = true;
+            }
+
+            long changesBefore = accessChanges.get();
+            boolean paused = failures.locked();
+            EventStreamAccessTokens.Check check = null;
+            if (!paused) {
+                try {
+                    check = accessTokens.check(presented);
+                } catch (RuntimeException e) {
+                    // 不记异常的原话：外壳的异常里写了什么这里管不住，令牌不能经它进日志
+                    log.warn("事件流核对访问令牌出错 ({}), 按令牌不对处理", e.getClass().getSimpleName());
+                }
+                if (check == null) {
+                    check = EventStreamAccessTokens.Check.refused(EventStreamTokenService.Verdict.BAD_TOKEN);
+                }
+            }
+
+            String reason = null;
+            synchronized (this) {
+                authenticating = false;
+                if (authenticated || closed || authRejected) {
+                    // 核对途中到了认证时限，连接已经关了
+                    return true;
+                }
+                if (paused) {
+                    authRejected = true;
+                } else if (!check.mine()) {
+                    return false;
+                } else if (check.verdict() == EventStreamTokenService.Verdict.OK) {
+                    grant = check.grant();
+                    authenticated = true;
+                    reservation.authenticated();
+                    if (authDeadline != null) {
+                        authDeadline.cancel(false);
+                    }
+                    if (startPump()) {
+                        NovaEventStream.State state = stream.snapshot();
+                        send(hello(state));
+                        scheduleGrace(state.lastSeq());
+                        log.info("事件流客户端 {} 已通过访问令牌认证: {}", session.getId(), grant.label());
+                    }
+                } else {
+                    authRejected = true;
+                    reason = check.verdict().wire();
+                }
+            }
+
+            if (paused) {
+                log.debug("事件流客户端 {} 出示了访问令牌, 暂停受理期间未核对, 按暂忙关闭", session.getId());
+                close(CloseStatus.SERVICE_OVERLOAD.withReason("事件输出暂忙，请稍后重连"));
+                return true;
+            }
+            if (reason != null) {
+                accessFailed();
+                // 与只读口令那一路同样：先同步把 auth_failed 写出去再关，写与关都在监视器外面
+                writeDirect(authFailed(reason));
+                close(CloseStatus.NORMAL.withReason("认证失败"));
+                return true;
+            }
+            if (accessChanges.get() != changesBefore) {
+                // 核对与登记之间外壳说过有改动：那一轮复核可能没看见这条连接，再排一轮
+                requestRecheck();
+            }
+            return true;
+        }
+
+        /**
+         * 按只读口令核：从前的那一路，一行没变
+         * @return 结论，给按访问令牌开头来的那一种计失败用
+         */
+        private ReadonlyOutcome authenticateWithReadonlyToken(String presented) {
             String reason;
             synchronized (this) {
-                if (authenticated || closed || authRejected) {
+                if (authenticated || closed || authRejected || authenticating) {
                     // 重复发 auth 直接忽略：已经认过的连接不该被第二帧改变状态
-                    return;
+                    return ReadonlyOutcome.IGNORED;
                 }
 
                 EventStreamTokenService.Verdict verdict = tokens.authenticate(presented, hash -> {
@@ -426,7 +734,7 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
                     log.info("事件流客户端 {} 已通过口令认证", session.getId());
                 });
                 if (verdict == EventStreamTokenService.Verdict.OK) {
-                    return;
+                    return ReadonlyOutcome.ACCEPTED;
                 }
 
                 // 只在监视器里定下「拒了、拒的是哪一种」，写与关都挪到外面
@@ -437,12 +745,18 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
             // 🔴 这一句是**阻塞写**，不许在监视器里做：客户端不读的话它一直不返回，
             //    而同一条连接的 closeUnauthenticated 正等在共享心跳线程上要这个监视器。
             //    仍然是同步写完再关——「说清为什么失败」这件事一点没变，变的只是持不持锁。
+            writeDirect(authFailed(reason));
+            close(CloseStatus.NORMAL.withReason("认证失败"));
+            return ReadonlyOutcome.REJECTED;
+        }
+
+        /** {@code auth_failed} 那一帧 */
+        private String authFailed(String reason) {
             JSONObject envelope = new JSONObject();
             envelope.put("v", PROTOCOL_VERSION);
             envelope.put("kind", "auth_failed");
             envelope.put("reason", reason);
-            writeDirect(envelope.toString(JSONWriter.Feature.WriteNulls));
-            close(CloseStatus.NORMAL.withReason("认证失败"));
+            return envelope.toString(JSONWriter.Feature.WriteNulls);
         }
 
         /**
@@ -843,6 +1157,10 @@ public class NovaEventEndpoint extends TextWebSocketHandler {
         limits.stop();
         if (tokens != null) {
             tokens.removeRevocationListener(revocationListener);
+        }
+        if (accessTokens != null) {
+            accessTokens.removeChangeListener(accessChangeListener);
+            accessChecks.shutdownNow();
         }
         for (Client client : clients.values()) {
             client.closeAsync(CloseStatus.GOING_AWAY);
