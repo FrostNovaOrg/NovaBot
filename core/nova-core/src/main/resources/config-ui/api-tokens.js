@@ -11,7 +11,7 @@ import {ask} from './confirm.js';
 import {$, api, CONSOLE, esc, PREFIX} from './core.js';
 import {showLinkResult} from './link-feedback.js';
 import {bindPasswordReveal} from './password-reveal.js';
-import {DEFAULT_VALIDITY, expiryText, fmtDate, fmtTime, issueBody, lanStatus, ownerText, remoteRoutes, revocable,
+import {DEFAULT_VALIDITY, expiryText, fmtDate, fmtTime, issueBody, lanStatus, localStatus, ownerText, remoteRoutes, revocable,
   scopeSelectable, scopeText, sortTokens, stateText, unavailableText, VALIDITY} from './api-tokens-model.js';
 
 /** 最近一次取到的清单回包 */
@@ -67,7 +67,7 @@ async function loadRemote() {
 
 function renderRemote(state) {
   const groups = state.groups || [];
-  const stale = state.stale || [];
+  const ignored = state.ignored || 0;
   const rows = groups.map(group => '<div class="at-group" data-segment="' + esc(group.segment) + '">'
       + '<div class="at-group-text"><b>' + esc(group.name) + '</b> <code>' + esc(group.segment) + '</code> '
       + (group.open ? '<span class="nv-pill ok">已对任何地址开放</span>' : '<span class="nv-pill">只对名单里的地址开放</span>')
@@ -80,18 +80,13 @@ function renderRemote(state) {
     + '令牌、范围与无效令牌限速照旧。至少打开一组时，自查接口 <code>/me</code> 也随之对任何地址开放。</p>'
     + (groups.length ? '<div class="at-groups">' + rows + '</div>'
       : '<p class="hint">目前没有插件登记接口组，这里没有可打开的。</p>')
-    + stale.map(name => '<p class="hint at-stale">清单里还写着 <code>' + esc(name) + '</code>，但现在没有这组接口'
-      + '（插件可能已卸载），它不起作用。<button type="button" class="ghost sm" data-stale="' + esc(name)
-      + '">从清单去掉</button></p>').join('');
+    + (ignored ? '<p class="hint at-stale">清单里另有 ' + ignored + ' 条没登记或写法不合规的组名，不起作用；'
+      + '下次在这里打开或关上任何一组时会自动清掉。</p>' : '');
 
   $('#at-remote-groups').querySelectorAll('[data-segment]').forEach(row => {
     const group = groups.find(g => g.segment === row.dataset.segment);
     const input = row.querySelector('input');
     input.addEventListener('change', () => toggleGroup(state, group, input));
-  });
-  $('#at-remote-groups').querySelectorAll('[data-stale]').forEach(button => {
-    button.addEventListener('click', () => toggleGroup(state, {segment: button.dataset.stale, name: button.dataset.stale},
-      null, button));
   });
   renderRoutes(state);
 }
@@ -99,10 +94,13 @@ function renderRemote(state) {
 function renderRoutes(state) {
   const routes = remoteRoutes(state, PREFIX, location);
   const lan = lanStatus(routes.lan);
+  const local = localStatus(routes.local);
   const sample = CONSOLE + '/manual/appendix-c-security-and-resources.html';
   const code = text => '<code>' + esc(text) + '</code>';
   $('#at-remote-routes').innerHTML = '<h4 class="at-route-h">该连哪个地址</h4><dl class="at-routes">'
-    + '<dt>同一台机器上</dt><dd>' + code(routes.local.url) + '<br><span class="hint">不用改任何设置。</span></dd>'
+    + '<dt>同一台机器上</dt><dd>' + code(routes.local.url)
+    + (local.level ? '<p class="at-lan ' + local.level + '">' + esc(local.local) + '</p>'
+      : '<br><span class="hint">' + esc(local.local) + '</span>') + '</dd>'
     + '<dt>内网别的机器</dt><dd>' + routes.lan.urls.map(code).join('<br>')
     + (routes.lan.known ? '' : '<br><span class="hint">没认出这台机器的内网地址，请换成它在内网里的 IP。</span>')
     + '<p class="at-lan ' + lan.level + '">' + esc(lan.text) + '</p>'
@@ -117,15 +115,16 @@ function renderRoutes(state) {
       + '。只有它前面的反向代理也转发了 <code>/nova/api/v1/</code>，' + code(routes.internet.current)
       + ' 才调得通；只转发了 <code>/config</code> 的，这个地址调不了接口。</span>' : '')
     + '</dd>'
-    + '<dt>SSH 隧道</dt><dd>不改任何设置的办法：在来访的机器上运行 ' + code(routes.tunnel.command)
-    + '，再连 ' + code(routes.tunnel.url) + '。在 NovaBot 看来它就是本机来访。</dd></dl>';
+    + '<dt>SSH 隧道</dt><dd>' + (local.level ? '' : '不改任何设置的办法：') + '在来访的机器上运行 '
+    + code(routes.tunnel.command) + '，再连 ' + code(routes.tunnel.url) + '。'
+    + (local.level ? '<p class="at-lan ' + local.level + '">' + esc(local.tunnel) + '</p>' : esc(local.tunnel)) + '</dd></dl>';
 }
 
 /**
  * 打开或关上一组。打开要先问一句；关上不问：收紧不会让谁多拿到什么
  */
-async function toggleGroup(state, group, input, button) {
-  const open = input ? input.checked : false;
+async function toggleGroup(state, group, input) {
+  const open = input.checked;
   const result = $('#at-remote-msg');
   if (open && !await ask({title: '让「' + group.name + '」接受任何地址的访问？', body: state.consequence,
     danger: true, confirmText: '打开'})) {
@@ -134,8 +133,7 @@ async function toggleGroup(state, group, input, button) {
   }
   if (toggling.has(group.segment)) return;
   toggling.add(group.segment);
-  if (input) input.disabled = true;
-  if (button) button.disabled = true;
+  input.disabled = true;
   try {
     const data = await api('/api-tokens/remote-access', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
@@ -143,19 +141,18 @@ async function toggleGroup(state, group, input, button) {
     });
     toggling.delete(group.segment);
     if (!data.success) {
-      if (input) input.checked = !open;
+      input.checked = !open;
       showLinkResult(result, data.message || '保存失败', 'err');
       return;
     }
     renderRemote(data);
     showLinkResult(result, data.message || '已保存', 'ok');
   } catch (e) {
-    if (input) input.checked = !open;
+    input.checked = !open;
     showLinkResult(result, '保存失败：' + e.message, 'err');
   } finally {
     toggling.delete(group.segment);
-    if (input) input.disabled = false;
-    if (button) button.disabled = false;
+    input.disabled = false;
   }
 }
 

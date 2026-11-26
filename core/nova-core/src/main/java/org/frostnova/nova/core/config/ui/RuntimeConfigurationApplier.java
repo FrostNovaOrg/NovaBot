@@ -406,9 +406,6 @@ public class RuntimeConfigurationApplier {
         return entries;
     }
 
-    /** 接口组名的写法，与插件登记段名的规矩同一条 */
-    private static final java.util.regex.Pattern API_GROUP = java.util.regex.Pattern.compile("[a-z][a-z0-9-]{0,31}");
-
     /**
      * 对任何地址开放的接口组：每行一个组名，空行跳过，重复的只留一个；可以留空（一组也不开放）
      * <p>
@@ -417,12 +414,20 @@ public class RuntimeConfigurationApplier {
      */
     private static List<String> apiGroups(String value) {
         List<String> groups = new ArrayList<>();
-        for (String entry : lines(value)) {
-            if (!API_GROUP.matcher(entry).matches()) {
-                throw new IllegalArgumentException("「" + entry + "」不是接口组名（小写字母开头，只含小写字母、数字与连字符，如 outbox）");
+        int line = 0;
+        for (String entry : value.split("\n", -1)) {
+            line++;
+            if (entry.isBlank()) {
+                continue;
             }
-            if (!groups.contains(entry)) {
-                groups.add(entry);
+            // 与运行时判开没开同一套规整（NovaApiOpenGroups#normalize）。拒语只说第几行、不复述原文：
+            // 这句话会进回包，读不懂时也会进日志
+            String group = org.frostnova.nova.core.api.NovaApiOpenGroups.normalize(entry);
+            if (group == null) {
+                throw new IllegalArgumentException("第 " + line + " 行不是接口组名（小写字母开头，只含小写字母、数字与连字符，如 outbox）");
+            }
+            if (!groups.contains(group)) {
+                groups.add(group);
             }
         }
         return List.copyOf(groups);

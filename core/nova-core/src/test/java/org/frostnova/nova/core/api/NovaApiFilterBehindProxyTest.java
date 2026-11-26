@@ -156,6 +156,44 @@ class NovaApiFilterBehindProxyTest {
         }
     }
 
+    // 抓的故障：有人用写得古怪的转发头（末尾多个逗号、越界端口、引号里藏分隔符），被当成了名单里的地址或本机。
+    @Test
+    void oddlyWrittenForwardingHeadersNeverFallBackToAnotherHop() throws Exception {
+        String token = issue();
+        properties.getConfigUi().setAllowIps(List.of("127.0.0.1/32", "::1/128", "203.0.113.0/24"));
+        List<String[]> odd = List.of(
+                new String[]{"X-Forwarded-For", "203.0.113.9,"},
+                new String[]{"X-Forwarded-For", "203.0.113.9, "},
+                new String[]{"X-Forwarded-For", "127.0.0.1,"},
+                new String[]{"X-Forwarded-For", "203.0.113.9,,203.0.113.9"},
+                new String[]{"X-Forwarded-For", "garbage, 203.0.113.9"},
+                new String[]{"X-Forwarded-For", "203.0.113.9:70000"},
+                new String[]{"X-Forwarded-For", "203.0.113.9:0"},
+                new String[]{"X-Forwarded-For", "203.0.113.9:080"},
+                new String[]{"X-Forwarded-For", "[2001:db8::5]:99999"},
+                new String[]{"X-Real-IP", "203.0.113.9:65536"},
+                new String[]{"Forwarded", "for=198.51.100.200;proto=\"a, for=203.0.113.9;x=\""},
+                new String[]{"Forwarded", "for=\"203.0.113.9;x\""},
+                new String[]{"Forwarded", "for=\"203.0.113.9,\""},
+                new String[]{"Forwarded", "for=203.0.113.9,"},
+                new String[]{"Forwarded", "for=203.0.113.9:8080"},
+                new String[]{"Forwarded", "for=\"203.0.113.9:70000\""},
+                new String[]{"Forwarded", "for=203.0.113.9;for=203.0.113.9"},
+                new String[]{"Forwarded", "proto=https, for=203.0.113.9"},
+                new String[]{"Forwarded", "for=\"203.0.113.9"});
+        for (String[] header : odd) {
+            MockHttpServletResponse response = perform(me(token).with(peer("127.0.0.1")).header(header[0], header[1]));
+            assertEquals(403, response.getStatus(), header[0] + ": " + header[1] + " → " + response.getContentAsString());
+            assertError(response, "source_not_allowed");
+        }
+        // 对照：同一地址写规矩了照常认得出
+        for (String[] header : List.of(new String[]{"X-Forwarded-For", "203.0.113.9:65535"},
+                new String[]{"Forwarded", "for=\"203.0.113.9:8080\""}, new String[]{"Forwarded", "for=203.0.113.9"})) {
+            assertEquals(200, perform(me(token).with(peer("127.0.0.1")).header(header[0], header[1])).getStatus(),
+                    header[0] + ": " + header[1]);
+        }
+    }
+
     // 抓的故障：有人从外面直连、自己带一个声称是 127.0.0.1 的转发头，冒充本机。
     @Test
     void forwardingHeadersFromANonLoopbackPeerAreIgnored() throws Exception {

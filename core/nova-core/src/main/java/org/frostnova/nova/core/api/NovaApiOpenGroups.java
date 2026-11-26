@@ -46,11 +46,31 @@ public final class NovaApiOpenGroups {
         }
         Set<String> registered = registry.segments();
         for (String name : listed) {
-            if (name != null && registered.contains(name.strip())) {
-                result.add(name.strip());
+            String group = normalize(name);
+            if (group != null && registered.contains(group)) {
+                result.add(group);
             }
         }
         return result;
+    }
+
+    /** 组名的写法，与插件登记段名的规矩同一条 */
+    private static final java.util.regex.Pattern GROUP = java.util.regex.Pattern.compile("[a-z][a-z0-9-]{0,31}");
+
+    /**
+     * 清单里的一条规整成组名
+     * <p>
+     * 🔴 「这一组开没开」与「在清单里加上、去掉这一组」用的都是这一个方法。两边各规整各的，
+     * 就会出现运行中算开着、页面上却关不掉的那一种（例如手写时带了首尾空白）。
+     * @param entry 清单里的一条，可为 null
+     * @return 去掉首尾空白之后写法合规的组名；不合规时为 null
+     */
+    public static String normalize(String entry) {
+        if (entry == null) {
+            return null;
+        }
+        String group = entry.strip();
+        return GROUP.matcher(group).matches() ? group : null;
     }
 
     /**

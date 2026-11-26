@@ -8,7 +8,7 @@
  * 由 ApiTokensRemoteModelTest 拉起，退码 0 ＝ 全绿；非 0 ＝ 有格子红了，红的那几条逐条印出来。
  */
 
-import {lanStatus, remoteRoutes} from '../../../main/resources/config-ui/api-tokens-model.js';
+import {lanStatus, localStatus, remoteRoutes} from '../../../main/resources/config-ui/api-tokens-model.js';
 
 const failures = [];
 let checks = 0;
@@ -86,6 +86,40 @@ ok(listed.text.includes('全部接口'), '名单里的机器调得了全部接�
 
 const pending = remoteRoutes(state({listen: {address: '127.0.0.1', scope: 'loopback', restartPending: true}}), '', plainPage);
 eq(pending.lan.restartPending, true, '监听地址改了还没重启：带出这一位，页面另写一句');
+
+// ---------- 三、只听某一个具体地址 ----------
+// 127.0.0.1 上没人听：本机与隧道都得连那个地址，而程序看到的来访者是那个地址、不是回环
+const onlyLan = {address: '192.168.1.20', scope: 'specific', restartPending: false, allowListed: false};
+const pinned = remoteRoutes(state({listen: onlyLan, lan: ['192.168.1.20']}), '/novabot', plainPage);
+eq(pinned.local.url, 'http://192.168.1.20:7827/novabot/nova/api/v1/', '本机：连监听的那个地址，不是 127.0.0.1');
+ok(pinned.tunnel.command.includes('-L 7827:192.168.1.20:7827'), '隧道的远端目标也是那个地址');
+eq(pinned.tunnel.url, 'http://127.0.0.1:7827/novabot/nova/api/v1/', '隧道在来访机器上仍连自己的回环');
+eq(pinned.lan.urls, ['http://192.168.1.20:7827/novabot/nova/api/v1/'], '内网那一条照旧');
+const pinnedText = localStatus(pinned.local);
+ok(!pinnedText.local.includes('不用改任何设置') && !pinnedText.tunnel.includes('不用改任何设置'),
+  '不再说「不用改任何设置」');
+ok(pinnedText.local.includes('127.0.0.1 连不上'), '写明 127.0.0.1 连不上');
+ok(pinnedText.local.includes('不是本机回环') && pinnedText.local.includes('403'), '如实说本机来访不是回环、不在名单里会被拒');
+eq(pinnedText.level, 'warn', '不在名单里：提示');
+
+const pinnedListed = localStatus(remoteRoutes(state({listen: Object.assign({}, onlyLan, {allowListed: true})}), '',
+  plainPage).local);
+eq(pinnedListed.level, 'ok', '那个地址在名单里：通');
+ok(pinnedListed.local.includes('在「允许访问的来源 IP」里'), '写明它在名单里');
+
+const pinnedOpen = localStatus(remoteRoutes(state({listen: onlyLan,
+  groups: [{segment: 'outbox', name: '外发箱', open: true}]}), '', plainPage).local);
+ok(pinnedOpen.local.includes('已打开的那几组'), '不在名单、但开了组：只说开了的那几组调得了');
+
+const pinnedV6 = remoteRoutes(state({listen: {address: 'fd00::5', scope: 'specific', allowListed: false}}), '', plainPage);
+eq(pinnedV6.local.url, 'http://[fd00::5]:7827/nova/api/v1/', 'IPv6 监听地址加方括号');
+ok(pinnedV6.tunnel.command.includes('-L 7827:[fd00::5]:7827'), '隧道目标的 IPv6 也加方括号');
+
+const everywhere = localStatus(remoteRoutes(state({listen: {address: '0.0.0.0', scope: 'all'}}), '', plainPage).local);
+ok(everywhere.local.includes('不用改任何设置'), '监听全部网卡时照旧：本机不用改设置');
+eq(remoteRoutes(state({listen: {address: '0.0.0.0', scope: 'all'}}), '', plainPage).local.url,
+  'http://127.0.0.1:7827/nova/api/v1/', '监听全部网卡时本机照旧连 127.0.0.1');
+ok(localStatus(fresh.local).tunnel.includes('本机来访'), '只听回环时隧道照旧算本机来访');
 
 // ---------- 报数 ----------
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

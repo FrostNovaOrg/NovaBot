@@ -198,9 +198,60 @@ class ConfigUiApiRemoteAccessControllerTest extends OidcTestSupport {
 
         properties.getConfigUi().setApiAnySourceGroups(List.of("gone", "parcel"));
         JSONObject state = body(console(get("/config/api/api-tokens/remote-access"), admin));
-        assertEquals(List.of("gone"), state.getList("stale", String.class), "清单里有、却没登记的名字单列出来");
+        assertEquals(1, state.getIntValue("ignored"), "清单里有、却没登记的名字只报条数");
         assertEquals(200, console(toggle("gone", false), admin).getStatus());
         assertEquals(List.of("parcel"), properties.getConfigUi().getApiAnySourceGroups());
+    }
+
+    // 抓的故障：配置文件里手写的组名带了首尾空白，运行中算作开放；页面上把开关关了，实际还对外开着。
+    @Test
+    void paddedGroupNameClosesFromThePage() throws Exception {
+        ConfigUiSession admin = auth.issueForPassword("127.0.0.1");
+        String token = tokens.issue(ConfigUiAccount.LOCAL_ID, "取件机", List.of("parcel:read"), null).plaintext();
+        properties.getConfigUi().setApiAnySourceGroups(List.of(" parcel "));
+        assertEquals(200, outsider(token).getStatus(), "夹具起点：运行中算作开放");
+        assertTrue(body(console(get("/config/api/api-tokens/remote-access"), admin))
+                .getJSONArray("groups").getJSONObject(0).getBooleanValue("open"), "页面上显示的就是开着");
+
+        MockHttpServletResponse closed = console(toggle("parcel", false), admin);
+        assertEquals(200, closed.getStatus(), closed.getContentAsString());
+        assertFalse(body(closed).getJSONArray("groups").getJSONObject(0).getBooleanValue("open"));
+        assertEquals(403, outsider(token).getStatus(), "关了就真的关了");
+        assertTrue(properties.getConfigUi().getApiAnySourceGroups().isEmpty());
+    }
+
+    // 抓的故障：清单里有一条写法不合规的旧值时点了打开，页面报错，重启后却发现已经对外开了；那条旧值还进了回包或日志。
+    @Test
+    void malformedOldValueIsDroppedAndTheSaveIsWhole() throws Exception {
+        ConfigUiSession admin = auth.issueForPassword("127.0.0.1");
+        String token = tokens.issue(ConfigUiAccount.LOCAL_ID, "取件机", List.of("parcel:read"), null).plaintext();
+        String odd = "Odd Value 7Q";
+        properties.getConfigUi().setApiAnySourceGroups(List.of(odd));
+        ch.qos.logback.classic.Logger root = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger("org.frostnova.nova.core");
+        var logs = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        logs.start();
+        var level = root.getLevel();
+        root.setLevel(ch.qos.logback.classic.Level.DEBUG);
+        root.addAppender(logs);
+        try {
+            MockHttpServletResponse state = console(get("/config/api/api-tokens/remote-access"), admin);
+            assertFalse(state.getContentAsString().contains("Odd Value"), "不合规的旧值不进回包");
+            assertEquals(1, body(state).getIntValue("ignored"));
+
+            MockHttpServletResponse opened = console(toggle("parcel", true), admin);
+            assertEquals(200, opened.getStatus(), opened.getContentAsString());
+            assertFalse(opened.getContentAsString().contains("Odd Value"));
+            assertTrue(body(opened).getString("message").contains("1 条"), body(opened).getString("message"));
+            assertEquals(List.of("parcel"), properties.getConfigUi().getApiAnySourceGroups(), "运行中与落盘一致");
+            String file = Files.readString(directory.resolve("application.yml"));
+            assertTrue(file.contains("parcel") && !file.contains("Odd Value"), file);
+            assertEquals(200, outsider(token).getStatus(), "当场生效");
+            assertTrue(logs.list.stream().noneMatch(event -> event.getFormattedMessage().contains("Odd Value")),
+                    "不合规的旧值不进日志");
+        } finally {
+            root.detachAppender(logs);
+            root.setLevel(level);
+        }
     }
 
     // 抓的故障：页面写的连法与实际不符——监听地址只限本机时说内网连得上，或者名单只有本机时说来访机器在名单里。
@@ -224,6 +275,10 @@ class ConfigUiApiRemoteAccessControllerTest extends OidcTestSupport {
         assertEquals(List.of("10.1.2.3"), state.getList("lan", String.class), "只听一个地址时只列它");
         assertTrue(state.getBooleanValue("allowListBeyondLocal"));
         assertFalse(state.toJSONString().contains("10.9.8.0"), "名单原文不进回包");
+        assertFalse(state.getJSONObject("listen").getBooleanValue("allowListed"), "只听的那个地址不在名单里");
+        properties.getConfigUi().setAllowIps(List.of("127.0.0.1/32", "10.1.2.0/24"));
+        assertTrue(body(console(get("/config/api/api-tokens/remote-access"), admin))
+                .getJSONObject("listen").getBooleanValue("allowListed"), "只听的那个地址在名单里");
 
         assertEquals("all", ConfigUiApiRemoteAccessController.listenScope("0.0.0.0"));
         assertEquals("all", ConfigUiApiRemoteAccessController.listenScope("::"));
@@ -248,7 +303,7 @@ class ConfigUiApiRemoteAccessControllerTest extends OidcTestSupport {
 
         List<String> problems = applier.validateValues(Map.of(KEY, "outbox\nOut Box"));
         assertEquals(1, problems.size());
-        assertTrue(problems.get(0).contains("Out Box"), problems.toString());
+        assertTrue(problems.get(0).contains("第 2 行") && !problems.get(0).contains("Out Box"), problems.toString());
         assertTrue(applier.validateValues(Map.of(KEY, "not-installed-yet")).isEmpty(), "写法对、只是还没装的照收");
         assertTrue(applier.supportedKeys().contains(KEY), "保存即生效");
     }

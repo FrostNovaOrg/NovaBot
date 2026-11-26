@@ -51,9 +51,6 @@ import java.util.regex.Pattern;
 @RequestMapping(ConfigUiController.BASE_PATH + "/api/api-tokens/remote-access")
 @ConditionalOnProperty(name = "novabot.core.config-ui.enabled", havingValue = "true", matchIfMissing = true)
 public class ConfigUiApiRemoteAccessController {
-    /** 组名的写法，与插件登记段名的规矩同一条 */
-    private static final Pattern GROUP = Pattern.compile("[a-z][a-z0-9-]{0,31}");
-
     /** 内网地址最多列几个：一台机器挂着一串虚拟网卡时，页面不该被它们撑满 */
     private static final int MAX_LAN = 4;
 
@@ -100,13 +97,24 @@ public class ConfigUiApiRemoteAccessController {
     /**
      * 打开或关上一组
      * <p>
-     * 请求体 {@code {"segment":"outbox","open":true}}。打开只收此刻登记了的组；关上什么名字都收，
-     * 好让插件卸掉之后留在清单里的旧名字也去得掉。
+     * 请求体 {@code {"segment":"outbox","open":true}}。打开只收此刻登记了的组。
+     *
+     * <h2>清单怎么存</h2>
+     * 先把整份清单处理完，再落盘，要么整体成功（配置文件与运行中一致），要么什么都不改：
+     * <ol>
+     *   <li>清单里的每一条按 {@link NovaApiOpenGroups#normalize} 规整（与运行时判开没开同一套）；</li>
+     *   <li>写法不合规的、此刻没登记的（插件卸掉了、写错了）直接丢掉，只记条数；重复的只留一条；</li>
+     *   <li>在这份干净的清单上加上或去掉这一组；</li>
+     *   <li>与原来一字不差就不写；否则先按设置保存那一路的规矩核一遍，核不过就什么都不写，
+     *       核过了再写配置文件、再落到运行中。</li>
+     * </ol>
+     * 不合规的原值一个字也不进回包、不进日志，只说清掉了几条。
      */
     @PostMapping
     public ResponseEntity<String> toggle(@RequestBody(required = false) JSONObject body) {
         JSONObject payload = body == null ? new JSONObject() : body;
-        if (!(payload.get("segment") instanceof String segment) || !GROUP.matcher(segment).matches()) {
+        String segment = payload.get("segment") instanceof String text ? NovaApiOpenGroups.normalize(text) : null;
+        if (segment == null || !segment.equals(payload.get("segment"))) {
             return refuse(HttpStatus.BAD_REQUEST, "没有这组接口，请刷新页面后重试");
         }
         if (!(payload.get("open") instanceof Boolean open)) {
@@ -118,32 +126,50 @@ public class ConfigUiApiRemoteAccessController {
 
         String message;
         synchronized (LOCK) {
-            List<String> current = configUi.getApiAnySourceGroups();
-            List<String> next = new ArrayList<>(current == null ? List.of() : current);
-            boolean changed = open ? !next.contains(segment) && next.add(segment) : next.removeIf(segment::equals);
-            if (!changed) {
+            List<String> current = configUi.getApiAnySourceGroups() == null ? List.of() : configUi.getApiAnySourceGroups();
+            Cleaned cleaned = clean(current);
+            List<String> next = new ArrayList<>(cleaned.groups());
+            boolean toggled = open ? !next.contains(segment) && next.add(segment) : next.remove(segment);
+            String dropped = cleaned.dropped() == 0 ? ""
+                    : "；清单里另有 " + cleaned.dropped() + " 条没登记或写法不合规的组名，已一并清掉";
+            if (next.equals(current)) {
                 message = open ? "这组接口本来就对任何地址开放" : "这组接口本来就没有对名单以外的地址开放";
             } else {
                 Map<String, String> change = new HashMap<>();
                 change.put(RuntimeConfigurationApplier.API_ANY_SOURCE_GROUPS, next.isEmpty() ? null : String.join("\n", next));
+                Map<String, String> toCheck = new HashMap<>(change);
+                toCheck.values().removeIf(java.util.Objects::isNull);
+                if (!applier.validateValues(toCheck).isEmpty()) {
+                    // 走不到：干净的清单只含合规的组名。走到了也什么都不写
+                    return refuse(HttpStatus.INTERNAL_SERVER_ERROR, "清单没能整理成能保存的样子，什么都没有改");
+                }
                 try {
                     fileService.write(change);
                 } catch (IOException e) {
-                    log.error("保存「对任何地址开放的接口组」失败", e);
-                    return refuse(HttpStatus.SERVICE_UNAVAILABLE, "保存失败: " + fileService.describeSaveFailure(e));
+                    log.error("保存「对任何地址开放的接口组」失败: {}", e.getClass().getName());
+                    return refuse(HttpStatus.SERVICE_UNAVAILABLE, "保存失败，什么都没有改: " + fileService.describeSaveFailure(e));
                 }
                 // 文件里本来就是这个值（有人手改过、还没重启）时写口不算改动，内存照样要换成它，开关才真的生效
-                List<String> restart = applier.applyAndTrack(change);
-                if (!restart.isEmpty()) {
-                    return refuse(HttpStatus.INTERNAL_SERVER_ERROR, "已写进配置文件，但没能当场生效，重启后生效");
+                applier.applyAndTrack(change);
+                if (!next.equals(configUi.getApiAnySourceGroups())) {
+                    // 配置文件已经是新的：运行中也照它，不留「磁盘改了、运行没改」
+                    configUi.setApiAnySourceGroups(List.copyOf(next));
+                    log.warn("配置项 {} 没能经保存那一路落到运行中, 已直接按配置文件里的新值生效",
+                            RuntimeConfigurationApplier.API_ANY_SOURCE_GROUPS);
                 }
-                if (open) {
+                if (cleaned.dropped() > 0) {
+                    log.info("{} 保存程序接口开放清单时清掉了 {} 条没登记或写法不合规的组名", ConfigUiAccess.actor(),
+                            cleaned.dropped());
+                }
+                if (!toggled) {
+                    message = (open ? "这组接口本来就对任何地址开放" : "这组接口本来就没有对名单以外的地址开放") + dropped;
+                } else if (open) {
                     log.warn("{} 把程序接口组 {} 设为对任何来源地址开放（仍须有效的访问令牌）", ConfigUiAccess.actor(), segment);
+                    message = "已打开：名单以外的地址从下一个请求起可以凭有效令牌调这组接口" + dropped;
                 } else {
                     log.info("{} 关上了程序接口组 {} 对名单以外地址的开放", ConfigUiAccess.actor(), segment);
+                    message = "已关上：名单以外的地址从下一个请求起调这组接口会被拒绝（403）" + dropped;
                 }
-                message = open ? "已打开：名单以外的地址从下一个请求起可以凭有效令牌调这组接口"
-                        : "已关上：名单以外的地址从下一个请求起调这组接口会被拒绝（403）";
             }
         }
 
@@ -154,7 +180,31 @@ public class ConfigUiApiRemoteAccessController {
     }
 
     /**
+     * 规整之后的清单
+     * @param groups  合规、登记了、不重复的组名，按原先后
+     * @param dropped 丢掉了几条（不合规的、没登记的；重复的不算）
+     */
+    private record Cleaned(List<String> groups, int dropped) {
+    }
+
+    private Cleaned clean(List<String> entries) {
+        List<String> groups = new ArrayList<>();
+        int dropped = 0;
+        for (String entry : entries) {
+            String group = NovaApiOpenGroups.normalize(entry);
+            if (group == null || !registry.segments().contains(group)) {
+                dropped++;
+            } else if (!groups.contains(group)) {
+                groups.add(group);
+            }
+        }
+        return new Cleaned(groups, dropped);
+    }
+
+    /**
      * 页面那一块要的全部值，都是此刻实际在用的
+     * <p>
+     * 清单里没登记的、写法不合规的那几条只报条数（{@code ignored}），原文不进回包。
      */
     private JSONObject view() {
         List<String> configured = configUi.getApiAnySourceGroups() == null ? List.of() : configUi.getApiAnySourceGroups();
@@ -169,8 +219,6 @@ public class ConfigUiApiRemoteAccessController {
             item.put("open", open.contains(group.segment()));
             groups.add(item);
         }
-        JSONArray stale = new JSONArray();
-        configured.stream().filter(name -> !registry.segments().contains(name)).distinct().forEach(stale::add);
 
         String address = environment.getProperty("server.address", "");
         String scope = listenScope(address);
@@ -178,10 +226,12 @@ public class ConfigUiApiRemoteAccessController {
         listen.put("address", address);
         listen.put("scope", scope);
         listen.put("restartPending", applier.getPendingRestart().contains("server.address"));
+        // 只听某一个地址时，本机来访在程序看来就是这个地址、不是回环：它在不在来源名单里决定本机与隧道连不连得通
+        listen.put("allowListed", "specific".equals(scope) && new IpMatcher(configUi.getAllowIps()).matches(address));
 
         JSONObject result = new JSONObject();
         result.put("groups", groups);
-        result.put("stale", stale);
+        result.put("ignored", clean(configured).dropped());
         result.put("port", port());
         result.put("apiPath", NovaApiFilter.V1 + "/");
         result.put("listen", listen);

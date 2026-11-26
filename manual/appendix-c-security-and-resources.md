@@ -209,6 +209,7 @@ server {
     # 程序接口：只转发 /nova/api/v1/，带上真实来访地址，NovaBot 才认得出是谁在调。
     # 转发了不等于放通：名单以外的来访者调不调得了，看控制台「访问令牌」页的开关。
     # 客户端自己带来的 Forwarded 头去掉，免得与下面两个头说的不是同一个地址、被当成未知来访者。
+    # 两个头都只写 $remote_addr 这一个地址：NovaBot 取 X-Forwarded-For 最右一段，而头里有一处不合规就整个不认。
     # /nova/events、/nova/readonly-token 不在这个前缀下，不要另外转发，交给最后那条 404。
     location /nova/api/v1/ {
         proxy_pass http://127.0.0.1:7827;

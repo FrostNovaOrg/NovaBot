@@ -121,8 +121,12 @@ export function remoteRoutes(state, prefix, page) {
   const p = page || {};
   const current = p.protocol === 'https:' && p.hostname && !loopbackHost(p.hostname)
     ? 'https://' + p.host + path : null;
+  // 只听某一个地址时 127.0.0.1 上没人听：本机与隧道都得连那个地址，而那样连进来的在程序看来也不是回环
+  const specific = listen.scope === 'specific' && !!listen.address;
+  const localHost = specific ? urlHost(listen.address) : '127.0.0.1';
   return {
-    local: {url: 'http://127.0.0.1:' + port + path},
+    local: {url: 'http://' + localHost + ':' + port + path, specific, address: specific ? listen.address : '',
+      listed: !!listen.allowListed, anyOpen},
     lan: {
       urls: (hosts.length ? hosts : ['<这台机器的内网地址>']).map(host => 'http://' + urlHost(host) + ':' + port + path),
       known: hosts.length > 0,
@@ -135,9 +139,35 @@ export function remoteRoutes(state, prefix, page) {
     },
     internet: {url: 'https://<你的域名>' + path, current},
     tunnel: {
-      command: 'ssh -N -L ' + port + ':127.0.0.1:' + port + ' <用户名>@<这台机器的地址>',
+      command: 'ssh -N -L ' + port + ':' + localHost + ':' + port + ' <用户名>@<这台机器的地址>',
       url: 'http://127.0.0.1:' + port + path,
     },
+  };
+}
+
+/**
+ * 本机与 SSH 隧道那两条的说明
+ *
+ * 监听全部网卡或只听回环时：本机连 127.0.0.1，在程序看来就是本机，不用改任何设置。
+ * 只听某一个地址时：127.0.0.1 连不上，本机与隧道都连那个地址，而程序看到的来访者是那个地址、不是回环，
+ * 通不通要看它在不在「允许访问的来源 IP」里、上面开没开组。
+ * @param local remoteRoutes(...).local
+ * @return {{level: 'ok'|'warn'|'', local: string, tunnel: string}}
+ */
+export function localStatus(local) {
+  if (!local.specific) {
+    return {level: '', local: '不用改任何设置。', tunnel: '在 NovaBot 看来它就是本机来访，不用改任何设置。'};
+  }
+  const who = '在程序看来来访者是 ' + local.address + '，不是本机回环：';
+  const verdict = local.listed
+    ? '它在「允许访问的来源 IP」里，带有效的访问令牌即可。'
+    : local.anyOpen
+      ? '它不在「允许访问的来源 IP」里，上面已打开的那几组带有效令牌可以调，其余的会收到 403；要调全部，把它加进名单。'
+      : '它不在「允许访问的来源 IP」里，现在会收到 403：把它加进名单，或者在上面打开要调的那组接口。';
+  return {
+    level: local.listed ? 'ok' : 'warn',
+    local: '监听地址是 ' + local.address + '，只在这个地址上听，127.0.0.1 连不上，同一台机器上也要用这个地址。' + who + verdict,
+    tunnel: '隧道另一头连的是 ' + local.address + '（127.0.0.1 上没人听），' + who + verdict,
   };
 }
 

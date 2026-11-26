@@ -28,11 +28,17 @@ import java.util.regex.Pattern;
  *     <ul>
  *       <li>{@code X-Forwarded-For} 取最右一段（与推送接口同一个取法）：这个头是追加式的，
  *           最左边那几段由客户端说了算，最右一段是本机那层代理写上的；</li>
- *       <li>{@code X-Real-IP} 只能有一个值；</li>
+ *       <li>{@code X-Real-IP} 只能有一行、一个值；</li>
  *       <li>{@code Forwarded} 取最后一项里的 {@code for=}。</li>
  *     </ul>
  *     带了几种就几种都要解析得出、而且<b>指的是同一个地址</b>。有一种解析不出合法地址、
  *     或者几种说的不是同一个，都当作<b>未知来访者</b>：不是本机，也不在任何名单里。
+ *     <p>
+ *     🔴 <b>转发头里只要有一处写得不合规，整个就判未知来访者，绝不跳过那一处、退而采用别的一段。</b>
+ *     {@code X-Forwarded-For} 里每一段（不只最右那一段）都得是合法地址，空段（末尾多了逗号、中间连着两个逗号）也算不合规；
+ *     {@code Forwarded} 按它自己的写法规矩整段读一遍（分项、分参数、引号），读不干净的、某一项没有 {@code for=}
+ *     或同一参数写了两次的、某个 {@code for=} 不是合法地址的，都算不合规；端口只认 1–65535、不带前导零。
+ *     宽松地「跳过读不懂的那一处」正是冒充的入口：一个多出来的逗号，就能让前一段——由客户端写的那一段——顶上来。
  *     这一条比推送接口「先看 X-Forwarded-For、没有再看 X-Real-IP」更严：代理只写了其中一种、
  *     另一种由客户端原样带过来时，按先后取的话客户端自己写的那一种就可能被采信。</li>
  * </ol>
@@ -75,7 +81,8 @@ public record NovaApiVisitor(String address, Kind kind) {
     /** 只含十六进制数字、冒号与点的才拿去按 IPv6 字面量解析：不让主机名走到 DNS 那一步 */
     private static final Pattern IPV6 = Pattern.compile("[0-9A-Fa-f:.]+");
 
-    private static final Pattern PORT = Pattern.compile(":\\d{1,5}");
+    /** 端口：1–65535，不带前导零（数值另核） */
+    private static final Pattern PORT = Pattern.compile(":[1-9]\\d{0,4}");
 
     /** 一段地址最长多少个字：IPv6 带方括号与端口也到不了这么长，更长的不必解析 */
     private static final int MAX_LITERAL = 64;
@@ -98,13 +105,13 @@ public record NovaApiVisitor(String address, Kind kind) {
         }
         List<InetAddress> claims = new ArrayList<>();
         if (!forwardedFor.isEmpty()) {
-            claims.add(literal(rightmost(String.join(",", forwardedFor))));
+            claims.add(last(forwardedForHops(String.join(",", forwardedFor))));
         }
         if (!realIp.isEmpty()) {
             claims.add(realIp.size() == 1 && realIp.get(0).indexOf(',') < 0 ? literal(realIp.get(0)) : null);
         }
         if (!forwarded.isEmpty()) {
-            claims.add(literal(forwardedFor(String.join(",", forwarded))));
+            claims.add(last(forwardedFors(String.join(",", forwarded))));
         }
         InetAddress first = claims.get(0);
         for (InetAddress claim : claims) {
@@ -163,58 +170,129 @@ public record NovaApiVisitor(String address, Kind kind) {
         return headers == null ? List.of() : Collections.list(headers);
     }
 
-    /**
-     * {@code X-Forwarded-For} 最右侧那一段
-     * @param joined 各行按逗号接起来的原文
-     * @return 最右侧非空的一段；整个头只有逗号与空白时为 null
-     */
-    static String rightmost(String joined) {
-        String[] hops = joined.split(",", -1);
-        for (int i = hops.length - 1; i >= 0; i--) {
-            String hop = hops[i].strip();
-            if (!hop.isEmpty()) {
-                return hop;
-            }
-        }
-        return null;
+    private static InetAddress last(List<InetAddress> hops) {
+        return hops == null || hops.isEmpty() ? null : hops.get(hops.size() - 1);
     }
 
     /**
-     * {@code Forwarded} 最后一项里的 {@code for=}
+     * {@code X-Forwarded-For} 的每一段，从左到右
      * <p>
-     * 形如 {@code for=192.0.2.60;proto=https, for="[2001:db8::17]:4711"}。值可以带双引号；
-     * 引号里出现反斜杠（转义）的不认。最后一项没有 {@code for=} 也不认。
+     * 每一段都得是合法地址：有一段是空的（末尾多了逗号、中间连着两个逗号、整个头是空的）或读不出地址，
+     * 整个头就不算数。不跳过读不懂的那一段去取前一段——那一段多半就是客户端自己写的。
      * @param joined 各行按逗号接起来的原文
-     * @return {@code for=} 的值，去掉了引号；认不出时为 null
+     * @return 各段的地址；有一段不合规时为 null
      */
-    static String forwardedFor(String joined) {
-        String last = rightmost(joined);
-        if (last == null) {
-            return null;
-        }
-        String found = null;
-        for (String pair : last.split(";", -1)) {
-            int equals = pair.indexOf('=');
-            if (equals < 0) {
-                continue;
-            }
-            if (pair.substring(0, equals).strip().toLowerCase(Locale.ROOT).equals("for")) {
-                if (found != null) {
-                    return null;
-                }
-                found = pair.substring(equals + 1).strip();
-            }
-        }
-        if (found == null) {
-            return null;
-        }
-        if (found.length() >= 2 && found.startsWith("\"") && found.endsWith("\"")) {
-            found = found.substring(1, found.length() - 1);
-            if (found.indexOf('\\') >= 0 || found.indexOf('"') >= 0) {
+    static List<InetAddress> forwardedForHops(String joined) {
+        List<InetAddress> hops = new ArrayList<>();
+        for (String hop : joined.split(",", -1)) {
+            InetAddress address = literal(hop);
+            if (address == null) {
                 return null;
             }
+            hops.add(address);
         }
-        return found;
+        return hops;
+    }
+
+    /** 参数名与不带引号的参数值只能由这些字符组成 */
+    private static boolean tchar(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                || "!#$%&'*+-.^_`|~".indexOf(c) >= 0;
+    }
+
+    /** 项与项之间可以有的空白 */
+    private static boolean ows(char c) {
+        return c == ' ' || c == '\t';
+    }
+
+    /**
+     * {@code Forwarded} 每一项里 {@code for=} 的地址，从左到右
+     * <p>
+     * 按这个头自己的写法整段读一遍：项与项之间是逗号（两侧可以有空白），一项里的参数之间是分号（不带空白），
+     * 参数是「名=值」，值要么全由允许的字符组成，要么整个包在一对双引号里。
+     * 下面这些都算不合规、整个头不算数：
+     * <ul>
+     *   <li>读不干净：空项（末尾多了逗号、两个逗号连着）、参数名或值是空的、少了等号、引号没收口、
+     *       引号后面跟着别的字、多出来的空白；</li>
+     *   <li>引号里出现反斜杠、引号、逗号、分号、等号、空白或控制字符——这些在地址里不会出现，
+     *       出现了就是想让切分的人切错地方；</li>
+     *   <li>同一项里一个参数写了两次；某一项没有 {@code for=}；</li>
+     *   <li>任何一个 {@code for=} 读不出合法地址（{@code unknown}、{@code _hidden} 这类也算）。</li>
+     * </ul>
+     * 不带引号的值里不会有冒号与方括号，所以带端口的、IPv6 的地址必须带引号，否则读不出地址。
+     * @param joined 各行按逗号接起来的原文
+     * @return 各项的地址；有一处不合规时为 null
+     */
+    static List<InetAddress> forwardedFors(String joined) {
+        List<InetAddress> result = new ArrayList<>();
+        int n = joined.length();
+        int i = 0;
+        while (true) {
+            while (i < n && ows(joined.charAt(i))) {
+                i++;
+            }
+            java.util.Set<String> names = new java.util.HashSet<>();
+            String found = null;
+            while (true) {
+                int nameStart = i;
+                while (i < n && tchar(joined.charAt(i))) {
+                    i++;
+                }
+                if (i == nameStart || i >= n || joined.charAt(i) != '=') {
+                    return null;
+                }
+                String name = joined.substring(nameStart, i).toLowerCase(Locale.ROOT);
+                i++;
+                String value;
+                if (i < n && joined.charAt(i) == '"') {
+                    int close = i + 1;
+                    while (close < n && joined.charAt(close) != '"') {
+                        char c = joined.charAt(close);
+                        if (c <= ' ' || c >= 0x7f || "\\,;=".indexOf(c) >= 0) {
+                            return null;
+                        }
+                        close++;
+                    }
+                    if (close >= n) {
+                        return null;
+                    }
+                    value = joined.substring(i + 1, close);
+                    i = close + 1;
+                } else {
+                    int valueStart = i;
+                    while (i < n && tchar(joined.charAt(i))) {
+                        i++;
+                    }
+                    value = joined.substring(valueStart, i);
+                }
+                if (value.isEmpty() || !names.add(name)) {
+                    return null;
+                }
+                if (name.equals("for")) {
+                    found = value;
+                }
+                if (i < n && joined.charAt(i) == ';') {
+                    i++;
+                    continue;
+                }
+                break;
+            }
+            InetAddress address = found == null ? null : literal(found);
+            if (address == null) {
+                return null;
+            }
+            result.add(address);
+            while (i < n && ows(joined.charAt(i))) {
+                i++;
+            }
+            if (i == n) {
+                return result;
+            }
+            if (joined.charAt(i) != ',') {
+                return null;
+            }
+            i++;
+        }
     }
 
     /**
@@ -239,7 +317,7 @@ public record NovaApiVisitor(String address, Kind kind) {
                 return null;
             }
             String rest = value.substring(close + 1);
-            if (!rest.isEmpty() && !PORT.matcher(rest).matches()) {
+            if (!rest.isEmpty() && !port(rest)) {
                 return null;
             }
             String inner = value.substring(1, close);
@@ -251,9 +329,16 @@ public record NovaApiVisitor(String address, Kind kind) {
         }
         if (colon == value.lastIndexOf(':')) {
             // 只有一个冒号：只能是「IPv4:端口」，IPv6 至少两个冒号
-            return PORT.matcher(value.substring(colon)).matches() ? ipv4(value.substring(0, colon)) : null;
+            return port(value.substring(colon)) ? ipv4(value.substring(0, colon)) : null;
         }
         return ipv6(value);
+    }
+
+    /**
+     * 「:端口」写得对不对：1–65535，不带前导零
+     */
+    private static boolean port(String text) {
+        return PORT.matcher(text).matches() && Integer.parseInt(text.substring(1)) <= 65535;
     }
 
     private static InetAddress ipv4(String value) {
