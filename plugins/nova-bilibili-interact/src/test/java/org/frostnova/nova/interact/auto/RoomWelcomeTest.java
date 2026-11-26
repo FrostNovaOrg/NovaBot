@@ -48,20 +48,43 @@ class RoomWelcomeTest extends RoomInteractionFixture {
     }
 
     @Test
-    @DisplayName("设了提督起步却连舰长也欢迎，或漏掉只有进场特效的总督和等级可辨的打码观众")
+    @DisplayName("监听账号没登录时，一位舰长进房被欢迎了两遍，或名字被写成 UID")
+    void pairsMaskedEntriesWithEffectsInEitherOrder() {
+        var people = List.of(JSONObject.of("uid", "1"), JSONObject.of("uid", "2"));
+        configure(true, JSONObject.of("people", people, "listedTemplate", "{用户}回来啦"), "guardWelcome", "listedWelcome");
+        enter(new UserInfo(0L, "小*明"), RoomGuardLevel.CAPTAIN);
+        tick(0);
+        at(2);
+        events.publishEvent(new BilibiliGuardEntryEffectEvent(ROOM, 1, GuardType.Captain));
+        tick(2);
+        tick(6);
+        assertEquals(List.of("小*明回来啦"), sent);
+
+        events.publishEvent(new BilibiliGuardEntryEffectEvent(ROOM, 2, GuardType.Captain));
+        tick(7);
+        at(8);
+        enter(new UserInfo(0L, "小*红"), RoomGuardLevel.CAPTAIN);
+        tick(8);
+        events.publishEvent(new BilibiliGuardEntryEffectEvent(ROOM, 3, GuardType.Governor));
+        tick(12);
+        tick(16);
+        assertEquals(List.of("小*明回来啦", "小*红回来啦"), sent);
+    }
+
+    @Test
+    @DisplayName("设了提督起步却连舰长也欢迎，或漏掉由特效认出的总督和等级可辨的打码观众")
     void followsMinimumRankEvenIfOnlyOneEventIsAvailable() {
         configure(true, JSONObject.of("minimumLevel", "COMMANDER", "guardTemplate", "\u00a0\uFEFF"), "guardWelcome");
         enter(MING, RoomGuardLevel.CAPTAIN);
         enter(new UserInfo(0L, "小*"), RoomGuardLevel.COMMANDER);
         enter(new UserInfo(0L, "小*"), RoomGuardLevel.COMMANDER);
+        tick(3);
         enter(HONG, RoomGuardLevel.UNKNOWN);
         events.publishEvent(new BilibiliGuardEntryEffectEvent(ROOM, 2, GuardType.Governor));
-        tick(0);
-        tick(3);
         tick(6);
         assertEquals(2, sent.size());
         assertEquals("欢迎提督 小* 进入直播间", sent.get(0));
-        assertTrue(sent.get(1).startsWith("欢迎总督 "));
+        assertEquals("欢迎总督 小红 进入直播间", sent.get(1));
         configure(true, JSONObject.of("minimumLevel", "GOVERNOR"), "guardWelcome");
         enter(MING, RoomGuardLevel.COMMANDER);
         tick(9);
@@ -69,9 +92,9 @@ class RoomWelcomeTest extends RoomInteractionFixture {
     }
 
     @Test
-    @DisplayName("未开播、关闭欢迎或发送账号自己进房时冒出欢迎，恢复后又把旧弹幕补出来")
-    void ignoresDisabledOfflineSelfAndUnidentifiableListEntries() {
-        var options = JSONObject.of("people", List.of(JSONObject.of("uid", "2"), JSONObject.of("uid", "7")));
+    @DisplayName("未开播或关闭欢迎时冒出欢迎，恢复后又把旧弹幕补出来")
+    void ignoresDisabledOfflineAndUnidentifiableListEntries() {
+        var options = JSONObject.of("people", List.of(JSONObject.of("uid", "2")));
         enter(MING, RoomGuardLevel.CAPTAIN);
         configure(false, options, "guardWelcome");
         enter(MING, RoomGuardLevel.CAPTAIN);
@@ -79,7 +102,6 @@ class RoomWelcomeTest extends RoomInteractionFixture {
         living = false;
         enter(MING, RoomGuardLevel.CAPTAIN);
         living = true;
-        enter(SELF, RoomGuardLevel.GOVERNOR);
         enter(HONG, RoomGuardLevel.UNKNOWN);
         configure(true, options, "guardWelcome");
         configure(true, options, "listedWelcome");
@@ -89,6 +111,22 @@ class RoomWelcomeTest extends RoomInteractionFixture {
         configure(true, options, "guardWelcome", "listedWelcome");
         enter(MING, RoomGuardLevel.CAPTAIN);
         tick(1);
+        assertEquals(List.of("欢迎舰长 小明 进入直播间"), sent);
+    }
+
+    @Test
+    @DisplayName("发送账号自己进房时，机器人向自己发了欢迎")
+    void skipsSendingAccountOnBothEntrySignals() {
+        var options = JSONObject.of("people", List.of(JSONObject.of("uid", "7", "alias", "自己")));
+        configure(true, options, "guardWelcome", "listedWelcome");
+        events.publishEvent(new BilibiliGuardEntryEffectEvent(ROOM, SELF.getUid(), GuardType.Governor));
+        tick(4);
+        assertTrue(sent.isEmpty(), sent::toString);
+        enter(SELF, RoomGuardLevel.GOVERNOR);
+        tick(8);
+        assertTrue(sent.isEmpty(), sent::toString);
+        enter(MING, RoomGuardLevel.CAPTAIN);
+        tick(12);
         assertEquals(List.of("欢迎舰长 小明 进入直播间"), sent);
     }
 
@@ -257,7 +295,6 @@ class RoomWelcomeTest extends RoomInteractionFixture {
     void ambiguousEndsPreserveTheLongestRemainingDeadline() {
         configure(true, new JSONObject(), "pauseActivities", "superChat");
         events.publishEvent(new BilibiliLotteryStartEvent(ROOM, null, now, START.plusSeconds(30)));
-        at(5);
         events.publishEvent(new BilibiliLotteryStartEvent(ROOM, null, now, START.plusSeconds(90)));
         at(10);
         events.publishEvent(new BilibiliLotteryEndEvent(ROOM, null));
@@ -268,7 +305,29 @@ class RoomWelcomeTest extends RoomInteractionFixture {
         events.publishEvent(new BilibiliLotteryEndEvent(ROOM, null));
         sc();
         tick(32);
+        assertTrue(sent.isEmpty());
+        at(90);
+        sc();
+        tick(90);
         assertEquals(1, sent.size());
+    }
+
+    @Test
+    @DisplayName("一场天选开奖了，另一场还在进行，机器人就开始刷答谢")
+    void lateNumberedEndKeepsAnonymousLotteryPaused() {
+        configure(true, new JSONObject(), "pauseActivities", "superChat");
+        lottery(1, 30);
+        at(10);
+        events.publishEvent(new BilibiliLotteryStartEvent(ROOM, null, now, START.plusSeconds(100)));
+        at(40);
+        events.publishEvent(new BilibiliLotteryEndEvent(ROOM, 1L));
+        sc();
+        tick(40);
+        assertTrue(sent.isEmpty());
+        at(100);
+        sc();
+        tick(100);
+        assertEquals(List.of("感谢 小明 的醒目留言"), sent);
     }
 
     @Test

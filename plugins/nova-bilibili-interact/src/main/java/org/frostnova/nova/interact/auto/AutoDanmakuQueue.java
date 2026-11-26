@@ -2,6 +2,7 @@ package org.frostnova.nova.interact.auto;
 
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.enums.RoomGuardLevel;
+import org.frostnova.nova.bilibili.event.live.BilibiliGuardEntryEffectEvent;
 import org.frostnova.nova.core.event.live.NovaBaseLiveEvent;
 import org.frostnova.nova.core.event.live.base.NovaLiveMessageEvent;
 import org.frostnova.nova.core.model.UserInfo;
@@ -147,6 +148,7 @@ public class AutoDanmakuQueue {
         store.save(uid, settings);
         room.settings = settings;
         if (room.thanks != null) room.thanks.configure(settings);
+        if (room.welcomes != null) room.welcomes.configure(settings);
         Instant now = clock.get();
         if (!settings.allows(RoomSettings.PAUSE_ACTIVITIES) && room.activities != null) {
             pauseRoom(room.streamer.roomId(), null, now);
@@ -228,14 +230,21 @@ public class AutoDanmakuQueue {
             long start = live.getLiveStartTime(BilibiliPlatform.BILIBILI.id(), room.streamer.uid()).orElse(0L);
             room.welcomes = new RoomWelcomes(store, room.streamer.uid(), start);
         }
-        var greeting = room.welcomes.greeting(room.settings, room.streamer.name(), viewerUid, viewerName, level);
+        Instant occurred = Instant.ofEpochMilli(event.getTimestamp());
+        var entry = new RoomWelcomes.Entry(viewerUid, viewerName, level, occurred.isAfter(now) ? now : occurred);
+        boolean paused = room.pause != null && now.isBefore(room.pause.until());
+        room.welcomes.accept(entry, event instanceof BilibiliGuardEntryEffectEvent, now, paused, room.settings,
+                ready -> offerWelcome(room, ready));
+    }
+
+    private void offerWelcome(RoomState room, RoomWelcomes.Entry entry) {
+        var greeting = room.welcomes.greeting(room.settings, room.streamer.name(), entry);
         if (greeting == null) return;
         AccountStatus account = sender.automaticAccountStatus();
-        if (viewerUid != null && viewerUid > 0 && viewerUid.equals(account.uid())) return;
-        Instant entered = Instant.ofEpochMilli(event.getTimestamp());
-        Instant expires = (entered.isAfter(now) ? now : entered).plusSeconds(30);
+        if (entry.identified() && entry.uid().equals(account.uid())) return;
+        Instant expires = entry.entered().plusSeconds(30);
         if (offer(room, greeting.feature(), greeting.text(), RoomWelcomes.PRIORITY, expires, null, account)) {
-            room.welcomes.remember(greeting.identity());
+            room.welcomes.remember(entry);
         }
     }
 
@@ -323,6 +332,7 @@ public class AutoDanmakuQueue {
             finishActivityPause(room, clock.get());
             if (until.isAfter(clock.get())) {
                 room.pause = new Pause(reason == null || reason.isBlank() ? "房间暂停发送" : reason, until);
+                if (room.welcomes != null) room.welcomes.flush(Instant.MAX, entry -> offerWelcome(room, entry));
                 if (room.thanks != null) room.thanks.discardPending();
                 clear(room, room.pause.reason());
             } else {
@@ -416,6 +426,7 @@ public class AutoDanmakuQueue {
         for (RoomState room : rooms.values()) {
             if (!room.settings.enabled()) continue;
             syncLive(room, now);
+            if (room.welcomes != null) room.welcomes.flush(now, entry -> offerWelcome(room, entry));
             if (room.thanks != null && room.thanks.hasPending() && room.thanks.checkAccount(sender.automaticAccountStatus())) {
                 room.thanks.flush(room.settings.thanks(), room.streamer.name(), now);
             }

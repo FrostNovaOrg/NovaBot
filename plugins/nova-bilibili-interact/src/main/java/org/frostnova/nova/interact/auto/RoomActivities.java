@@ -8,22 +8,17 @@ import java.util.Map;
 final class RoomActivities {
     record Pause(String reason, Instant until) {}
 
-    private record Lottery(Long id, Instant anonymousStart) {}
-
-    private final Map<Lottery, Instant> lotteries = new HashMap<>();
+    // 无编号天选只能等到截止时间，多场共用 null 键并保留最晚的截止时间。
+    private final Map<Long, Instant> lotteries = new HashMap<>();
     private Instant redPocketEnd;
 
     void lotteryStarted(Long id, Instant start, Instant expectedEnd) {
         Instant end = expectedEnd == null ? start.plusSeconds(600) : expectedEnd;
-        lotteries.merge(new Lottery(id, id == null ? start : null), end, RoomActivities::later);
+        lotteries.merge(id, end, RoomActivities::later);
     }
 
     void lotteryEnded(Long id) {
-        if (id != null && lotteries.remove(new Lottery(id, null)) != null) return;
-        // 缺编号时只能确认有一场结束。保留可能仍在进行的最晚截止时间。
-        lotteries.entrySet().stream()
-                .filter(entry -> id == null || entry.getKey().id() == null)
-                .min(Map.Entry.comparingByValue()).map(Map.Entry::getKey).ifPresent(lotteries::remove);
+        if (id != null) lotteries.remove(id);
     }
 
     void redPocketStarted(Instant start) {
