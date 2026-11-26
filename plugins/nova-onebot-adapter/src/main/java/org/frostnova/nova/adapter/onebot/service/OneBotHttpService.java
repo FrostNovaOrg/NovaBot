@@ -25,13 +25,20 @@ import org.springframework.core.annotation.Order;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.util.InvalidUrlException;
+import org.springframework.web.util.UriComponentsBuilder;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.ObjectReader;
+import tools.jackson.databind.json.JsonMapper;
 
 import javax.net.ssl.SSLHandshakeException;
 import java.net.ConnectException;
 import java.net.NoRouteToHostException;
 import java.net.PortUnreachableException;
 import java.net.SocketTimeoutException;
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.UnknownHostException;
 import java.net.http.HttpConnectTimeoutException;
@@ -50,6 +57,9 @@ import java.util.concurrent.ScheduledFuture;
 @Slf4j
 @NovaComponent
 public class OneBotHttpService {
+    private static final ObjectReader SEND_RESULT_READER = JsonMapper.shared().readerFor(JSONObject.class)
+            .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
+
     private final TaskScheduler taskScheduler;
 
     private final ThreadPoolTaskExecutor executor;
@@ -189,17 +199,25 @@ public class OneBotHttpService {
         if (!sender.httpTokenFitsInHeader()) {
             return sendFailure(new IllegalArgumentException("OneBot HTTP Token 含有请求头放不下的字符"));
         }
+        try {
+            String base = OneBotEndpointAddresses.httpBaseUrl(
+                    sender.getName(), sender.getOneBotAddress(), sender.getOneBotHttpPort());
+            URI endpoint = UriComponentsBuilder.fromUriString(base).buildAndExpand().encode().toUri();
+            if (endpoint.getHost() == null || endpoint.getPort() > 65535) {
+                return sendFailure(new IllegalArgumentException("OneBot HTTP 主机或端口无效"));
+            }
+        } catch (RuntimeException e) {
+            return sendFailure(e);
+        }
 
         JSONObject params = JSONObject.of("message", elements, group ? "group_id" : "user_id", String.valueOf(message.getNum()));
         try {
             JSONObject result;
-            if (!group) {
-                result = http.sendPrivateMsg(sender, params);
-            } else if (needsAtAllImageSplit(elements)) {
+            if (group && needsAtAllImageSplit(elements)) {
                 // QQ 会把同一条里的 @全体成员 降成文字；有图时拆成两次发
                 result = sendGroupAtAllThenImage(sender, params, elements);
             } else {
-                result = http.sendGroupMsg(sender, params);
+                result = sendMessage(sender, params, group);
             }
 
             return new JSONObject().fluentPut("code", ResultCode.SUCCESS.getCode()).fluentPut("message", ResultCode.SUCCESS.getMsg()).fluentPut("id", result.getString("message_id"));
@@ -208,7 +226,7 @@ public class OneBotHttpService {
         } catch (HttpClientErrorException.Forbidden e) {
             log.warn("{} 的 OneBot HTTP Token 配置不正确, 请检查 Token 配置", message.getPlatform());
             return new JSONObject().fluentPut("code", ResultCode.UNAUTHORIZED.getCode()).fluentPut("message", "Token 配置不正确").fluentPut("id", null);
-        } catch (HttpClientErrorException e) {
+        } catch (HttpStatusCodeException e) {
             return sendFailure(e);
         } catch (ChannelDisabledException e) {
             return PlatformDeliveryGate.blockedResponse(e.getMessage());
@@ -238,6 +256,34 @@ public class OneBotHttpService {
         return new JSONObject().fluentPut("code", ResultCode.UNKNOWN.getCode()).fluentPut("message", "OneBot HTTP 发送消息异常, 请检查插件日志错误信息").fluentPut("id", null);
     }
 
+    private JSONObject sendMessage(OneBotSender sender, JSONObject params, boolean group) {
+        try {
+            return group ? http.sendGroupMsg(sender, params) : http.sendPrivateMsg(sender, params);
+        } catch (HttpStatusCodeException error) {
+            // HTTP 错误也可能带完整的 OneBot 发送结果，包括图片下载失败。
+            try {
+                JSONObject reply = SEND_RESULT_READER.readValue(error.getResponseBodyAsString());
+                if (reply != null) {
+                    String status = reply.getString("status");
+                    String code = reply.getString("retcode");
+                    if (code != null) {
+                        String fromCode = Integer.parseInt(code) == 0 ? "ok" : "failed";
+                        status = status == null || status.equals(fromCode) ? fromCode : null;
+                    }
+                    if ("failed".equals(status)) throw error;
+                    if ("ok".equals(status)) {
+                        JSONObject data = reply.getJSONObject("data");
+                        return data == null ? new JSONObject() : data;
+                    }
+                }
+            } catch (JacksonException | NumberFormatException unreadable) {
+                // 错误页、残缺的 JSON 或读不出的结果码都不能证明消息没发出。
+            }
+            if (error.getStatusCode().is4xxClientError()) throw error;
+            throw new IllegalStateException("未取得 OneBot 的发送结果", error);
+        }
+    }
+
     /**
      * QQ 把 @全体成员 和图片放在同一条里时，会把 @全体成员 降成普通文字，
      * 额度不扣、群友也收不到提醒。文字先发、图片紧跟一条。
@@ -257,13 +303,13 @@ public class OneBotHttpService {
 
         JSONObject firstParams = new JSONObject(params);
         firstParams.put("message", text);
-        JSONObject first = http.sendGroupMsg(sender, firstParams);
+        JSONObject first = sendMessage(sender, firstParams, true);
 
         if (properties.channelDisabled()) return first;
         JSONObject secondParams = new JSONObject(params);
         secondParams.put("message", images);
         try {
-            http.sendGroupMsg(sender, secondParams);
+            sendMessage(sender, secondParams, true);
         } catch (Exception e) {
             log.warn("群消息图片补发失败, @全体成员与文字已送达: {}", e.getMessage());
         }

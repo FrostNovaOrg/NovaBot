@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.scheduling.TaskScheduler;
@@ -68,7 +69,10 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 /**
  * NapCat 重启、掉线重登的那几秒，纯文字推送（开播通知、下播、命令回复）会不会丢。
@@ -83,6 +87,8 @@ class NapCatUnreachablePushRetryTest {
     private static final String PLATFORM = "qq-onebot";
 
     private static final String NOTICE = "主播开播了";
+
+    private static final String SEND_GROUP_URL = "http://127.0.0.1:3000/send_group_msg";
 
     private FakeOneBotHttpServer napcat;
 
@@ -152,8 +158,13 @@ class NapCatUnreachablePushRetryTest {
     @Test
     @DisplayName("读不懂回包时标记送达不明")
     void unreadableReplyIsMarkedDeliveryUnknown() {
-        JSONObject broken = open(Mode.BOOM, new RestTemplate(), 3000).sender.sendNow(notice());
+        RestTemplate client = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(client).build();
+        server.expect(requestTo(SEND_GROUP_URL)).andRespond(withSuccess("{", MediaType.APPLICATION_JSON));
 
+        JSONObject broken = open(Mode.PASS_THROUGH, client, 3000).sender.sendNow(notice());
+
+        server.verify();
         assertAll(
                 () -> assertNotEquals(0, broken.getIntValue("code"), broken.toJSONString()),
                 () -> assertTrue(broken.getBooleanValue(Sender.LocalDelivery.DELIVERY_UNKNOWN), broken.toJSONString())
@@ -179,7 +190,7 @@ class NapCatUnreachablePushRetryTest {
         RestTemplate client = new RestTemplate();
         MockRestServiceServer server = MockRestServiceServer.bindTo(client).build();
         List<String> received = new ArrayList<>();
-        server.expect(ExpectedCount.manyTimes(), requestTo("http://127.0.0.1:3000/send_group_msg"))
+        server.expect(ExpectedCount.manyTimes(), requestTo(SEND_GROUP_URL))
                 .andRespond(request -> {
                     received.add(((MockClientHttpRequest) request).getBodyAsString());
                     throw new EOFException("connection closed before response headers");
@@ -194,6 +205,32 @@ class NapCatUnreachablePushRetryTest {
                 () -> assertTrue(received.get(0).contains(NOTICE)),
                 () -> assertTrue(result.getBooleanValue(Sender.LocalDelivery.DELIVERY_UNKNOWN), result.toJSONString())
         );
+    }
+
+    @Test
+    @DisplayName("OneBot 回 HTTP 500 明确说封面下载失败时，群里仍能收到纯文字开播通知")
+    void imageDownloadFailureStillDeliversTextNotice() {
+        RestTemplate client = new RestTemplate();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(client).build();
+        server.expect(requestTo(SEND_GROUP_URL))
+                .andExpect(jsonPath("$.message[1].type").value("image"))
+                .andRespond(withServerError().contentType(MediaType.APPLICATION_JSON).body("""
+                        {"retcode":100,"status":"failed","message":"image download failed"}
+                        """));
+        server.expect(requestTo(SEND_GROUP_URL))
+                .andExpect(jsonPath("$.message[0].type").value("text"))
+                .andExpect(jsonPath("$.message[0].data.text").value(NOTICE))
+                .andExpect(jsonPath("$.message[1]").doesNotExist())
+                .andRespond(withSuccess("""
+                        {"retcode":0,"status":"ok","data":{"message_id":42}}
+                        """, MediaType.APPLICATION_JSON));
+        Message message = Message.create(PLATFORM, PushTargetType.GROUP, FakeOneBotHttpServer.GROUP_NUM,
+                NOTICE + "{image_url=https://example.com/cover.jpg}").get(0);
+
+        open(Mode.PASS_THROUGH, client, 3000).sender.sendNow(message);
+
+        assertEquals("42", message.getId(), "群里收到的纯文字通知编号");
+        server.verify();
     }
 
     @Test
@@ -374,8 +411,7 @@ class NapCatUnreachablePushRetryTest {
     private enum Mode {
         REFUSE_TWICE,
         HANG,
-        PASS_THROUGH,
-        BOOM
+        PASS_THROUGH
     }
 
     private record Rig(NovaMessageSender sender, Gate gate) {
@@ -416,8 +452,6 @@ class NapCatUnreachablePushRetryTest {
                     miss(hangUrl, args[1]);
                 } else if (mode == Mode.REFUSE_TWICE && n <= 2) {
                     miss("http://127.0.0.1:" + closedPort + "/send_group_msg", args[1]);
-                } else if (mode == Mode.BOOM) {
-                    throw new IllegalStateException("回包读不懂");
                 }
             }
             return real.invoke(proxy, method, args);
