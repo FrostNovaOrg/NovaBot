@@ -3,8 +3,8 @@
 给「别的程序来调 NovaBot」用的统一接口面：地址前缀、鉴权方式、返回格式、错误代码都在这一份里定死，
 以后的对外接口一律挂在这个前缀下、照这份约定办。
 
-现在这个前缀下只有一个底座自带的自查接口 `GET /nova/api/v1/me`；
-插件提供的接口挂在 `/nova/api/v1/<插件的段名>/` 下，以插件自己的说明为准。
+底座自带自查接口 `GET /nova/api/v1/me`。插件提供的接口挂在 `/nova/api/v1/<插件的段名>/` 下。
+装了「外发」插件的实例可以通过下文「外发箱」的接口取件。
 
 怎么在控制台签发、吊销访问令牌，另一台机器怎么连，见使用说明
 [附录 B「让脚本或别的程序调用 NovaBot」](https://frostnovaorg.github.io/NovaBot/appendix-b-advanced.html)。
@@ -105,13 +105,14 @@ NovaBot 认的来源是**直接连进来的那一端**。放在反向代理后�
 - 没带令牌的请求直接回 401，不计数。
 - IPv4 按单个地址算；IPv6 按 /64 算一个来源（同一个 /64 里换着地址，照样算同一个）。
 - 最多记 1 万个来源。满了只删已经过了窗口的、和窗口开得最早的那些，**正在被限的来源不删**：
-  刷一大批别的来源，也不能把一个被限的来源提前放出来。
+  刷一大批别的来源，也不能把一个被限的来源提前放出来。表满且全是正在被限的来源时，新来源出示无效令牌会直接收到 429。
 - 它不省处理：有效还是无效，要先比对一遍才知道，被限的请求照样比对，只是回 429 而不是 401。
   它管的是日志不被刷满（一个窗口只记第一次与开始被限的那一次），以及让调用方知道该停下来查令牌。
 
 ## 返回格式
 
-所有响应都是 `application/json`，状态码照实给。
+成功响应通常是 `application/json`。取本机图片成功时直接返回原始字节，内容类型见响应头。
+所有错误都返回统一的 JSON 格式和对应的 HTTP 状态码。
 
 成功：
 
@@ -165,7 +166,7 @@ NovaBot 认的来源是**直接连进来的那一端**。放在反向代理后�
 调用时还按令牌所属账号**此刻**的角色再核一次——管理员被改成成员之后，这个账号以前签的带这种范围的令牌，
 调要这项范围的接口回 403 `forbidden`，别的范围照常。
 
-不勾任何范围的令牌只能调自查接口 `/me`。现在还没有插件登记范围，所以签发页上没有可勾的项。
+不勾任何范围的令牌只能调自查接口 `/me`。签发页列出的范围随已安装的插件而定。
 
 ## 成员的令牌看得到什么
 
@@ -198,6 +199,159 @@ curl -H "Authorization: Bearer nvb_..." http://127.0.0.1:7827/nova/api/v1/me
 - `token.id` 是令牌的编号，与控制台列表里那一行对得上；它不是令牌本身，也推不出令牌。
 - `token.expiresAt`：到期时刻（ISO 8601，UTC），不过期为 `null`。
 - `streamers`：对这把令牌可见的主播，含已停用的；名字取不到时为 `null`。
+
+## 外发箱
+
+外发会话是管理员为投递通知登记的去向。安装「外发」插件后，签发页会出现 `outbox:read`（读取记录、图片和会话）和
+`outbox:deliver`（认领、报告发送结果）两个范围。完整取件流程需要两者。卸载插件后，有效令牌访问这些路径会收到 404，签发页也随之移除这两项。
+
+以下路径均接在部署前缀后面。通用错误见上文「错误代码」，包括 401（账号停用、令牌吊销等）、403（来源或范围不符）和 429（无效令牌限速）。
+对于下面带 `{id}` 的接口，编号不存在和主播对调用者不可见会收到相同的 404 `not_found`。
+
+### `GET /nova/api/v1/outbox/messages`
+
+需要 `outbox:read`。记录按编号升序，只列调用者可见的主播。三个查询参数均可省略。
+
+| 参数 | 取值 |
+|---|---|
+| `status` | 默认 `PENDING`（待发）。还可指定 `SENDING`（发送中）、`SENT`（已发）、`FAILED`（没发成）、`SKIPPED`（跳过）、`UNKNOWN`（结果不明）、`EXPIRED`（过期未发）、`LIMITED`（超限未入箱）、`VOID`（已作废）。 |
+| `cursor` | 上一页最后一条返回记录的十进制编号。首页省略或填 `0`。下一页只取编号严格大于游标的记录。 |
+| `limit` | 每页 1 至 100 条，默认 20。 |
+
+例如，`?status=PENDING&limit=1` 可以返回如下结果。
+
+```json
+{
+  "ok": true,
+  "data": {
+    "items": [{
+      "id": 41, "status": "PENDING",
+      "createdAt": "2026-06-01T09:00:00Z", "expiresAt": "2026-06-01T09:10:00Z",
+      "conversation": {"id": 3, "name": "早班"},
+      "streamer": {"platform": "live", "uid": 101, "name": "青山"},
+      "kind": "LIVE_ON", "atAll": true,
+      "segments": [
+        {"type": "TEXT", "text": "开播了"},
+        {"type": "IMAGE_BYTES", "index": 1, "byteCount": 8388608,
+         "url": "/nova/api/v1/outbox/messages/41/images/1"},
+        {"type": "IMAGE_URL", "url": "https://media.example.org/cover.png"}
+      ]
+    }],
+    "next": "41"
+  }
+}
+```
+
+`createdAt` 和 `expiresAt` 是 UTC 时刻（ISO 8601）。`conversation` 保存入箱时的会话编号和名称。
+`streamer` 中未取得的信息为 `null`。`kind` 是推送种类，`atAll` 表示原通知是否要 @ 全体。
+按 `segments` 数组顺序处理各段。`IMAGE_BYTES.url` 是本机取图路径，包含部署前缀，需要带读取令牌。
+`IMAGE_URL.url` 是原图网址，访问外站时不要带 NovaBot 的令牌。
+
+有下一页时保持相同的 `status`，把 `next` 原样作为 `cursor` 带回。
+翻页期间新入箱的记录编号更大，会出现在后续页。当前已到末页时 `next` 为 `null`。
+未知状态、无效游标、无效页长均返回 400 `bad_request`。
+
+### `GET /nova/api/v1/outbox/messages/{id}`
+
+需要 `outbox:read`。`id` 为记录编号。成功时 `data` 直接给出一条记录，字段与列表中的条目相同。
+这个接口可以查询已经认领或已结束的记录。
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id": 42, "status": "PENDING",
+    "createdAt": "2026-06-01T09:01:00Z", "expiresAt": "2026-06-01T09:11:00Z",
+    "conversation": {"id": 3, "name": "早班"},
+    "streamer": {"platform": "live", "uid": 101, "name": "青山"},
+    "kind": "LIVE_ON", "atAll": false,
+    "segments": [{"type": "TEXT", "text": "开播提醒"}]
+  }
+}
+```
+
+### `GET /nova/api/v1/outbox/messages/{id}/images/{index}`
+
+需要 `outbox:read`。`id` 为记录编号，`index` 是段在整条通知中的下标，从 0 开始。
+成功时 HTTP 200 的响应体就是入箱的图片字节。例如，上面第 41 条的第 1 段是一张 PNG，取图响应开头如下（正文仅示前八字节，以十六进制表示）。
+
+```text
+Content-Type: image/png
+Content-Length: 8388608
+Cache-Control: no-store
+X-Content-Type-Options: nosniff
+
+89 50 4E 47 0D 0A 1A 0A
+```
+
+无法识别图片格式时使用 `application/octet-stream`。下标越界、指向文字或网址图片段均返回 404 `not_found`，错误正文仍为 JSON。
+
+### `POST /nova/api/v1/outbox/messages/{id}/claim`
+
+需要 `outbox:deliver`。`id` 为待发记录编号，无需请求体。成功时记录进入 `SENDING`，认领者记为令牌名称。
+`data.message` 是认领后的记录，`data.claimNumber` 是这条记录本次认领的编号。
+
+```json
+{
+  "ok": true,
+  "data": {
+    "claimNumber": 1,
+    "message": {
+      "id": 42, "status": "SENDING",
+      "createdAt": "2026-06-01T09:01:00Z", "expiresAt": "2026-06-01T09:11:00Z",
+      "conversation": {"id": 3, "name": "早班"},
+      "streamer": {"platform": "live", "uid": 101, "name": "青山"},
+      "kind": "LIVE_ON", "atAll": false,
+      "segments": [{"type": "TEXT", "text": "开播提醒"}]
+    }
+  }
+}
+```
+
+并发认领只有一个请求成功。其余请求以及对过期、已发、作废等非待发记录的认领返回 409，说明里给出当前状态。以下是已被认领时的响应。
+
+```json
+{"ok":false,"error":{"code":"conflict","message":"记录当前为「发送中」，无法执行此操作"}}
+```
+
+### `POST /nova/api/v1/outbox/messages/{id}/receipt`
+
+需要 `outbox:deliver`。`id` 为记录编号。以 `application/json` 提交一个对象，带上本次认领返回的正整数
+`claimNumber` 和 `outcome`（`SENT` 已发、`FAILED` 没发成、`SKIPPED` 跳过）。
+`note` 为可选说明，允许省略、空字符串或 `null`，最长 200 个 Unicode 码点。以下请求把通知标记为已发。
+
+```json
+{"claimNumber":1,"outcome":"SENT","note":"已送达早班会话"}
+```
+
+成功响应给出记录编号和已保存的结果。
+
+```json
+{"ok":true,"data":{"id":42,"status":"SENT"}}
+```
+
+正文不是 JSON 对象、超过 256 KB、必填字段缺失、字段类型或结果不合法、说明超长均返回 400 `bad_request`。
+记录未认领、已经结束或认领编号过时，返回 409 `conflict`，提交的结果不会覆盖当前状态。
+
+### `GET /nova/api/v1/outbox/conversations`
+
+需要 `outbox:read`，无参数。一次列出全部会话，按编号升序，可用 `id` 核对当前名称和备注。
+`enabled` 为 `false` 表示会话已停用。停用只挡住新通知入箱，已有的待发通知仍可认领。
+
+```json
+{"ok":true,"data":{"items":[{"id":3,"name":"早班","remark":"日间通知","enabled":false}],"next":null}}
+```
+
+### 取件方应当怎么用
+
+1. 定时从首页列出待发通知，沿 `next` 翻到末页。下一轮从首页重新列，以便发现管理员重新放回待发的旧编号。
+2. 按编号认领。只有收到成功响应才处理通知，保存这次的 `claimNumber`。认领返回 409 时跳过该条。
+3. 按段顺序准备文字和图片，通过 `IMAGE_BYTES.url` 取回本机原图。发送前核对 `expiresAt`，已过期就跳过并报告 `SKIPPED`。
+4. 发出后用本次 `claimNumber` 报告 `SENT`。认领后取图或发送失败也要报告 `FAILED`，可在 `note` 简述原因。
+   若已发出而报告结果时断线，可查单条记录核对状态，避免重复发送。
+
+认领后默认 15 分钟仍未报告结果，记录会变成 `UNKNOWN`（结果不明），系统不会自动重发。
+重新放回待发、作废由管理员在控制台操作。
 
 ## 访问令牌的保管
 
@@ -248,6 +402,7 @@ public class ReportApi implements NovaApiProvider {
   以及 `canSee(platform, uid)`——某平台某主播对这个调用者是否可见（管理员全部可见，成员只见名下）。
   `hasScope(id)` 说的是「此刻用得了」：仅管理员的范围，账号此刻不是管理员时为 false。
 - 处理器返回的对象放进 `data`；列表接口返回 `NovaApiPage.of(items, next)`；
+  图片等原始字节返回 `new NovaApiBytes(MediaType.IMAGE_PNG, bytes)`，底座直接按指定内容类型写出。
   要回错误就抛 `NovaApiException`（`badRequest`、`forbidden`、`notFound`、`conflict`，或自定状态码与代码）。
   抛别的异常（含 `Error`）、或返回的对象转不成 JSON，一律回 500 `internal_error`，异常内容不进响应，只进服务端日志。
 - 路径变量拿到的是解码之后的值；`.`、`..`，或含斜杠、反斜杠、控制字符的段到不了处理器，底座先回 400。
