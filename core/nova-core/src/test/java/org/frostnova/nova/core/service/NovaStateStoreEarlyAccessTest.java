@@ -121,6 +121,31 @@ class NovaStateStoreEarlyAccessTest {
     }
 
     @Test
+    @DisplayName("就绪之前写入但未保存的订阅在就绪后仍可读取并保存")
+    void unsavedSubscriptionSurvivesReadyEvent(@TempDir Path dir) throws Exception {
+        Path state = dir.resolve("state.json");
+        String session = "qq:10001:20001:live";
+        JSONObject original = JSONObject.of(SUBSCRIPTIONS, JSONObject.of(session, JSONObject.of("30001", 1)));
+        Files.writeString(state, original.toJSONString());
+
+        NovaStateStore store = storeAt(dir);
+        try {
+            store.write(SUBSCRIPTIONS, data -> data.getJSONObject(session).put("30002", 1));
+            assertEquals(original, JSONObject.parseObject(Files.readString(state)), "就绪之前的写入应只改动内存");
+
+            store.onApplicationReadyEvent();
+
+            JSONObject expected = JSONObject.of(session, JSONObject.of("30001", 1, "30002", 1));
+            assertEquals(expected, store.namespace(SUBSCRIPTIONS), "就绪后应保留原有订阅和未保存的新订阅");
+            assertTrue(store.trySave(), "就绪之后保存订阅失败");
+            assertEquals(JSONObject.of(SUBSCRIPTIONS, expected), JSONObject.parseObject(Files.readString(state)),
+                    "保存后的状态文件应包含原有订阅和新订阅");
+        } finally {
+            store.onContextClosedEvent();
+        }
+    }
+
+    @Test
     @DisplayName("全新安装：就绪之前写一笔照常建出状态文件，就绪之后照常可用")
     void freshInstallBeforeReadyStillCreatesFile(@TempDir Path dir) throws Exception {
         Path state = dir.resolve("state.json");
