@@ -312,9 +312,15 @@ public class NovaMessageSender {
      *   <li>含图消息没发出时不剥图补发纯文字：补发出去的是另一条（没有图），再回「发出了」就不是实话。</li>
      *   <li>不跟首推提示，不跑消息上的回调。</li>
      * </ul>
-     * 每一次都没交到去向手里（去向没连上）时：进程内的去向按约定只在请求没离开本机时才抛，
-     * 回 {@link DeliveryReceipt.Outcome#UNREACHABLE}；走 HTTP 的去向分不清是没连上还是等回包超时，
-     * 回 {@link DeliveryReceipt.Outcome#UNKNOWN}，宁可让调用方不重发。
+     * 交了没交到，分两种去向说：
+     * <ul>
+     *   <li>进程内的去向按约定只在请求没离开本机时才抛，照平常重试；每一次都抛了回
+     *       {@link DeliveryReceipt.Outcome#UNREACHABLE}。</li>
+     *   <li>走 HTTP 的去向<b>只在能确定对方没收到时才重试</b>（{@link #neverReached}：连接被拒、
+     *       找不到主机、连接没建起来）；每一次都是这样时回 {@link DeliveryReceipt.Outcome#UNREACHABLE}。
+     *       等回包超时、连接中途断开、读回包失败、回包是空的，以及认不出是哪一种的，对方都可能已经收下：
+     *       这一条只交这 1 次，回 {@link DeliveryReceipt.Outcome#UNKNOWN}——再交一次，群里就可能多出一条一样的。</li>
+     * </ul>
      * @param message 一条消息，不含 {@code {next}}
      * @return 结果
      */
@@ -335,11 +341,13 @@ public class NovaMessageSender {
         }
         AtomicReference<LocalDate> chargedOn = new AtomicReference<>(quota.chargedOn());
         try {
-            Attempts attempts = attempt(sender, headers(sender), params(message), message);
+            boolean http = sender.getLocalDelivery() == null;
+            Attempts attempts = attempt(sender, headers(sender), params(message), message,
+                    http ? NovaMessageSender::neverReached : failure -> true);
             JSONObject result = attempts.result();
             if (result == null) {
                 String reason = attempts.error() == null ? "未知原因" : attempts.error().getMessage();
-                if (sender.getLocalDelivery() == null) {
+                if (http && !neverReached(attempts.error())) {
                     // 可能已经发出（例如等回包超时）：额度不退，那一次可能已经 @ 过
                     chargedOn.set(null);
                     return DeliveryReceipt.of(DeliveryReceipt.Outcome.UNKNOWN, reason);
@@ -500,7 +508,7 @@ public class NovaMessageSender {
      * @return 推送接口的响应；始终非空，彻底失败时返回一个带错误信息的对象
      */
     private JSONObject postWithRetry(Sender sender, Map<String, String> headers, Map<String, Object> params, Message message) {
-        Attempts attempts = attempt(sender, headers, params, message);
+        Attempts attempts = attempt(sender, headers, params, message, failure -> true);
         if (attempts.result() != null) {
             return attempts.result();
         }
@@ -520,8 +528,10 @@ public class NovaMessageSender {
 
     /**
      * {@link #postWithRetry} 的本体：同样的重试，只是把「每一次都没交出去」原样交回，不包成失败回包
+     * @param retryable 这一次没成之后还能不能再交一次；平常的推送一律能，见 {@link #deliverForCaller}
      */
-    private Attempts attempt(Sender sender, Map<String, String> headers, Map<String, Object> params, Message message) {
+    private Attempts attempt(Sender sender, Map<String, String> headers, Map<String, Object> params, Message message,
+                             Predicate<RuntimeException> retryable) {
         RuntimeException last = null;
 
         for (int attempt = 1; attempt <= SEND_MAX_ATTEMPTS; attempt++) {
@@ -548,6 +558,9 @@ public class NovaMessageSender {
                 last = e;
             }
 
+            if (!retryable.test(last)) {
+                break;
+            }
             if (attempt < SEND_MAX_ATTEMPTS) {
                 log.warn("第 {} 次投递 [{}] 失败, {} 毫秒后重试: {}", attempt, message.getSequence(),
                         SEND_RETRY_INTERVAL_MILLIS * attempt, last.getMessage());
@@ -561,6 +574,34 @@ public class NovaMessageSender {
         }
 
         return new Attempts(null, last);
+    }
+
+    /**
+     * 请求确定没到对方手里：连接被拒、找不到主机、路由不通、连接没建起来
+     * <p>
+     * 只认这几种明确的类型（沿起因链往下找）。等回包超时、连接中途断开、读回包失败这些，
+     * 请求可能已经写出去了；认不出类型的也一样，都不算。
+     * @param failure 这一次的异常，可为 null
+     * @return 确定没到时为 true
+     */
+    static boolean neverReached(Throwable failure) {
+        Throwable current = failure;
+        for (int depth = 0; current != null && depth < 8; depth++) {
+            if (current instanceof java.net.ConnectException
+                    || current instanceof java.net.UnknownHostException
+                    || current instanceof java.net.NoRouteToHostException
+                    || current instanceof java.net.PortUnreachableException
+                    || current instanceof java.net.http.HttpConnectTimeoutException
+                    || current instanceof java.nio.channels.UnresolvedAddressException) {
+                return true;
+            }
+            Throwable next = current.getCause();
+            if (next == current) {
+                break;
+            }
+            current = next;
+        }
+        return false;
     }
 
     /**

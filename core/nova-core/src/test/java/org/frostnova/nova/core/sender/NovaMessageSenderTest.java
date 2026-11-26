@@ -1002,17 +1002,26 @@ class NovaMessageSenderTest {
     @org.junit.jupiter.api.Nested
     @DisplayName("替调用方当场发一条")
     class DeliverForCaller {
-        // 抓的故障：走 HTTP 的去向等回包超时，被当成「没发出」交回去，调用方再发一遍，群里成了两条。
+        // 抓的故障：外部程序发了一条，对方回得慢，核心按平常的重试又交了两次，群里收到三条一样的。
         @Test
-        @DisplayName("走 HTTP 的去向每一次都没回包时回送达不明")
+        @DisplayName("走 HTTP 的去向等回包超时时只交一次、回送达不明；连接被拒才重试")
         void anHttpDestinationThatNeverAnswersIsUnknown() {
             HttpUtil http = mock(HttpUtil.class);
-            when(http.postJson(anyString(), anyMap(), anyMap())).thenThrow(new IllegalStateException("Read timed out"));
+            when(http.postJson(anyString(), anyMap(), anyMap())).thenThrow(new org.springframework.web.client.ResourceAccessException(
+                    "I/O error on POST request", new java.net.SocketTimeoutException("Read timed out")));
 
             DeliveryReceipt receipt = sender(http).deliverForCaller(message());
 
             assertEquals(DeliveryReceipt.Outcome.UNKNOWN, receipt.outcome());
             assertNull(receipt.id());
+            verify(http, times(1)).postJson(anyString(), anyMap(), anyMap());
+
+            HttpUtil refused = mock(HttpUtil.class);
+            when(refused.postJson(anyString(), anyMap(), anyMap())).thenThrow(new org.springframework.web.client.ResourceAccessException(
+                    "I/O error on POST request", new java.net.ConnectException("Connection refused")));
+
+            assertEquals(DeliveryReceipt.Outcome.UNREACHABLE, sender(refused).deliverForCaller(message()).outcome());
+            verify(refused, times(3)).postJson(anyString(), anyMap(), anyMap());
         }
 
         // 抓的故障：进程内的去向没连上（请求没离开本机），却回了「不明」，调用方不敢重发，这条就丢了。
