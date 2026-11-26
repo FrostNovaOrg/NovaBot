@@ -40,6 +40,7 @@ class ConfigUiMemberPermissionsTest {
             GET oidc/callback
             POST oidc/backchannel-logout
             GET auth/agreement
+            GET outbox/conversations
             GET vocab
             GET platforms
             GET session-check
@@ -170,6 +171,9 @@ class ConfigUiMemberPermissionsTest {
             POST qqbot/groups/{num}/remark
             POST qqbot/admin-claims/code
             POST qqbot/admin-claims/{memberNum}/revoke
+            POST outbox/conversations
+            PUT outbox/conversations/{num}
+            POST outbox/conversations/{num}/disable
             GET exec/notice
             """);
     private static Set<String> routes(String text) {
@@ -211,8 +215,8 @@ class ConfigUiMemberPermissionsTest {
     @Test void everySpringHandlerHasAnExplicitClassification() throws Exception {
         var expected = new TreeSet<String>(); expected.addAll(EVERYONE); expected.addAll(SCOPED); expected.addAll(ADMIN); expected.addAll(FILTERED);
         assertEquals(expected, mappings.keySet());
-        assertEquals(140, mappings.size());
-        assertEquals(23, EVERYONE.size()); assertEquals(31, SCOPED.size()); assertEquals(77, ADMIN.size()); assertEquals(9, FILTERED.size());
+        assertEquals(144, mappings.size());
+        assertEquals(24, EVERYONE.size()); assertEquals(31, SCOPED.size()); assertEquals(80, ADMIN.size()); assertEquals(9, FILTERED.size());
         var entries = ConfigUiPermissions.entries();
         assertEquals(expected, new TreeSet<>(entries.keySet()));
         EVERYONE.forEach(route -> assertEquals(ConfigUiPermissions.Access.EVERYONE, entries.get(route).access(), route));

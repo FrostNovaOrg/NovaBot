@@ -17,6 +17,7 @@ import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.event.NovaExternalBaseEvent;
 import org.frostnova.nova.core.handler.NovaEventHandler;
+import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.plugin.NovaComponent;
@@ -151,9 +152,9 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
         Runnable onImageDegraded = uid == null ? null : () -> liveDataService.incrementLiveMetric(
                 event.getPlatform(), uid, BilibiliLiveMetric.IMAGE_DEGRADED_COUNT, 1);
 
-        PushHandlerSupport.send(sender, target,
+        PushHandlerSupport.sendWithOrigin(sender, target, Message.PushOrigin.from(Message.PushKind.DYNAMIC, event),
                 PushHandlerSupport.withAtBlock(mode, target, template, content, subscriberAt), onImageDegraded,
-                PushHandlerSupport.atAllFallback(mode, target, template, subscriberAt));
+                PushHandlerSupport.atAllFallback(mode, target, template, subscriberAt), null);
     }
 
     /**

@@ -228,6 +228,8 @@ public class WeeklyReportDeliveryService {
         String body = report.image() == null ? text : "{image_base64="
                 + Base64.getEncoder().encodeToString(report.image()) + "}\n" + text;
         Message message = Message.create(target.getPlatform(), target.getType(), target.getNum(), body).get(0);
+        message.setPushOrigin(new Message.PushOrigin(Message.PushKind.WEEKLY_REPORT, platform, uid,
+                report.data() == null ? null : report.data().streamerName()));
         message.setChannel(target);
         var listener = reportDeliveryListener;
         if (scheduled && listener != null) {

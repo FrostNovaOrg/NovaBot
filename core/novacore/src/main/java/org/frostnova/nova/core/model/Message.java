@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.model;
 
 import org.frostnova.nova.core.enums.PushTargetType;
+import org.frostnova.nova.core.event.NovaExternalBaseEvent;
 import org.frostnova.nova.core.lang.StringUtil;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -37,6 +38,36 @@ public class Message {
     @com.alibaba.fastjson2.annotation.JSONField(serialize = false, deserialize = false)
     @lombok.ToString.Exclude
     private PushTarget channel;
+
+    /** 生成这条通知的用途，用于延迟发送时确定有效期。 */
+    public enum PushKind { LIVE_ON, LIVE_OFF, DYNAMIC, LIVE_REPORT, REWARD_DIGEST, WEEKLY_REPORT, OTHER }
+
+    @com.alibaba.fastjson2.annotation.JSONField(serialize = false, deserialize = false)
+    @ToString.Exclude
+    private PushOrigin pushOrigin;
+
+    public record PushOrigin(PushKind kind, String platform, Long uid, String name) {
+        public static PushOrigin from(PushKind kind, NovaExternalBaseEvent event) {
+            var source = event.getSource();
+            return source == null ? new PushOrigin(kind, event.getPlatform(), null, null)
+                    : new PushOrigin(kind, event.getPlatform(), source.getUid(), source.getUname());
+        }
+    }
+
+    /** 推送自带的来源优先，未指定时从所属通道取主播。 */
+    public PushOrigin deliveryOrigin() {
+        var user = channel == null ? null : channel.getUser();
+        if (pushOrigin == null || pushOrigin.uid() == null && user != null) {
+            var kind = pushOrigin == null ? PushKind.OTHER : pushOrigin.kind();
+            return user == null ? new PushOrigin(kind, null, null, null)
+                    : new PushOrigin(kind, user.getPlatform(), user.getUid(), user.getUname());
+        }
+        if (user != null && Objects.equals(user.getUid(), pushOrigin.uid())
+                && Objects.equals(user.getPlatform(), pushOrigin.platform()) && StringUtil.isBlank(pushOrigin.name())) {
+            return new PushOrigin(pushOrigin.kind(), pushOrigin.platform(), pushOrigin.uid(), user.getUname());
+        }
+        return pushOrigin;
+    }
 
     /**
      * 推送目标类型

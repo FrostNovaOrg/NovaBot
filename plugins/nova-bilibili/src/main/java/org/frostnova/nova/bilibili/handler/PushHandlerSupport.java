@@ -152,6 +152,15 @@ public final class PushHandlerSupport {
     /** 每个消息段确认送达后运行成功回调。 */
     public static void send(NovaMessageSender sender, PushTarget target, String content,
                      Runnable onImageDegraded, String atAllFallback, Consumer<Message> onSuccess) {
+        sendWithOrigin(sender, target, null, content, onImageDegraded, atAllFallback, onSuccess);
+    }
+
+    public static void sendWithOrigin(NovaMessageSender sender, PushTarget target, Message.PushOrigin origin, String content) {
+        sendWithOrigin(sender, target, origin, content, null, null, null);
+    }
+
+    public static void sendWithOrigin(NovaMessageSender sender, PushTarget target, Message.PushOrigin origin, String content,
+                            Runnable onImageDegraded, String atAllFallback, Consumer<Message> onSuccess) {
         if (StringUtil.isBlank(content)) {
             return;
         }
@@ -159,6 +168,7 @@ public final class PushHandlerSupport {
         List<Message> messages = Message.create(target.getPlatform(), target.getType(), target.getNum(), content);
         for (Message message : messages) {
             message.setChannel(target);
+            message.setPushOrigin(origin);
             if (onImageDegraded != null) {
                 message.addOnImageDegradedCallback(onImageDegraded);
             }

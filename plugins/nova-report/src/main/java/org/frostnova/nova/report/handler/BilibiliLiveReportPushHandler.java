@@ -141,7 +141,8 @@ public class BilibiliLiveReportPushHandler implements NovaEventHandler {
                 log.warn("无法生成下播报告的问答摘要", error);
             }
         }
-        PushHandlerSupport.send(sender, target, report, null, null, onSuccess);
+        PushHandlerSupport.sendWithOrigin(sender, target, Message.PushOrigin.from(Message.PushKind.LIVE_REPORT, event),
+                report, null, null, onSuccess);
     }
 
     @Override

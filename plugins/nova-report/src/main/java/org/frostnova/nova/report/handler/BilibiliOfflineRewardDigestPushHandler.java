@@ -8,6 +8,7 @@ import org.frostnova.nova.bilibili.handler.PushHandlerSupport;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.event.NovaExternalBaseEvent;
 import org.frostnova.nova.core.handler.NovaEventHandler;
+import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.HandlerOption;
 import org.frostnova.nova.core.model.PushTarget;
@@ -129,7 +130,8 @@ public class BilibiliOfflineRewardDigestPushHandler implements NovaEventHandler 
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId())
                 .replace("{picture}", picture);
 
-        PushHandlerSupport.send(sender, target, PushHandlerSupport.withoutAtBlocks(content));
+        PushHandlerSupport.sendWithOrigin(sender, target, Message.PushOrigin.from(Message.PushKind.REWARD_DIGEST, event),
+                PushHandlerSupport.withoutAtBlocks(content));
     }
 
     private static int threshold(JSONObject params) {

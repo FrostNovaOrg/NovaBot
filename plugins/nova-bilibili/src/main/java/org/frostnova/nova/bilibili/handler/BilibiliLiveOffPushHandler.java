@@ -7,6 +7,7 @@ import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.bilibili.util.DurationFormatUtil;
 import org.frostnova.nova.core.event.NovaExternalBaseEvent;
 import org.frostnova.nova.core.handler.NovaEventHandler;
+import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.plugin.NovaComponent;
@@ -64,7 +65,8 @@ public class BilibiliLiveOffPushHandler implements NovaEventHandler {
                 .replace("{uname}", PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()))
                 .replace("{url}", "https://live.bilibili.com/" + event.getSource().getRoomId());
 
-        PushHandlerSupport.send(sender, target, PushHandlerSupport.withoutAtBlocks(content));
+        PushHandlerSupport.sendWithOrigin(sender, target, Message.PushOrigin.from(Message.PushKind.LIVE_OFF, event),
+                PushHandlerSupport.withoutAtBlocks(content));
     }
 
     /**

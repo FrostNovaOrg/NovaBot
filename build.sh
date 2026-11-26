@@ -287,7 +287,7 @@ if [ "$TESTS" = "1" ]; then
     TEST_GROUPS=(
         "nova-core|core/nova-core"
         "bilibili-report|plugins/nova-bilibili,plugins/nova-report"
-        "others|core/novacore,plugins/nova-onebot-adapter,plugins/nova-onebot-adapter-napcat-extension,plugins/nova-qqbot-adapter,plugins/nova-console"
+        "others|core/novacore,plugins/nova-onebot-adapter,plugins/nova-onebot-adapter-napcat-extension,plugins/nova-qqbot-adapter,plugins/nova-outbox-adapter,plugins/nova-console"
     )
     TEST_TMP_BASE="${TMPDIR:-/tmp}"
     # argLine 按空白切参数，临时目录的路径里不能带空白
@@ -411,7 +411,7 @@ mvn "${MAVEN_ARGS[@]}" -f core/nova-core/pom.xml -Ppackage -DskipTests package
 
 echo "==> [5/9] 汇总产物至 dist/build"
 OUT="$ROOT/dist/build"
-PLUGIN_MODULES=(plugins/nova-onebot-adapter plugins/nova-onebot-adapter-napcat-extension plugins/nova-qqbot-adapter plugins/nova-bilibili plugins/nova-console plugins/nova-report)
+PLUGIN_MODULES=(plugins/nova-onebot-adapter plugins/nova-onebot-adapter-napcat-extension plugins/nova-qqbot-adapter plugins/nova-outbox-adapter plugins/nova-bilibili plugins/nova-console plugins/nova-report)
 
 rm -rf "$OUT"
 mkdir -p "$OUT/plugins" "$OUT/lib" "$OUT/plugins-lib"
