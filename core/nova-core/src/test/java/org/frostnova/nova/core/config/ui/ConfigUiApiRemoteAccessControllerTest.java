@@ -290,6 +290,40 @@ class ConfigUiApiRemoteAccessControllerTest extends OidcTestSupport {
         assertTrue(ConfigUiApiRemoteAccessController.beyondLoopback(List.of("127.0.0.1/1")));
     }
 
+    // 抓的故障：来源名单已经放行所有地址（例如里面有 0.0.0.0/0），外面的人凭令牌照样调得通，
+    // 页面上的开关却还显示关着，管理员以为没对外开。回包要如实带出这一位，名单原文仍不进回包。
+    @Test
+    void allowListThatAdmitsEveryAddressIsReported() throws Exception {
+        ConfigUiSession admin = auth.issueForPassword("127.0.0.1");
+        String token = tokens.issue(ConfigUiAccount.LOCAL_ID, "取件机", List.of("parcel:read"), null).plaintext();
+        assertFalse(body(console(get("/config/api/api-tokens/remote-access"), admin)).getBooleanValue("allowListAdmitsAll"),
+                "默认名单不算放行所有地址");
+
+        properties.getConfigUi().setAllowIps(List.of("127.0.0.1/32", "::1/128", "198.51.100.7", "10.0.0.0/8"));
+        assertFalse(body(console(get("/config/api/api-tokens/remote-access"), admin)).getBooleanValue("allowListAdmitsAll"),
+                "加了一个具体地址和一个内网网段也不算");
+
+        properties.getConfigUi().setAllowIps(List.of("127.0.0.1/32", "0.0.0.0/0"));
+        assertEquals(200, outsider(token).getStatus(), "开关全关着，名单外的来访者照样调得通");
+        JSONObject state = body(console(get("/config/api/api-tokens/remote-access"), admin));
+        assertTrue(state.getBooleanValue("allowListAdmitsAll"), "IPv4 全放");
+        assertFalse(state.getJSONArray("groups").getJSONObject(0).getBooleanValue("open"), "开关本身仍如实是关着的");
+        assertFalse(state.toJSONString().contains("0.0.0.0/0"), "名单原文不进回包");
+
+        properties.getConfigUi().setAllowIps(List.of("::1/128", "::/0"));
+        assertTrue(body(console(get("/config/api/api-tokens/remote-access"), admin)).getBooleanValue("allowListAdmitsAll"),
+                "IPv6 全放");
+
+        properties.getConfigUi().setAllowIps(List.of("0.0.0.0/1", "128.0.0.0/1"));
+        assertEquals(200, outsider(token).getStatus());
+        assertTrue(body(console(get("/config/api/api-tokens/remote-access"), admin)).getBooleanValue("allowListAdmitsAll"),
+                "两半拼起来也是全放");
+        assertTrue(IpMatcher.admitsEveryAddress(List.of("8.8.8.8/0")), "前缀为 0 时地址写什么都是全放");
+        assertFalse(IpMatcher.admitsEveryAddress(List.of("0.0.0.0/1", "128.0.0.0/2")), "差一块就不算");
+        assertFalse(IpMatcher.admitsEveryAddress(List.of("0.0.0.0/0x", "::/0/0", "*")), "写错的条目本来就不起作用，不算");
+        assertFalse(IpMatcher.admitsEveryAddress(null));
+    }
+
     // 抓的故障：在设置页上把接口组加进清单，一句提醒也没有就对外开了；或者写错的组名被存下来，让人以为开了。
     @Test
     void settingsPageAsksBeforeOpeningAndRejectsMalformedNames() {
