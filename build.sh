@@ -486,6 +486,9 @@ rm -f "$OUT/datasource.json"
 # 里若躺着一份本机改过的覆盖，`cp -R` 已经把它拷进来了。
 rm -f "$OUT/template-defaults.json"
 
+# 取件程序首次运行才生成设置，其中可能有访问令牌。
+rm -f "$OUT/tools/outbox-pickup.json"
+
 # 版本号跟这次构建的其它来源记在一起。取不到就停下，不写空的 version=。
 # 打包那一步用的是同一个 VERSION，不再另取一次。
 VERSION="$(mvn "${MAVEN_ARGS[@]}" -q -DforceStdout help:evaluate -Dexpression=project.version 2>/dev/null | tail -1)"

@@ -317,6 +317,21 @@ class OutboxApiTest {
         assertEquals("SKIPPED", data(submit(id, "receipt", "{\"claimNumber\":2,\"outcome\":\"SKIPPED\"}")).getString("status"));
     }
 
+    @Test @DisplayName("通知已经发出，仅因回报晚了就一直显示结果不明")
+    void acceptsReceiptAfterClaimTimeout() throws Exception {
+        var earlier = new OutboxService(context.getBean(OutboxDatabase.class), new OutboxSettings(),
+                Clock.offset(Clock.systemUTC(), Duration.ofMinutes(-16)), event -> {});
+        long id = earlier.enqueue(conversation, OWNER, PushKind.DYNAMIC, "动态通知").get(0).id();
+        long claimNumber = earlier.claim(id, "日间设备").claimNumber();
+
+        assertEquals("UNKNOWN", data(read("messages/" + id)).getString("status"));
+        String receipt = JSONObject.of("claimNumber", claimNumber, "outcome", "SENT", "note", "已送达").toJSONString();
+        assertEquals("SENT", data(submit(id, "receipt", receipt)).getString("status"));
+        assertEquals("SENT", data(read("messages/" + id)).getString("status"));
+        assertEquals("已送达", service.get(id, OWNER::equals).note());
+        error(submit(id, "receipt", receipt), 409, "conflict");
+    }
+
     @Test @DisplayName("设备重新领走已发、过期或作废的通知")
     void closedMessagesCannotBeClaimed() throws Exception {
         var past = new OutboxService(context.getBean(OutboxDatabase.class), new OutboxSettings(),

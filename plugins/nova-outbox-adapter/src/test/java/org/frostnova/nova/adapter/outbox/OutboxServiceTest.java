@@ -174,7 +174,7 @@ class OutboxServiceTest {
         now = now.plusSeconds(300);
         reopen(settings(Map.of()));
         assertEquals(two, service.list(UNKNOWN, 0, 10, owner::equals).get(0).id());
-        assertThrows(IllegalStateException.class, () -> service.receipt(two, 1, SENT, ""));
+        assertTrue(service.list(PENDING, 0, 10, owner::equals).isEmpty());
         assertEquals(now.plusSeconds(600), service.requeue(one).expiresAt());
         assertNull(service.requeue(two).claimant());
         var sending = service.claim(one, "设备");
@@ -194,6 +194,22 @@ class OutboxServiceTest {
         service.claim(first.id(), "设备乙");
         assertThrows(IllegalStateException.class, () -> service.receipt(first.id(), first.claimNumber(), SENT, null));
         assertEquals("设备乙", service.list(SENDING, 0, 1, owner::equals).get(0).claimant());
+    }
+
+    @Test @DisplayName("重新放回待发后，旧设备迟报已发，把新一轮结果不明的记录标成已发")
+    void rejectsEarlierReceiptAfterNewClaimAlsoTimesOut() {
+        var first = service.claim(put("通知").get(0).id(), "设备甲");
+        now = now.plus(Duration.ofMinutes(16));
+        reopen(settings(Map.of()));
+        assertEquals(PENDING, service.requeue(first.id()).status());
+        assertThrows(OutboxService.StatusConflict.class, () -> service.receipt(first.id(), first.claimNumber(), SENT, null));
+
+        var second = service.claim(first.id(), "设备乙");
+        assertNotEquals(first.claimNumber(), second.claimNumber());
+        now = now.plus(Duration.ofMinutes(16));
+        reopen(settings(Map.of()));
+        assertThrows(OutboxService.StatusConflict.class, () -> service.receipt(first.id(), first.claimNumber(), SENT, null));
+        assertEquals(UNKNOWN, service.get(first.id(), owner::equals).status());
     }
 
     @Test @DisplayName("待发通知被报成已发，或已结束的记录被误作废")

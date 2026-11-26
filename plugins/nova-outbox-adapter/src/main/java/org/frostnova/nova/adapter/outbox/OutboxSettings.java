@@ -47,7 +47,7 @@ public class OutboxSettings {
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private Duration defaultTtl = Duration.ofMinutes(60);
 
-    /** 认领后等待发送结果的时长，默认 15 分钟，超时记为结果不明。 */
+    /** 认领后默认 15 分钟未收到结果，先显示「结果不明」。该次认领的回报仍可更新状态，重新放回待发后旧回报失效。 */
     @ConfigLabel("外发箱 · 认领超时")
     @ConfigEffect(ConfigEffect.Effect.RESTART)
     private Duration claimTimeout = Duration.ofMinutes(15);
