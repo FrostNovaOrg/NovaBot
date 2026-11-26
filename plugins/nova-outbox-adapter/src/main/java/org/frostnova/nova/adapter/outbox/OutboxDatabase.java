@@ -85,13 +85,17 @@ final class OutboxDatabase {
                         at_all INTEGER NOT NULL, segments TEXT NOT NULL, claimant TEXT, claimed_at INTEGER,
                         claim_number INTEGER NOT NULL DEFAULT 0, note TEXT)
                     """);
+            int schemaVersion;
             try (var version = sql.executeQuery("PRAGMA user_version")) {
-                if (version.next() && version.getInt(1) == 0) {
-                    try (var migration = db.createStatement()) {
-                        migration.execute("ALTER TABLE records ADD COLUMN result_at INTEGER");
-                        migration.execute("PRAGMA user_version=1");
-                    }
-                }
+                version.next();
+                schemaVersion = version.getInt(1);
+            }
+            if (schemaVersion == 0) {
+                sql.execute("ALTER TABLE records ADD COLUMN result_at INTEGER");
+            }
+            if (schemaVersion < 2) {
+                sql.execute("ALTER TABLE records ADD COLUMN requeued_at INTEGER");
+                sql.execute("PRAGMA user_version=2");
             }
             sql.execute("CREATE INDEX IF NOT EXISTS pending_times ON records(expires_at) WHERE status='PENDING'");
             sql.execute("CREATE INDEX IF NOT EXISTS claim_times ON records(claimed_at) WHERE status='SENDING'");

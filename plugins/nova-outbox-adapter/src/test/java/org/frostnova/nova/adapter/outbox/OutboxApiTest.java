@@ -192,6 +192,32 @@ class OutboxApiTest {
                 .map(event -> event.detail().get("to")).toList());
     }
 
+    @Test @DisplayName("管理员刚把通知重新放回待发，取件设备明明在线却收到久未取走的告警")
+    void waitsFromWhenNoticeWasRequeued() throws Exception {
+        var watch = new PickupWatch();
+        watch.settings.applyAndTrack(Map.of(PICKUP_ALERT, "true"));
+        long id = put(OWNER, "早班通知").id();
+        watch.elapse(1);
+        long claimNumber = data(submit(id, "claim", "")).getLongValue("claimNumber");
+        assertEquals("FAILED", data(submit(id, "receipt", JSONObject.of("claimNumber", claimNumber,
+                "outcome", "FAILED").toJSONString())).getString("status"));
+        watch.elapse(6);
+
+        assertEquals(true, new OutboxRecordController(service).requeue(id).get("success"));
+        assertEquals(id, data(read("messages")).getJSONArray("items").getJSONObject(0).getLongValue("id"));
+        watch.monitor.check();
+        assertTrue(watch.mail.messages.isEmpty(), watch.mail.messages::toString);
+        assertEquals(false, watch.summary().get("pickupAlert"));
+
+        watch.elapse(4);
+        assertTrue(watch.mail.messages.isEmpty(), watch.mail.messages::toString);
+        watch.elapse(1);
+        assertEquals(1, watch.mail.messages.size());
+        var alert = watch.mail.messages.get(0);
+        assertTrue(alert.contains("已等 5 分钟"), alert);
+        assertEquals(true, watch.summary().get("pickupAlert"));
+    }
+
     @Test @DisplayName("还没开告警就收到通知，或把门槛改成两分钟后仍按原来的时长等")
     void appliesSettingsImmediatelyAndSilencesWhenDisabled() {
         var watch = new PickupWatch();

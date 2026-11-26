@@ -244,10 +244,10 @@ public class OutboxService {
             long oldest = Long.MAX_VALUE;
             var names = new LinkedHashSet<String>();
             try (var sql = prepare(db, """
-                    SELECT c.name, COUNT(*) AS total, MIN(r.created_at) AS oldest
+                    SELECT c.name, COUNT(*) AS total, MIN(COALESCE(r.requeued_at,r.created_at)) AS oldest
                     FROM records r JOIN conversations c ON r.conversation_id=c.id
                     WHERE r.status='PENDING' AND c.enabled=1
-                        AND r.created_at<=? AND r.expires_at>? AND r.created_at>?
+                        AND COALESCE(r.requeued_at,r.created_at)<=? AND r.expires_at>? AND r.created_at>?
                     GROUP BY c.id ORDER BY c.id
                     """, now.minus(Duration.ofMinutes(minutes)).toEpochMilli(), now.toEpochMilli(),
                     now.minus(settings.getRetention()).toEpochMilli());
@@ -369,8 +369,9 @@ public class OutboxService {
             var record = require(db, id);
             expect(record, FAILED, UNKNOWN, EXPIRED);
             update(db, """
-                    UPDATE records SET status='PENDING', expires_at=?, claimant=NULL, claimed_at=NULL, note=NULL, result_at=NULL WHERE id=?
-                    """, now.plus(settings.ttl(record.kind())).toEpochMilli(), id);
+                    UPDATE records SET status='PENDING', expires_at=?, requeued_at=?,
+                        claimant=NULL, claimed_at=NULL, note=NULL, result_at=NULL WHERE id=?
+                    """, now.plus(settings.ttl(record.kind())).toEpochMilli(), clock.millis(), id);
             return require(db, id);
         });
     }
