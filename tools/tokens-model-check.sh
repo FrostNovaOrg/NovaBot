@@ -3,7 +3,7 @@
 #
 # 失败体翻人话、吊销后显哪句／要不要重取清单，全是纯函数
 # （config-ui/tokens-model.js，不碰 DOM）。本尺喂它空串、只填一半、大小写 reason 对答案，
-# 并过一遍语法。
+# 并过一遍语法。访问令牌页的两份脚本（api-tokens-model.js、api-tokens.js）也在这里过语法。
 #
 # 🔴 用 `node --input-type=module --check < 文件` 而不是 `node --check 文件`：
 #    后者对含 import 的 .js 一律返 0（Node v22 实测），也就是说那一格从来没能红过——
@@ -35,7 +35,7 @@ else
 fi
 
 # —— 语法 ——
-for f in "$UI"/tokens-model.js; do
+for f in "$UI"/tokens-model.js "$UI"/api-tokens-model.js "$UI"/api-tokens.js; do
     if node --input-type=module --check < "$f" > /dev/null 2>&1; then
         echo "语法 绿 $f"
     else

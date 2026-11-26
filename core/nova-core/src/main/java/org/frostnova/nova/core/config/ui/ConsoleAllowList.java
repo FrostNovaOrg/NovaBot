@@ -11,8 +11,10 @@ import java.util.function.Supplier;
  * <p>
  * 名单每个请求现读：设置页上保存之后，从下一个请求起就按新名单放行。
  * 名单没变时用上一次建好的匹配器，不每个请求都重新解析一遍。
+ * <p>
+ * 统一接口面 {@code /nova/api/v1/} 也照这份名单放行，控制台关着时同样如此。
  */
-final class ConsoleAllowList implements Supplier<IpMatcher> {
+public final class ConsoleAllowList implements Supplier<IpMatcher> {
     private final NovaCoreProperties.ConfigUi configUi;
 
     private volatile Built built;
@@ -23,7 +25,7 @@ final class ConsoleAllowList implements Supplier<IpMatcher> {
     private record Built(List<String> source, IpMatcher matcher) {
     }
 
-    ConsoleAllowList(NovaCoreProperties.ConfigUi configUi) {
+    public ConsoleAllowList(NovaCoreProperties.ConfigUi configUi) {
         this.configUi = configUi;
     }
 

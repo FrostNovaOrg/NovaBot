@@ -170,10 +170,11 @@ class ConfigUiFrontendTest {
      * <p>
      * 与 {@link #CORE_TABS} 是同一条边界的另一面：<b>核心的界面文件里不许出现这几条以外的路由</b>。
      * 插件页挂在设置页「高级」下，地址是 {@code #/settings/<页标识>}，那一段由注册清单在运行时拼出，
-     * 界面文件里一个平台的名字也没有。
+     * 界面文件里一个平台的名字也没有。访问令牌页（{@code #/api-tokens}）是核心自己的页，
+     * 不属于任何平台，入口在侧栏底部而不在导航条上。
      */
     private static final Set<String> CORE_ROUTES = Set.of(
-            "home", "log", "links", "settings", "setup");
+            "home", "log", "links", "settings", "setup", "api-tokens");
 
     /**
      * 插件放页面脚本的资源目录名，与服务端取资源时用的是同一个常量
