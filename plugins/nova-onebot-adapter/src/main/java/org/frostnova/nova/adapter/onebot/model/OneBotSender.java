@@ -57,6 +57,25 @@ public class OneBotSender {
     private String oneBotHttpToken;
 
     /**
+     * 与 JDK HttpClient 的头值校验同一套：只收制表符、空格、可见 ASCII（0x21-0x7E）与 0x80-0xFF；
+     * 其余控制字符、DEL 与 0xFF 以上的字一律不收
+     */
+    public boolean httpTokenFitsInHeader() {
+        String token = oneBotHttpToken;
+        if (token == null) {
+            return true;
+        }
+        for (int i = 0; i < token.length(); i++) {
+            char c = token.charAt(i);
+            boolean fits = c == '\t' || c == ' ' || (c >= 0x21 && c <= 0x7E) || (c >= 0x80 && c <= 0xFF);
+            if (!fits) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * OneBot Websocket Token
      */
     @ConfigLevel(ConfigLevel.Level.BASIC)

@@ -102,7 +102,7 @@ public class OneBotConnectionTester implements BotConnectionTester {
         // 头值里放不下的字符会让 HTTP 客户端在建请求时抛异常，消息原样带着整段头值，
         // 在这里先拦下，Token 一个字也不进回包和日志
         String token = sender.getOneBotHttpToken();
-        if (!fitsInHeader(token)) {
+        if (!sender.httpTokenFitsInHeader()) {
             log.debug("测试 OneBot 连接未发出：HTTP Token 里有请求头放不下的字符");
             return Result.failed("HTTP Token 里有请求头放不下的字符（例如换行、中文或全角字符）",
                     "请检查配置文件里的 HTTP Token，或在页面上重新填写后再测");
@@ -155,24 +155,6 @@ public class OneBotConnectionTester implements BotConnectionTester {
             return Result.failed("连接测试失败：" + e.getClass().getSimpleName(),
                     "请检查地址、端口与 Token 配置，并确认 OneBot 实现处于运行状态");
         }
-    }
-
-    /**
-     * 与 JDK HttpClient 的头值校验同一套：只收制表符、空格、可见 ASCII（0x21-0x7E）与 0x80-0xFF；
-     * 其余控制字符、DEL 与 0xFF 以上的字一律不收
-     */
-    private static boolean fitsInHeader(String token) {
-        if (token == null) {
-            return true;
-        }
-        for (int i = 0; i < token.length(); i++) {
-            char c = token.charAt(i);
-            boolean fits = c == '\t' || c == ' ' || (c >= 0x21 && c <= 0x7E) || (c >= 0x80 && c <= 0xFF);
-            if (!fits) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static String masked(String message, String token) {
