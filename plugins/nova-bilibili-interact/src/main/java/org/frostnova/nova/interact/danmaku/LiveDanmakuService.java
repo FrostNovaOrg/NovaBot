@@ -3,6 +3,7 @@ package org.frostnova.nova.interact.danmaku;
 import com.alibaba.fastjson2.JSONObject;
 import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
+import org.frostnova.nova.bilibili.event.live.BilibiliDanmuEvent;
 import org.frostnova.nova.bilibili.exception.RiskCooldownException;
 import org.frostnova.nova.bilibili.service.BilibiliAccountService;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
@@ -32,6 +33,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 /**
@@ -201,23 +203,53 @@ public class LiveDanmakuService {
      * @return 结果，不会为 null，也不抛异常
      */
     public DanmakuResult send(long roomId, String text) {
+        return send(roomId, text, null);
+    }
+
+    /** 与试发共用账号最近一次占用的时间，配置变更立即参与计算。 */
+    public boolean intervalElapsed(AccountStatus status) {
+        String key = SpeakingAccount.key(status.choice(), status.uid());
+        return pacing.tooSoon(key, clock.get(), interval()).isEmpty();
+    }
+
+    /** 回传事件中的发送者是否为当前选中的发言账号。 */
+    public boolean isOwnDanmaku(BilibiliDanmuEvent event) {
+        if (event == null || event.getSender() == null || event.getSender().getUid() == null) return false;
+        return event.getSender().getUid().equals(current().uid());
+    }
+
+    /** 消息仍有效时才调用 reserveAccount，占到账号名额才把这一段标为发送中。 */
+    @FunctionalInterface
+    public interface QueueAdmission {
+        boolean reserveIfCurrent(BooleanSupplier reserveAccount);
+    }
+
+    /** 账号间隔还没到或队列撤回时留给队列再检查，不产生一次发送记录。 */
+    public Optional<DanmakuResult> sendQueued(long roomId, String text, long streamerUid, AccountStatus account,
+                                              QueueAdmission admit) {
+        return Optional.ofNullable(send(roomId, text, new QueuedSend(streamerUid, account, admit)));
+    }
+
+    private record QueuedSend(long streamerUid, AccountStatus account, QueueAdmission admit) {}
+
+    private DanmakuResult send(long roomId, String text, QueuedSend queued) {
         String body = text == null ? "" : text.strip();
         Optional<PushUser> streamer = streamerOfRoom(roomId);
         DanmakuResult result;
         try {
-            result = attempt(roomId, body, streamer.orElse(null));
+            result = attempt(roomId, body, streamer.orElse(null), queued);
         } catch (RuntimeException e) {
             // 不该走到这里；走到了也按「不知道发没发出」交代，不让调用方去重发
             log.warn("弹幕：往房间 {} 发弹幕时出了意外（{}），按结果不明处理", roomId, e.getClass().getSimpleName());
             result = new DanmakuResult(false, DanmakuFailure.UNCERTAIN,
                     "发弹幕时出了意外，不知道发没发出，请到直播间看一眼；不会自动重发", roomId, body, null, null, null);
         }
-        record(result, streamer.orElse(null));
+        if (result != null) record(result, streamer.orElse(null));
         return result;
     }
 
-    private DanmakuResult attempt(long roomId, String text, PushUser streamer) {
-        if (streamer == null) {
+    private DanmakuResult attempt(long roomId, String text, PushUser streamer, QueuedSend queued) {
+        if (streamer == null || (queued != null && !Long.valueOf(queued.streamerUid()).equals(streamer.getUid()))) {
             return refused(DanmakuFailure.ROOM_NOT_ALLOWED, "房间 " + roomId
                     + " 不是已添加的主播的直播间，没发。只能往已添加的主播的直播间发弹幕", roomId, text, null);
         }
@@ -237,6 +269,9 @@ public class LiveDanmakuService {
             return refused(why.failure(), why.message(), roomId, text, account.choice());
         }
 
+        if (queued != null && (account.choice() != queued.account().choice() || !queued.account().uid().equals(account.uid()))) {
+            return refused(DanmakuFailure.NO_ACCOUNT, "发送账号已更换", roomId, text, account.choice());
+        }
         Optional<Duration> paused = pacing.pausedFor(key, clock.get());
         if (paused.isPresent()) {
             return refused(DanmakuFailure.PAUSED, account.choice().shortName() + "刚被平台限制，暂停发弹幕中，这条没发。还要等"
@@ -245,7 +280,7 @@ public class LiveDanmakuService {
         Duration interval = interval();
         Optional<Duration> soon = pacing.tooSoon(key, clock.get(), interval);
         if (soon.isPresent()) {
-            return tooFast(roomId, text, account.choice(), interval);
+            return queued == null ? tooFast(roomId, text, account.choice(), interval) : null;
         }
 
         LengthLimit limit = lengthLimit(account, roomId);
@@ -256,8 +291,10 @@ public class LiveDanmakuService {
                     + "，没发。请删短一些，不会自动截断或拆成几条", roomId, text, account.choice());
         }
 
-        if (!pacing.reserve(key, clock.get(), interval)) {
-            return tooFast(roomId, text, account.choice(), interval);
+        BooleanSupplier reserve = () -> pacing.reserve(key, clock.get(), interval);
+        boolean reserved = queued == null ? reserve.getAsBoolean() : queued.admit().reserveIfCurrent(reserve);
+        if (!reserved) {
+            return queued == null ? tooFast(roomId, text, account.choice(), interval) : null;
         }
         Map<String, Object> form = new LinkedHashMap<>();
         form.put("roomid", roomId);

@@ -11,6 +11,8 @@ import org.frostnova.nova.core.config.ui.page.ConsolePageProvider;
 import org.frostnova.nova.core.config.ui.page.ConsolePageSlot;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
 import org.frostnova.nova.core.health.HealthProbe;
+import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.core.util.HttpUtil;
 import org.frostnova.nova.interact.console.LiveInteractConsoleController;
@@ -51,6 +53,8 @@ class InteractPluginWiringTest {
         AbstractDataSource source = mock(AbstractDataSource.class);
         TimelineWriter timeline = mock(TimelineWriter.class);
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(LiveDataService.class, () -> mock(LiveDataService.class));
+            context.registerBean(NovaStateStore.class, () -> mock(NovaStateStore.class));
             context.registerBean(HttpUtil.class, () -> http);
             context.registerBean(NovaBilibiliProperties.class, NovaBilibiliProperties::new);
             context.registerBean(BilibiliAccountService.class, () -> listener);

@@ -35,8 +35,11 @@ interface SpeakingAccount {
      * @return 账号标识，用不了时为 null
      */
     default String key() {
-        Long uid = uid();
-        return uid == null ? null : choice().value() + ":" + uid;
+        return key(choice(), uid());
+    }
+
+    static String key(DanmakuAccountChoice choice, Long uid) {
+        return uid == null ? null : choice.value() + ":" + uid;
     }
 
     /**

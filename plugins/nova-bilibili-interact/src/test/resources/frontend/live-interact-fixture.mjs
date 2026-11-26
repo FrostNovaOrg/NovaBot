@@ -50,6 +50,8 @@ let state = {
   rooms: [{uid: '501', name: '示例主播', roomId: '1001'}, {uid: '502', name: '另一位', roomId: '1002'}],
   minInterval: 3, pauseMinutes: 5, defaultLimit: 20,
 };
+const blankSettings = {enabled: false, perMinute: 6, features: {}, plans: []};
+const settingsByRoom = {};
 const calls = [];
 let release = null;
 let sendReply = {success: true, sent: true, message: '已发出：「你好」'};
@@ -57,9 +59,27 @@ let valuesReplies = [];
 globalThis.__api = async (path, options) => {
   calls.push({path, method: (options && options.method) || 'GET', body: options && options.body ? JSON.parse(options.body) : null});
   if (path === '/interact/danmaku/state') return state;
+  if (path.startsWith('/interact/danmaku/settings?uid=')) {
+    const uid = path.split('=').pop();
+    return {success: true, settings: structuredClone(settingsByRoom[uid] || blankSettings)};
+  }
+  if (path === '/interact/danmaku/settings') {
+    const {uid, settings} = JSON.parse(options.body);
+    settingsByRoom[uid] = settings;
+    state.rooms.find(r => r.uid === uid).autoEnabled = settings.enabled;
+    return {success: true, settings};
+  }
+  if (path.startsWith('/interact/danmaku/history?')) {
+    const params = new URLSearchParams(path.split('?')[1]);
+    const filtered = params.get('outcome') === 'DROPPED';
+    const text = filtered ? '迟到的弹幕' : params.get('page') === '2' ? '上一页的试发' : '第一条';
+    return {success: true, rows: [{time: 1795680000000, text, feature: filtered ? 'timed' : 'test',
+      outcome: filtered ? 'DROPPED' : 'SENT', reason: filtered ? '排队已满' : '已发出'}], total: filtered ? 1 : 21, pageSize: 20};
+  }
   if (path.startsWith('/interact/danmaku/limit?uid=')) return {success: true, limit: path.endsWith('502') ? 30 : 20, fromPlatform: true};
   if (path === '/interact/danmaku/test') {
     await new Promise(resolve => { release = resolve; });
+    if (sendReply instanceof Error) throw sendReply;
     return sendReply;
   }
   if (path.startsWith('/values')) return valuesReplies.shift() || {success: true};
@@ -96,8 +116,9 @@ check('账号不能用时写出原因', byId('li-status').textContent.includes('
   byId('li-status').textContent);
 check('主播下拉里有已添加的主播', byId('li-room').innerHTML.includes('示例主播') && byId('li-room').innerHTML.includes('房间 1001'));
 check('进页不发弹幕', sends().length === 0, JSON.stringify(calls));
-check('进页只问状态和选中那位的字数上限',
-  calls.every(call => call.path === '/interact/danmaku/state' || call.path === '/interact/danmaku/limit?uid=501'), JSON.stringify(calls));
+check('进页只读状态、上限、所选主播设置与记录',
+  calls.every(call => call.method === 'GET' && ['/interact/danmaku/state', '/interact/danmaku/limit?uid=501',
+    '/interact/danmaku/settings?uid=501', '/interact/danmaku/history?uid=501&page=1'].includes(call.path)), JSON.stringify(calls));
 check('不轮询', timers === 0, '排了 ' + timers + ' 次定时器');
 
 // —— 字数 ——
@@ -169,6 +190,55 @@ check('存好后说明当场生效', byId('li-save-result').textContent.includes
 check('存好后显示新账号能用', byId('li-status').textContent.includes('监听账号') && byId('li-status').textContent.includes('能用'),
   byId('li-status').textContent);
 check('全程没有多发弹幕', sends().length === 2);
+
+// 试发回包丢失时若显示「没发」，管理员可能点第二次，直播间里收到两条。
+sendReply = new Error('连接中断');
+byId('li-send').click();
+await flush();
+release();
+await flush();
+check('连接中断时引导管理员核实发送结果', byId('li-result').textContent.includes('不确定')
+  && byId('li-result').textContent.includes('发送记录'), byId('li-result').textContent);
+
+// 关着总开关还能编辑下方内容，或把甲的定时计划存到了乙的直播间。
+check('总开关关闭时显示原因且设置置灰', byId('li-features').disabled && !byId('li-off-note').hidden);
+byId('li-enabled').checked = true;
+byId('li-enabled').dispatchEvent({type: 'change'});
+byId('li-timed').checked = true;
+byId('li-add').click();
+const planRow = () => byId('li-plans').querySelector('.li-plan');
+check('新计划默认十分钟、轮流、安静时跳过', Number(planRow().querySelector('.li-minutes').value) === 10
+  && planRow().querySelector('.li-order').value === 'cycle' && planRow().querySelector('.li-quiet').checked);
+planRow().querySelector('.li-lines').value = '你好，{主播}\n欢迎';
+planRow().querySelector('.li-minutes').value = '3';
+byId('li-save').click();
+await flush();
+check('保存后可见已生效与启用主播的名字', byId('li-settings-result').textContent.includes('已生效')
+  && byId('li-summary').textContent.includes('示例主播'));
+const saved = settingsByRoom['501'];
+check('选中的主播有且只有一条计划', saved?.plans.length === 1 && saved.plans[0].minutes === 3
+  && saved.plans[0].texts.length === 2 && saved.features.timed);
+planRow().querySelector('.li-plan-on').checked = false;
+byId('li-save').click();
+await flush();
+check('停用计划后写回同一条', settingsByRoom['501'].plans.length === 1 && !settingsByRoom['501'].plans[0].enabled);
+planRow().querySelector('.li-remove').click();
+byId('li-save').click();
+await flush();
+check('删除计划后保存了空列表', settingsByRoom['501'].plans.length === 0);
+byId('li-settings-room').value = '502';
+byId('li-settings-room').dispatchEvent({type: 'change'});
+await flush();
+check('切换到另一位主播后显示自己的开关', !byId('li-enabled').checked && byId('li-features').disabled);
+
+// 想查之前的试发或被丢掉的弹幕，却只能看第一屏或筛不到原因。
+byId('li-next').click();
+await flush();
+check('可翻到第二页的试发', byId('li-page').textContent.includes('2 / 2') && byId('li-history').textContent.includes('上一页的试发'));
+byId('li-outcome').value = 'DROPPED';
+byId('li-outcome').dispatchEvent({type: 'change'});
+await flush();
+check('筛选后回第一页并显示原因', byId('li-page').textContent.includes('1 / 1') && byId('li-history').textContent.includes('排队已满'));
 
 if (failures.length) {
   console.error('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');
