@@ -22,7 +22,7 @@ final class RoomKeywordReplies {
 
     void accept(List<KeywordRule> current, String message, UserInfo viewer, String streamer, Instant now,
                 BiPredicate<KeywordRule, String> enqueue) {
-        if (DanmakuTemplate.blank(message) || DanmakuTemplate.blank(viewer.getUname())) return;
+        if (DanmakuTemplate.blank(message)) return;
         String text = KeywordRule.trim(message).toLowerCase(Locale.ROOT);
         KeywordRule rule = current.stream().filter(r -> r.enabled() && r.matches(text)).findFirst().orElse(null);
         if (rule == null) return;
@@ -36,8 +36,10 @@ final class RoomKeywordReplies {
         int size = rule.replies().size();
         int index = last == null ? 0 : last.nextReply();
         if (rule.random()) index = ThreadLocalRandom.current().nextInt(size);
-        String reply = KeywordRule.TEXT.render(rule.replies().get(index), RoomThanks.shortName(viewer.getUname()),
-                RoomThanks.shortName(streamer), "");
+        String template = rule.replies().get(index);
+        String viewerName = DanmakuTemplate.blank(viewer.getUname()) ? "" : RoomThanks.shortName(viewer.getUname());
+        if (viewerName.isEmpty() && template.contains("{用户}")) return;
+        String reply = KeywordRule.TEXT.render(template, viewerName, RoomThanks.shortName(streamer), "");
         if (enqueue.test(rule, reply)) {
             rules.put(rule, new Used(now.plusSeconds(rule.cooldownSeconds()), (index + 1) % size));
             viewers.put(identity, now.plusSeconds(30));

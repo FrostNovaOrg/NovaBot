@@ -5,10 +5,13 @@ import org.frostnova.nova.bilibili.event.live.*;
 import org.frostnova.nova.bilibili.service.BilibiliPkOpponentService.Profile;
 import org.frostnova.nova.core.event.live.common.PkBattleEvent.Opponent;
 import org.frostnova.nova.core.event.live.common.PkBattleEvent.Stage;
+import org.frostnova.nova.core.model.EmojiInfo;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.UserInfo;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -65,34 +68,51 @@ class KeywordAndPkTest extends RoomInteractionFixture {
     }
 
     @Test
-    @DisplayName("打码观众连续触发不同规则，或把整句匹配、停用规则和表情误当成命中")
-    void limitsEachViewerByFullIdentityAndMatchesLiteralText() {
+    @DisplayName("机器人给纯表情接话，或误回复只匹配部分文字和已停用的规则")
+    void ignoresPureEmojiAndMatchesLiteralText() {
         var first = rule(".*", "甲");
         first.put("exact", true);
-        var second = rule("乙", "第二句");
-        second.put("cooldownSeconds", 10);
         var off = rule("停用", "不该回");
         off.put("enabled", false);
-        keywords(first, second, off);
-        var viewer = new UserInfo(0L, "相同前缀一二三四五六七*甲");
+        keywords(first, off, rule("比心", "谢谢"));
         say(MING, "随便一句");
         say(MING, "a.*");
         say(MING, "停用");
-        events.publishEvent(new BilibiliEmojiEvent(ROOM, MING, null, now));
-        say(viewer, "  .*  ");
+        var emoji = new EmojiInfo("emote_1", "比心", "https://example.invalid/heart.png");
+        events.publishEvent(new BilibiliEmojiEvent(ROOM, MING, emoji, now));
         tick(0);
+        assertEquals(List.of(), sent);
+        say(MING, "  .*  ");
+        tick(0);
+        assertEquals(List.of("甲"), sent);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"1, , 2, 小红", "0, 相同前缀一二三四五六七*甲, 0, 相同前缀一二三四五六七*乙"})
+    @DisplayName("一个人刷不同关键词，机器人在 30 秒内对着他连回两句")
+    void limitsEachViewerByFullIdentity(long uid, String name, long otherUid, String otherName) {
+        var second = rule("时间", "晚上八点");
+        second.put("cooldownSeconds", 10);
+        keywords(rule("群号", "群号见简介"), second);
+        var viewer = new UserInfo(uid, name);
+        say(viewer, "群号");
+        tick(0);
+        assertEquals(List.of("群号见简介"), sent);
         at(3);
-        say(viewer, "乙");
+        say(viewer, "时间");
         tick(3);
-        say(new UserInfo(0L, "相同前缀一二三四五六七*乙"), "乙");
-        tick(4);
+        assertEquals(List.of("群号见简介"), sent);
+        say(new UserInfo(otherUid, otherName), "时间");
+        tick(3);
+        assertEquals(List.of("群号见简介", "晚上八点"), sent);
         at(29);
-        say(viewer, "乙");
+        say(viewer, "时间");
         tick(29);
+        assertEquals(List.of("群号见简介", "晚上八点"), sent);
         at(30);
-        say(viewer, "乙");
+        say(viewer, "时间");
         tick(30);
-        assertEquals(List.of("甲", "第二句", "第二句"), sent);
+        assertEquals(List.of("群号见简介", "晚上八点", "晚上八点"), sent);
     }
 
     @Test
@@ -154,6 +174,8 @@ class KeywordAndPkTest extends RoomInteractionFixture {
         pk(1, Stage.OPEN);
         at(11);
         late.complete(PROFILE);
+        tick(11);
+        assertEquals(List.of(), sent);
         pk(2, Stage.OPEN);
         configure(true, new JSONObject(), List.of(), "");
         configure(true, on, List.of(), "");
@@ -195,11 +217,15 @@ class KeywordAndPkTest extends RoomInteractionFixture {
         pk(1, Stage.OPEN);
         configure(true, new JSONObject(), rules, "");
         configure(true, features, rules, "");
+        tick(0);
+        assertEquals(List.of(), sent);
         at(61);
         events.publishEvent(new BilibiliLotteryStartEvent(ROOM, 1L, now, now.plusSeconds(60)));
         say(HONG, "群号");
         pk(2, Stage.OPEN);
-        tick(122);
+        tick(61);
+        assertEquals(List.of(), sent);
+        at(122);
         var waiting = new CompletableFuture<Profile>();
         when(opponents.lookup(3L, OTHER)).thenReturn(waiting);
         pk(3, Stage.OPEN);
