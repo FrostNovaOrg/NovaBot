@@ -199,3 +199,34 @@ export function lanStatus(lan) {
   return {level: 'ok', text: listen + who.join('；') + '。都要带有效的访问令牌；这台机器的防火墙也要放行这个端口。',
     steps};
 }
+
+/**
+ * 「从别的机器访问」顶部那条提示：来源名单已经放行所有地址时，下面的开关关着也不拦人
+ * @param state GET /api-tokens/remote-access 的回包
+ * @return 要提示的话；名单没有全放时为空串
+ */
+export function remoteNotice(state) {
+  if (!(state && state.allowListAdmitsAll)) return '';
+  return '「允许访问的来源 IP」已经放行所有地址，下面的开关关着也不会拦人：任何能连到这里的人，'
+    + '只要有有效的访问令牌，就能调全部接口。想让这些开关起作用，先到「设置」把「允许访问的来源 IP」收窄到具体的地址或网段'
+    + '（这份名单也决定控制台能从哪里打开，收窄时留下你自己正在用的地址）。';
+}
+
+/**
+ * 每组开关旁的那个状态标
+ * @param group 回包里的一组
+ * @param state 回包
+ * @return {{level: 'ok'|'warn'|'', text: string}}
+ */
+export function groupBadge(group, state) {
+  if (group.open) return {level: 'ok', text: '已对任何地址开放'};
+  if (state && state.allowListAdmitsAll) return {level: 'warn', text: '开关此刻不起作用：来源名单已放行所有地址'};
+  return {level: '', text: '只对名单里的地址开放'};
+}
+
+/** 公网那一条里「转发了通不通」那一句 */
+export function publicHint(state) {
+  return state && state.allowListAdmitsAll
+    ? '来源名单已放行所有地址：转发了就通，只靠访问令牌把关。'
+    : '转发了也不等于放通：名单以外的来访者调不调得了，看上面的开关。';
+}

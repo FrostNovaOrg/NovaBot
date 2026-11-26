@@ -237,6 +237,8 @@ public class ConfigUiApiRemoteAccessController {
         result.put("listen", listen);
         result.put("lan", new JSONArray(new ArrayList<>("specific".equals(scope) ? List.of(address) : lanAddresses.get())));
         result.put("allowListBeyondLocal", beyondLoopback(configUi.getAllowIps()));
+        // 名单放行所有地址时，下面的开关关着也不拦人：页面要如实说出来，只给这一位，不给名单原文
+        result.put("allowListAdmitsAll", IpMatcher.admitsEveryAddress(configUi.getAllowIps()));
         result.put("consequence", RuntimeConfigurationApplier.OPENING_CONSEQUENCE);
         result.put("setting", RuntimeConfigurationApplier.API_ANY_SOURCE_GROUPS);
         return result;

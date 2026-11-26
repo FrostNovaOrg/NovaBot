@@ -3,12 +3,13 @@
  *
  * 量的是 config-ui/api-tokens-model.js 里的 remoteRoutes 与 lanStatus：地址按回包里实际的端口、
  * 部署前缀与内网地址拼，内网那一条按监听地址、来源名单与开关如实说通不通。
+ * 来源名单已放行所有地址时，顶部提示开关不起作用，开关旁不再说「只对名单里的地址开放」。
  * 两者不碰 DOM，可以单独喂值直接跑。
  *
  * 由 ApiTokensRemoteModelTest 拉起，退码 0 ＝ 全绿；非 0 ＝ 有格子红了，红的那几条逐条印出来。
  */
 
-import {lanStatus, localStatus, remoteRoutes} from '../../../main/resources/config-ui/api-tokens-model.js';
+import {groupBadge, lanStatus, localStatus, publicHint, remoteNotice, remoteRoutes} from '../../../main/resources/config-ui/api-tokens-model.js';
 
 const failures = [];
 let checks = 0;
@@ -120,6 +121,27 @@ ok(everywhere.local.includes('不用改任何设置'), '监听全部网卡时照
 eq(remoteRoutes(state({listen: {address: '0.0.0.0', scope: 'all'}}), '', plainPage).local.url,
   'http://127.0.0.1:7827/nova/api/v1/', '监听全部网卡时本机照旧连 127.0.0.1');
 ok(localStatus(fresh.local).tunnel.includes('本机来访'), '只听回环时隧道照旧算本机来访');
+
+// ---------- 四、来源名单已放行所有地址 ----------
+// 名单里有 0.0.0.0/0 或 ::/0 时开关关着也不拦人：页面不能再让人以为「关着＝没对外开」
+const closedGroup = {segment: 'outbox', name: '外发箱', open: false};
+const openGroup = {segment: 'outbox', name: '外发箱', open: true};
+eq(remoteNotice(state()), '', '默认名单：顶部不出提示');
+eq(groupBadge(closedGroup, state()), {level: '', text: '只对名单里的地址开放'}, '默认名单：开关旁的字照旧');
+eq(groupBadge(openGroup, state()), {level: 'ok', text: '已对任何地址开放'}, '默认名单：开着的照旧');
+eq(remoteNotice(state({allowListBeyondLocal: true})), '', '名单里加了别的地址但没全放：不出提示');
+eq(publicHint(state()), '转发了也不等于放通：名单以外的来访者调不调得了，看上面的开关。', '默认名单：公网那句照旧');
+
+const admitsAll = state({allowListBeyondLocal: true, allowListAdmitsAll: true});
+const notice = remoteNotice(admitsAll);
+ok(notice.includes('已经放行所有地址'), '全放：顶部提示说名单已放行所有地址');
+ok(notice.includes('关着也不会拦人') && notice.includes('令牌'), '说清开关关着也不拦人、有令牌就能调');
+ok(notice.includes('收窄'), '说清要先把名单收窄，开关才起作用');
+const badge = groupBadge(closedGroup, admitsAll);
+ok(!badge.text.includes('只对名单里的地址开放'), '全放：开关旁不再写「只对名单里的地址开放」');
+eq(badge.level, 'warn', '全放：开关旁的字是提醒色');
+ok(badge.text.includes('不起作用'), '全放：开关旁写明开关此刻不起作用');
+ok(!publicHint(admitsAll).includes('看上面的开关'), '全放：公网那句不再说「看上面的开关」');
 
 // ---------- 报数 ----------
 console.log('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

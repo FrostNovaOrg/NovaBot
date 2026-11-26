@@ -2,6 +2,7 @@ package org.frostnova.nova.core.util;
 
 import lombok.extern.slf4j.Slf4j;
 
+import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -71,6 +72,55 @@ public class IpMatcher {
         } catch (Exception e) {
             return "只能是 IP 地址或 CIDR 网段，如 192.168.1.10 或 192.168.1.0/24";
         }
+    }
+
+    /**
+     * 这份名单是不是放行所有地址
+     * <p>
+     * 逐条按构造时同一段代码解析（写错的条目构造时就被丢掉，这里同样不算），再分 IPv4、IPv6 各自把网段并起来：
+     * 并起来盖满整个 IPv4 地址空间，或盖满整个 IPv6 地址空间，任一成立即为 true。
+     * 所以 {@code 0.0.0.0/0}、{@code ::/0}、前缀为 0 的任何写法，以及 {@code 0.0.0.0/1} 加 {@code 128.0.0.0/1}
+     * 这种拼起来盖满的，都算放行所有地址。只读判断，不改匹配本身。
+     * @param patterns 规则列表
+     * @return 放行所有 IPv4 地址或所有 IPv6 地址时为 true
+     */
+    public static boolean admitsEveryAddress(Collection<String> patterns) {
+        if (patterns == null) {
+            return false;
+        }
+        List<BigInteger[]> v4 = new ArrayList<>();
+        List<BigInteger[]> v6 = new ArrayList<>();
+        for (String pattern : patterns) {
+            if (pattern == null || pattern.isBlank()) {
+                continue;
+            }
+            Rule rule;
+            try {
+                rule = parse(pattern.trim());
+            } catch (Exception malformed) {
+                continue;
+            }
+            int bits = rule.address().length * 8;
+            BigInteger size = BigInteger.ONE.shiftLeft(bits - rule.prefix());
+            BigInteger start = new BigInteger(1, rule.address()).divide(size).multiply(size);
+            (bits == 32 ? v4 : v6).add(new BigInteger[]{start, start.add(size)});
+        }
+        return covers(v4, 32) || covers(v6, 128);
+    }
+
+    /**
+     * 一组左闭右开的区间并起来是否盖满 [0, 2^bits)
+     */
+    private static boolean covers(List<BigInteger[]> ranges, int bits) {
+        ranges.sort((a, b) -> a[0].compareTo(b[0]));
+        BigInteger reached = BigInteger.ZERO;
+        for (BigInteger[] range : ranges) {
+            if (range[0].compareTo(reached) > 0) {
+                return false;
+            }
+            reached = reached.max(range[1]);
+        }
+        return reached.equals(BigInteger.ONE.shiftLeft(bits));
     }
 
     /**
