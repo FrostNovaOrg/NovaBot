@@ -9,6 +9,7 @@ import org.frostnova.nova.interact.auto.AutoDanmakuQueue;
 import org.frostnova.nova.interact.auto.InteractStore;
 import org.frostnova.nova.interact.auto.RoomSettings;
 import org.frostnova.nova.interact.auto.ThanksKind;
+import org.frostnova.nova.interact.auto.WelcomeSettings;
 import org.frostnova.nova.interact.config.InteractProperties;
 import org.frostnova.nova.interact.config.InteractRuntimeAppliers;
 import org.frostnova.nova.interact.danmaku.DanmakuAccountChoice;
@@ -128,7 +129,7 @@ public class LiveInteractConsoleController {
     public ResponseEntity<JSONObject> settings(@RequestParam(name = "uid") String uid) {
         var room = room(uid).orElseThrow(() -> new IllegalArgumentException("没有这位主播"));
         return response(HttpStatus.OK, JSONObject.of("success", true, "settings", store.settings(room.uid()),
-                "defaultThanksTemplates", ThanksKind.defaultTemplates()));
+                "defaultThanksTemplates", ThanksKind.defaultTemplates(), "defaultWelcomeTemplates", WelcomeSettings.defaultTemplates()));
     }
 
     @PostMapping("/settings")

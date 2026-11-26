@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 /** 一场直播的合并窗口与已答谢观众，只在房间所属的队列锁内使用。 */
@@ -127,6 +128,17 @@ final class RoomThanks {
         audiences.clear();
     }
 
+    void dropForActivity(ThanksSettings settings, String streamer, BiConsumer<ThanksKind, String> drop) {
+        for (Gifts round : gifts.values()) {
+            if (round.yuan.compareTo(settings.giftMinYuan()) >= 0) {
+                drop.accept(ThanksKind.GIFT, ThanksKind.GIFT.render(settings, round.viewer, streamer, round.description()));
+            }
+        }
+        audiences.forEach((kind, group) -> drop.accept(kind,
+                kind.render(settings, group.description(), streamer, String.valueOf(group.viewers.size()))));
+        discardPending();
+    }
+
     boolean uses(AccountStatus other) {
         return account != null && other.choice() == account.choice() && Objects.equals(other.uid(), account.uid());
     }
@@ -168,7 +180,7 @@ final class RoomThanks {
         }
     }
 
-    private static String shortName(String name) {
+    static String shortName(String name) {
         return name.codePointCount(0, name.length()) <= 10 ? name : name.substring(0, name.offsetByCodePoints(0, 10)) + "…";
     }
 

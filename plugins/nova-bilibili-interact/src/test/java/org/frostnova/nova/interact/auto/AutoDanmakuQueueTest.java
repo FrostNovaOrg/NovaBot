@@ -5,6 +5,7 @@ import org.frostnova.nova.bilibili.event.live.BilibiliDanmuEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliEmojiEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOffEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOnEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliLotteryStartEvent;
 import org.frostnova.nova.bilibili.exception.ResponseCodeException;
 import org.frostnova.nova.bilibili.service.BilibiliAccountService;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
@@ -486,6 +487,25 @@ class AutoDanmakuQueueTest {
         tick(13);
         assertEquals(List.of("照发", "到点", "解除"), sent);
         assertEquals(List.of("休息", "休息"), dropped(1).stream().map(r -> r.getString("reason")).toList());
+    }
+
+    @Test
+    @DisplayName("一位主播启用天选暂停后，管理员无法试发，另一位主播的房间也停了")
+    void activityPauseLeavesManualSendAndOtherRoomAvailable() {
+        queue.save(1, new RoomSettings(true, 6, Map.of("timed", true, "pauseActivities", true), List.of()));
+        configure(2, true, true);
+        var other = new LiveStreamerInfo(2L, "乙", 102L);
+        try (var events = events()) {
+            events.publishEvent(new BilibiliLotteryStartEvent(streamer, 1L, now, now.plusSeconds(60)));
+            events.publishEvent(new BilibiliLotteryStartEvent(other, 2L, now, now.plusSeconds(120)));
+            offer(1, "甲的自动弹幕", 0, 30);
+            offer(2, "乙的自动弹幕", 0, 30);
+            assertTrue(sender.send(101, "甲的试发").sent());
+            tick(3);
+            assertEquals(List.of("甲的试发", "乙的自动弹幕"), sent);
+            assertEquals(List.of(101L, 102L), destinations);
+            assertEquals("天选进行中", dropped(1).get(0).getString("reason"));
+        }
     }
 
     @Test

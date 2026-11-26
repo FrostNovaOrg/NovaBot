@@ -10,12 +10,18 @@ import java.util.List;
 import java.util.Map;
 
 /** 一位主播的自动弹幕设置。未列入 features 的功能默认关闭。 */
-public record RoomSettings(boolean enabled, int perMinute, Map<String, Boolean> features, List<Plan> plans, ThanksSettings thanks) {
+public record RoomSettings(boolean enabled, int perMinute, Map<String, Boolean> features, List<Plan> plans,
+                           ThanksSettings thanks, WelcomeSettings welcome) {
     public static final String TIMED = "timed";
+    static final String PAUSE_ACTIVITIES = "pauseActivities";
     public static final RoomSettings DEFAULT = new RoomSettings(false, 6, Map.of(), List.of());
 
     public RoomSettings(boolean enabled, int perMinute, Map<String, Boolean> features, List<Plan> plans) {
         this(enabled, perMinute, features, plans, ThanksSettings.DEFAULT);
+    }
+
+    public RoomSettings(boolean enabled, int perMinute, Map<String, Boolean> features, List<Plan> plans, ThanksSettings thanks) {
+        this(enabled, perMinute, features, plans, thanks, WelcomeSettings.DEFAULT);
     }
 
     public RoomSettings {
@@ -67,7 +73,8 @@ public record RoomSettings(boolean enabled, int perMinute, Map<String, Boolean> 
                         lines.stream().map(String.class::cast).toList(), flag(row, "random", false), flag(row, "skipQuiet", true)));
             }
         }
-        return new RoomSettings(flag(json, "enabled", false), number(json, "perMinute", 6), switches, plans, ThanksSettings.parse(json));
+        return new RoomSettings(flag(json, "enabled", false), number(json, "perMinute", 6), switches, plans,
+                ThanksSettings.parse(json), WelcomeSettings.parse(json));
     }
 
     static boolean flag(JSONObject json, String key, boolean fallback) {
