@@ -58,6 +58,7 @@ public class LiveInteractConsolePageProvider implements ConsolePageProvider, Con
 
     @Override
     public List<Operation> operations() {
-        return List.of(new Operation("POST", "interact/danmaku/test", "DANMAKU_TEST_SEND", "试发一条弹幕"));
+        return List.of(new Operation("POST", "interact/danmaku/test", "DANMAKU_TEST_SEND", "试发一条弹幕"),
+                new Operation("POST", "interact/danmaku/settings", "DANMAKU_SETTINGS", "保存主播自动弹幕设置"));
     }
 }

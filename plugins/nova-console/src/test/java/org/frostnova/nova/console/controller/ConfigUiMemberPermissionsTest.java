@@ -181,6 +181,9 @@ class ConfigUiMemberPermissionsTest {
             GET interact/danmaku/state
             GET interact/danmaku/limit
             POST interact/danmaku/test
+            GET interact/danmaku/settings
+            POST interact/danmaku/settings
+            GET interact/danmaku/history
             POST outbox/records/{num}/requeue
             POST outbox/records/{num}/void
             POST outbox/conversations

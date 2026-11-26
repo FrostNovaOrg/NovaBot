@@ -167,6 +167,9 @@ public final class ConfigUiPermissions {
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/interact/danmaku/state");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/interact/danmaku/limit");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/interact/danmaku/test");
+        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/interact/danmaku/settings");
+        add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/interact/danmaku/settings");
+        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/interact/danmaku/history");
         add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/bot/targets/lookup");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/exec/notice");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/assistant/status");

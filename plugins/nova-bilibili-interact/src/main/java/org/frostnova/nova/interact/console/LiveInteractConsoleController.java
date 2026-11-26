@@ -5,11 +5,14 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.ui.ConfigUiController;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiStreamerId;
 import org.frostnova.nova.core.plugin.NovaComponent;
+import org.frostnova.nova.interact.auto.AutoDanmakuQueue;
+import org.frostnova.nova.interact.auto.InteractStore;
+import org.frostnova.nova.interact.auto.RoomSettings;
+import org.frostnova.nova.interact.config.InteractProperties;
 import org.frostnova.nova.interact.config.InteractRuntimeAppliers;
 import org.frostnova.nova.interact.danmaku.DanmakuAccountChoice;
 import org.frostnova.nova.interact.danmaku.DanmakuResult;
 import org.frostnova.nova.interact.danmaku.LiveDanmakuService;
-import org.frostnova.nova.interact.config.InteractProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
@@ -24,13 +27,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 
 /**
- * 「直播间互动」页的三个接口：看状态、查房间字数上限、试发一条
+ * 「直播间互动」的账号、试发、自动弹幕设置和发送记录
  * <p>
- * 三个都只给管理员（见核心的权限表）。回包里只有房间号、主播名、账号 uid 与平台的代码和提示，
- * 没有任何凭据。选哪个账号不在这里改：它是一项设置，走设置保存那一条通道，保存后当场生效。
+ * 接口只给管理员。选哪个发送账号由设置页的保存接口处理。
  */
 @RestController
 @NovaComponent
@@ -41,7 +45,13 @@ public class LiveInteractConsoleController {
 
     private final InteractProperties properties;
 
-    LiveInteractConsoleController(LiveDanmakuService danmaku, InteractProperties properties) {
+    private final InteractStore store;
+    private final AutoDanmakuQueue queue;
+
+    LiveInteractConsoleController(LiveDanmakuService danmaku, InteractProperties properties, InteractStore store,
+                                  AutoDanmakuQueue queue) {
+        this.store = store;
+        this.queue = queue;
         this.danmaku = danmaku;
         this.properties = properties;
     }
@@ -63,7 +73,7 @@ public class LiveInteractConsoleController {
         JSONArray rooms = new JSONArray();
         for (LiveDanmakuService.Room room : danmaku.rooms()) {
             rooms.add(JSONObject.of("uid", String.valueOf(room.uid()), "name", room.name(),
-                    "roomId", String.valueOf(room.roomId())));
+                    "roomId", String.valueOf(room.roomId()), "autoEnabled", store.settings(room.uid()).enabled()));
         }
         JSONObject body = JSONObject.of("success", true,
                 "choice", status.choice().value(),
@@ -72,6 +82,7 @@ public class LiveInteractConsoleController {
                 "listenerWarning", InteractRuntimeAppliers.LISTENER_WARNING,
                 "account", account,
                 "rooms", rooms,
+                "historyRooms", store.historyRooms(Instant.now()),
                 "minInterval", properties.getDanmaku().getMinInterval(),
                 "pauseMinutes", properties.getDanmaku().getPauseMinutes(),
                 "defaultLimit", LiveDanmakuService.DEFAULT_LENGTH_LIMIT);
@@ -94,7 +105,10 @@ public class LiveInteractConsoleController {
         }
         LiveDanmakuService.Room room = room(body == null ? null : body.get("uid"))
                 .orElseThrow(() -> new IllegalArgumentException("请选一位已添加的主播"));
+        var account = danmaku.accountStatus();
         DanmakuResult result = danmaku.send(room.roomId(), (String) rawText);
+        store.result(room, "test", result, Instant.now());
+        queue.accountResult(account, result);
         JSONObject json = new JSONObject();
         json.put("success", true);
         json.put("sent", result.sent());
@@ -107,6 +121,36 @@ public class LiveInteractConsoleController {
         json.put("platformMessage", result.platformMessage());
         json.put("roomId", String.valueOf(result.roomId()));
         return response(HttpStatus.OK, json);
+    }
+
+    @GetMapping("/settings")
+    public ResponseEntity<JSONObject> settings(@RequestParam(name = "uid") String uid) {
+        var room = room(uid).orElseThrow(() -> new IllegalArgumentException("没有这位主播"));
+        return response(HttpStatus.OK, JSONObject.of("success", true, "settings", store.settings(room.uid())));
+    }
+
+    @PostMapping("/settings")
+    public ResponseEntity<JSONObject> save(@RequestBody JSONObject body) {
+        var room = room(body.get("uid")).orElseThrow(() -> new IllegalArgumentException("没有这位主播"));
+        if (!(body.get("settings") instanceof Map<?, ?>)) throw new IllegalArgumentException("缺少主播设置");
+        RoomSettings settings = RoomSettings.parse(body.getJSONObject("settings"));
+        try {
+            queue.save(room.uid(), settings);
+        } catch (IllegalStateException e) {
+            return response(HttpStatus.INTERNAL_SERVER_ERROR, JSONObject.of("success", false, "message", "主播设置未能写入磁盘"));
+        }
+        return response(HttpStatus.OK, JSONObject.of("success", true, "settings", settings));
+    }
+
+    @GetMapping("/history")
+    public ResponseEntity<JSONObject> history(@RequestParam(name = "uid") String uid,
+            @RequestParam(name = "outcome", required = false) InteractStore.Outcome outcome,
+            @RequestParam(name = "page", defaultValue = "1") int page) {
+        Long streamer = ConfigUiStreamerId.positiveDecimal(uid);
+        if (streamer == null) throw new IllegalArgumentException("请选择主播");
+        var history = store.history(streamer, outcome, page, Instant.now());
+        return response(HttpStatus.OK, JSONObject.of("success", true, "rows", history.rows(), "total", history.total(),
+                "pageSize", InteractStore.PAGE_SIZE));
     }
 
     private Optional<LiveDanmakuService.Room> room(Object uid) {
