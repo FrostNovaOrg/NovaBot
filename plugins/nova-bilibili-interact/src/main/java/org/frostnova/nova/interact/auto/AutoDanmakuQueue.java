@@ -248,10 +248,10 @@ public class AutoDanmakuQueue {
             drop(item, reason);
             return;
         }
-        if (room.pending.size() >= CAPACITY) {
+        room.pending.add(item);
+        if (room.pending.size() > CAPACITY) {
             room.pending.stream().filter(i -> i.started == null).min(EVICT).ifPresent(i -> drop(i, "排队已满"));
         }
-        room.pending.add(item);
     }
 
     /** 暂停指定房间，到 until 自动解除；传入当前或过去的时间立即解除。 */

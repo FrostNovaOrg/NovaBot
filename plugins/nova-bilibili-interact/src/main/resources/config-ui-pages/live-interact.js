@@ -573,7 +573,7 @@ function drawThanksPreviews() {
 
 function drawThanksPreview(key) {
   const input = part('li-' + key + '-template');
-  const template = input.value.trim() ? input.value : defaultThanksTemplates[key];
+  const template = /^[\p{White_Space}\x1C-\x1F\uFEFF]*$/u.test(input.value) ? defaultThanksTemplates[key] : input.value;
   const fields = {'用户': key === 'follow' || key === 'share' ? '小明、小红等 3 人' : '小明',
     '主播': state.rooms.find(room => room.uid === settingsUid)?.name || '', '礼物': '小花花x3', '等级': '舰长', '人数': '3'};
   let invalid = '';

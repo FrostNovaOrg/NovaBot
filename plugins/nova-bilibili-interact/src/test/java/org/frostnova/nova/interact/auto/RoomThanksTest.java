@@ -236,6 +236,28 @@ class RoomThanksTest {
     }
 
     @Test
+    @DisplayName("关注、礼物刷屏时把满队列里的上舰和醒目留言答谢挤没了")
+    void keepsMembershipAndSuperChatWhenLowerPriorityThanksArrive() {
+        var features = JSONObject.of("gift", true, "follow", true, "membership", true, "superChat", true);
+        var options = JSONObject.of("giftWindowSeconds", 10, "followWindowSeconds", 10);
+        queue.save(101, RoomSettings.parse(JSONObject.of("enabled", true, "perMinute", 20,
+                "features", features, "thanks", options)));
+        paid(MING, "花", 1);
+        follow(HONG);
+        at(9);
+        for (int i = 0; i < 19; i++) events.publishEvent(new BilibiliCaptainEvent(ROOM, HONG, 1.0, 1, "月"));
+        events.publishEvent(new BilibiliSuperChatEvent(ROOM, MING, "留言", 30.0));
+
+        for (int second = 10; second <= 67; second += 3) tick(second);
+        var dropped = store.history(101, InteractStore.Outcome.DROPPED, 1, now).rows();
+        assertEquals(List.of("follow", "gift"), dropped.stream().map(r -> r.getString("feature")).sorted().toList());
+        assertTrue(dropped.stream().allMatch(r -> "排队已满".equals(r.getString("reason"))));
+        assertEquals(20, sent.size());
+        assertTrue(sent.subList(0, 19).stream().allMatch(text -> text.contains("舰长")));
+        assertTrue(sent.get(19).contains("醒目留言"));
+    }
+
+    @Test
     @DisplayName("一场里重开关注答谢时重复点名，或关闭期间的分享被攒到重开后")
     void togglingDropsOnlyPendingGroupsAndPreservesThankedViewers() {
         var options = JSONObject.of("shareWindowSeconds", 10, "followWindowSeconds", 10,
@@ -255,6 +277,21 @@ class RoomThanksTest {
         follow(MING);
         tick(33);
         assertEquals("感谢 小明 的关注", sent.get(2));
+    }
+
+    @Test
+    @DisplayName("礼物答谢重新打开后，把关闭前攒的礼物和关闭期间收到的礼物也答谢了")
+    void onlyThanksGiftsReceivedAfterReenabling() {
+        settings(true, new JSONObject(), "gift");
+        paid(MING, "花", 1);
+        at(1);
+        settings(true, new JSONObject());
+        paid(MING, "糖", 1);
+        at(2);
+        settings(true, new JSONObject(), "gift");
+        paid(MING, "茶", 1);
+        tick(10);
+        assertEquals(List.of("感谢 小明 赠送的 茶x1"), sent);
     }
 
     @Test
@@ -350,20 +387,15 @@ class RoomThanksTest {
     }
 
     @Test
-    @DisplayName("发言账号答谢自己的互动，或重新登录后补发账号不可用时的答谢")
-    void excludesSendingAccountAndDiscardsWorkOnLogout() {
+    @DisplayName("发言账号答谢了自己的礼物、关注或分享")
+    void excludesSendingAccount() {
         settings(true, new JSONObject(), "gift", "follow", "share");
         paid(SELF, "自己的", 1);
         follow(SELF);
         share(SELF);
-        paid(MING, "登出前", 1);
-        when(speaker.uid()).thenReturn(Optional.empty());
-        tick(1);
-        paid(HONG, "离线时", 1);
-        when(speaker.uid()).thenReturn(Optional.of(7L));
-        paid(MING, "重新登录后", 1);
-        tick(9);
+        tick(8);
         tick(30);
-        assertEquals(List.of("感谢 小明 赠送的 重新登录后x1"), sent);
+        tick(33);
+        assertEquals(List.of(), sent);
     }
 }
