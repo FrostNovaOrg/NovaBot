@@ -75,6 +75,8 @@ final class ConfigUiOperationCatalog {
         add("POST", "auth/agreement/revoke", "AGREEMENT_REVOKE", "撤回使用协议");
         add("POST", "event-tokens", "EVENT_TOKEN_ISSUE", "签发只读口令");
         add("POST", "event-tokens/{fingerprint}/revoke", "EVENT_TOKEN_REVOKE", "吊销只读口令");
+        add("POST", "api-tokens", "API_TOKEN_ISSUE", "签发访问令牌");
+        add("POST", "api-tokens/{id}/revoke", "API_TOKEN_REVOKE", "吊销访问令牌");
         add("POST", "version/skip", "VERSION_SKIP", "跳过版本提醒");
         add("POST", "setup/test-sent", "SETUP_TEST_SENT", "记录初始测试发送");
         add("POST", "setup/rerun", "SETUP_RERUN", "重开设置引导");

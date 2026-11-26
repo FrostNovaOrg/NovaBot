@@ -32,6 +32,10 @@ public final class ConfigUiPermissions {
         add(entries, Access.EVERYONE, Subject.NONE, "POST /config/api/oidc/backchannel-logout");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/auth/agreement");
         add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/pages");
+        // 访问令牌：人人给自己签；成员只看得到、只吊销得了自己的，由控制器按账号过滤
+        add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/api-tokens");
+        add(entries, Access.EVERYONE, Subject.NONE, "POST /config/api/api-tokens");
+        add(entries, Access.EVERYONE, Subject.NONE, "POST /config/api/api-tokens/{id}/revoke");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/vocab");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/platforms");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/session-check");

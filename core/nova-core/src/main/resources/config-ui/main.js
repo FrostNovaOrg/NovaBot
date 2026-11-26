@@ -21,6 +21,7 @@ import {notePlatformsArrived, openSetup, stopSetupPolling} from './setup.js';
 import {store} from './store.js';
 import {ask} from './confirm.js';
 import {clearIssuedToken, loadTokens} from './tokens.js';
+import {clearIssuedApiToken, loadApiTokens} from './api-tokens.js';
 
 clearTimeout(window.novaStartupTimer);
 
@@ -33,7 +34,12 @@ clearTimeout(window.novaStartupTimer);
 const pages = [];
 // 脚本还在下载时重试，也复用已经建出的入口与容器。
 const pageContainers = new Map();
-const accessiblePages = new Set(['home']);
+const accessiblePages = new Set(['home', 'api-tokens']);
+
+/**
+ * 成员也进得去的内置页：首页，以及给自己账号签发访问令牌的那一页
+ */
+const MEMBER_BUILTIN_PAGES = new Set(['home', 'api-tokens']);
 
 /** 身份到达后再显示导航与首页，避免成员先看到实例管理入口。 */
 function applyRoleView() {
@@ -542,6 +548,7 @@ export async function load(how) {
 const PAGE_TAB = {
   home: 'overview',
   log: 'log', links: 'bot', settings: 'settings', setup: 'setup',
+  'api-tokens': 'api-tokens',
 };
 
 /**
@@ -663,7 +670,7 @@ function parseHash() {
   const card = /^card=([A-Za-z0-9_-]+)$/.exec(query);
   const known = PAGE_TAB[name] || topPageIds.has(name);
   if (store.role === 'MEMBER' && (!accessiblePages.has(name)
-    || (name !== 'home' && !topPageIds.has(name)))) {
+    || (!MEMBER_BUILTIN_PAGES.has(name) && !topPageIds.has(name)))) {
     return {name: 'home', sub: '', tail: '', card: '', redirect: store.singleStreamer?.detailHash || '#/home'};
   }
 
@@ -780,6 +787,8 @@ function applyRoute(withData = true) {
   // 离开「连接」页就把刚签发的口令从 DOM 里抹掉。界面上写着「离开本页后无法再次查看」，
   // 这一行就是那句话的实现——留着它，那句话只是句话
   if (route === 'links' && name !== 'links') clearIssuedToken();
+  // 访问令牌页同理：刚签发的那把明文只在这一页上，离开就抹掉
+  if (route === 'api-tokens' && name !== 'api-tokens') clearIssuedApiToken();
   // 离开日志页就停掉工程日志那个「跟随最新」：留着的话，使用者在别的页上待一夜，
   // 它还在每 3 秒读一次日志文件
   if (route === 'log' && name !== 'log') stopFollow();
@@ -797,6 +806,11 @@ function applyRoute(withData = true) {
 
   document.querySelectorAll('#nav a').forEach(a => {
     if (a.dataset.page === name) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
+  });
+  // 侧栏底部的「访问令牌」不在导航条里，选中标记照导航那一套另记一次
+  document.querySelectorAll('#side-api-tokens').forEach(a => {
+    if (name === 'api-tokens') a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   });
   document.querySelectorAll('.page').forEach(x => x.classList.toggle('on', x.id === 'page-' + name));
@@ -839,6 +853,8 @@ function applyRoute(withData = true) {
   // 每次进入都重问一遍这台机器现在什么样：上一趟离开之后使用者可能去别处上了锁、加了主播，
   // 缓存的画面会把已经做完的那一步画成没做，而那正是这一页唯一要回答的问题
   else if (name === 'setup') holdPageHeight(openSetup());
+  // 每次进入都重取：别处可能刚吊销过，或者这一把刚过期
+  else if (name === 'api-tokens') holdPageHeight(loadApiTokens());
   else if (topPage) {
     if (store.singleStreamer && name === 'streamers') refreshHome();
     else api('/status').then(renderStatus);
