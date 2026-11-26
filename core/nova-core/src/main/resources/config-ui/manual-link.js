@@ -26,6 +26,7 @@ const CHAPTER = {
   setup: '04-first-open.html',
   push: '06-add-streamer-and-push.html',
   streamers: '09-stream-reports.html',
+  'api-tokens': 'appendix-b-advanced.html',
 };
 
 /**

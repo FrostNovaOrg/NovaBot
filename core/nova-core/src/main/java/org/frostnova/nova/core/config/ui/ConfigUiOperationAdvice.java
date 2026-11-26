@@ -120,6 +120,16 @@ public class ConfigUiOperationAdvice extends RequestBodyAdviceAdapter implements
         return text != null && text.matches("[0-9]+") ? text : null;
     }
 
+    /** 访问令牌的签发与吊销只记编号与所属账号：令牌明文、摘要、名字都不进操作记录。 */
+    static void apiToken(String tokenId, String accountId) {
+        var request = ConfigUiAccess.request();
+        if (request != null && request.getAttribute(ConfigUiOperationFilter.TARGET) instanceof JSONObject target) {
+            String id = identifier(tokenId);
+            if (id != null) target.put("tokenId", id);
+            if (accountId != null) target.put("accountId", ConfigUiAudit.safe(accountId));
+        }
+    }
+
     /** 由只持有主播号码的操作补齐实际的平台。 */
     public static void streamer(String platform, Long uid) {
         var request = ConfigUiAccess.request();

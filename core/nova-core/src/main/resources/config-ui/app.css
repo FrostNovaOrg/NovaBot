@@ -1032,3 +1032,15 @@ details.adv .inner{padding:0 16px 16px}
   .lc-cap{flex-basis:100%;padding-left:17px}
   .tl-detail{margin-left:0}
 }
+
+/* 访问令牌页：范围勾选项 */
+.at-scopes{border:0;margin:12px 0 0;padding:0;display:grid;gap:8px;min-width:0}
+.at-scopes legend{font-size:var(--fs-sm);color:var(--dim);padding:0;margin-bottom:6px}
+.at-scope{display:flex;gap:8px;align-items:flex-start;font-size:var(--fs-sm)}
+.at-scope input{margin-top:3px;flex:none}
+.at-scope .hint{margin:0}
+.issued code{word-break:break-all}
+#at-list tr.revoked td{color:var(--dim)}
+#at-list td,#at-list th{white-space:nowrap}
+#at-list td:first-child{white-space:normal;min-width:8em}
+#at-list .at-scope-line{font-size:var(--fs-xs);color:var(--dim)}

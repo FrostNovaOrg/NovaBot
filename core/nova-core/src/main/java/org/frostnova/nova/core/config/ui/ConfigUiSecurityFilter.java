@@ -216,11 +216,11 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      * <p>
      * 保存名单时「会不会把自己挡在外面」那一问用的也是这里：两边必须是同一段代码。
      * 开了 {@code server.forward-headers-strategy} 时，框架在本过滤器之前已按代理头改写了它，
-     * 两边看到的是同一个改写后的地址。
+     * 两边看到的是同一个改写后的地址。统一接口面 {@code /nova/api/v1/} 取来源也走这里。
      * @param request 请求
      * @return 来源地址
      */
-    static String clientAddress(HttpServletRequest request) {
+    public static String clientAddress(HttpServletRequest request) {
         return request.getRemoteAddr();
     }
 
@@ -230,7 +230,7 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      * @param request 请求
      * @return 放行时为 true
      */
-    static boolean admits(IpMatcher matcher, HttpServletRequest request) {
+    public static boolean admits(IpMatcher matcher, HttpServletRequest request) {
         return matcher.matches(clientAddress(request));
     }
 
