@@ -4,6 +4,7 @@ import org.frostnova.nova.core.properties.EventStreamProperties;
 import org.frostnova.nova.core.model.EventStreamToken;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.SmartLifecycle;
@@ -90,11 +91,37 @@ public class NovaEventStreamConfiguration implements DisposableBean, SmartLifecy
      * @param properties 配置
      * @param stream 事件流
      * @param tokenService 只读口令校验
+     * @param accessTokens 访问令牌，外壳注册了才有；没有时首帧只认只读口令
      * @return 路径映射，未启用时为空映射
      */
     @Bean
     public HandlerMapping novaEventStreamHandlerMapping(EventStreamProperties properties, NovaEventStream stream,
+                                                        EventStreamTokenService tokenService,
+                                                        ObjectProvider<EventStreamAccessTokens> accessTokens) {
+        java.util.List<EventStreamAccessTokens> registered = accessTokens.orderedStream().toList();
+        if (registered.size() > 1) {
+            // 认哪一份都说不清，就一份也不认：首帧只认只读口令，比认错一份稳妥
+            log.error("事件输出: 访问令牌的实现登记了 {} 份, 本次首帧只认只读口令", registered.size());
+        }
+        return novaEventStreamHandlerMapping(properties, stream, tokenService,
+                registered.size() == 1 ? registered.get(0) : null);
+    }
+
+    /**
+     * 只认只读口令的那一种
+     * @param properties 配置
+     * @param stream 事件流
+     * @param tokenService 只读口令校验
+     * @return 路径映射，未启用时为空映射
+     */
+    public HandlerMapping novaEventStreamHandlerMapping(EventStreamProperties properties, NovaEventStream stream,
                                                         EventStreamTokenService tokenService) {
+        return novaEventStreamHandlerMapping(properties, stream, tokenService, (EventStreamAccessTokens) null);
+    }
+
+    HandlerMapping novaEventStreamHandlerMapping(EventStreamProperties properties, NovaEventStream stream,
+                                                 EventStreamTokenService tokenService,
+                                                 EventStreamAccessTokens accessTokens) {
         if (!properties.isEnabled()) {
             status.state(EventStreamStatus.State.OFF);
             return new SimpleUrlHandlerMapping(Map.of(), ORDER);
@@ -109,7 +136,8 @@ public class NovaEventStreamConfiguration implements DisposableBean, SmartLifecy
                     EventStreamProperties.PREFIX);
             return new SimpleUrlHandlerMapping(Map.of(), ORDER);
         }
-        endpoint = new NovaEventEndpoint(stream, tokenService, NovaEventEndpoint.Timings.DEFAULT, properties);
+        endpoint = new NovaEventEndpoint(stream, tokenService, accessTokens, NovaEventEndpoint.Timings.DEFAULT,
+                properties);
 
         WebSocketHttpRequestHandler handler = new WebSocketHttpRequestHandler(endpoint, new DefaultHandshakeHandler());
         handler.getHandshakeInterceptors().add(new LoopbackOnly());

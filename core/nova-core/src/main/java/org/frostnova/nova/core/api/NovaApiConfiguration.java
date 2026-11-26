@@ -41,9 +41,26 @@ public class NovaApiConfiguration {
         return new NovaApiTokenStore(state);
     }
 
+    /**
+     * 插件登记的接口与范围，外加底座自己的范围「读取事件流」
+     * <p>
+     * 那一项不属于哪一组接口：事件输出不在 {@code /nova/api/v1/} 下，「从别的机器访问」里也就没有它的开关
+     */
     @Bean
     public NovaApiRegistry novaApiRegistry(ObjectProvider<NovaApiProvider> providers) {
-        return new NovaApiRegistry(providers.orderedStream().toList());
+        return new NovaApiRegistry(List.of(NovaApiEventStreamTokens.SCOPE), providers.orderedStream().toList());
+    }
+
+    /**
+     * 让事件输出的首帧也认访问令牌
+     * <p>
+     * 账号表与统一接口、控制台用同一份：控制台开着时是同一个对象，改角色、停用之类的改动当场通知得到；
+     * 关着时另起一个读同一份运行状态的，那时没有地方改账号。
+     */
+    @Bean
+    public NovaApiEventStreamTokens novaApiEventStreamTokens(NovaStateStore state, NovaApiTokenStore tokens,
+                                                             ObjectProvider<ConfigUiAccountStore> accounts) {
+        return new NovaApiEventStreamTokens(tokens, accounts.getIfAvailable(() -> new ConfigUiAccountStore(state)));
     }
 
     @Bean

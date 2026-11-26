@@ -10,6 +10,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.frostnova.nova.core.config.ui.auth.ConfigUiAccount.*;
 
@@ -21,6 +22,20 @@ public class ConfigUiAccountStore {
     private final ConfigUiAccount localFallback = ConfigUiAccount.local(Instant.now());
 
     public ConfigUiAccountStore(NovaStateStore state) { this.state = state; }
+
+    private final List<Runnable> changeListeners = new CopyOnWriteArrayList<>();
+
+    /**
+     * 登记「账号表刚写进磁盘」的通知
+     * <p>
+     * 事件输出用它：账号被停用、删除或改了角色，用它名下令牌连着的连接要当场再核一次。
+     * 每写一次都通知，不分改的是哪一项；通知那一头自己判要不要断。
+     * @param listener 通知，在改动的那条线程上调（往往还攥着这个对象的锁），只能做不阻塞的事
+     */
+    public void addChangeListener(Runnable listener) { changeListeners.add(listener); }
+
+    /** 撤掉 {@link #addChangeListener} 登记的通知 */
+    public void removeChangeListener(Runnable listener) { changeListeners.remove(listener); }
 
     public synchronized List<ConfigUiAccount> list() {
         JSONObject data = state.namespace(NAMESPACE);
@@ -140,6 +155,14 @@ public class ConfigUiAccountStore {
         if (!state.trySave()) {
             state.write(NAMESPACE, target -> { target.clear(); target.putAll(previous); });
             throw new IllegalStateException("账号未能写入磁盘，请稍后再试");
+        }
+        for (Runnable listener : changeListeners) {
+            try {
+                listener.run();
+            } catch (RuntimeException error) {
+                // 改动已经写进去了，通知出错不该让调用方以为没改成；通知不到的由事件输出的定时复核兜着
+                log.warn("配置界面: 账号改动后的通知出错 ({}), 已忽略", error.getClass().getSimpleName());
+            }
         }
     }
 

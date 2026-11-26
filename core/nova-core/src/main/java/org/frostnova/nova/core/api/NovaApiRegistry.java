@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
  * 插件登记的范围与接口
  * <p>
  * 启动时收一次，之后只读。一家登记不合规就整家不采用并在日志里点名，其余各家照常。
+ * 底座自己也可以带几项范围（例如读取事件流）：它们不属于哪一组接口，签发页照样列出、照样按仅管理员核。
  */
 @Slf4j
 public class NovaApiRegistry {
@@ -48,6 +49,20 @@ public class NovaApiRegistry {
     }
 
     public NovaApiRegistry(List<NovaApiProvider> providers) {
+        this(List.of(), providers);
+    }
+
+    /**
+     * @param builtIn   底座自己的范围：不属于哪一组接口（例如事件流用的那一项），所以「从别的机器访问」里
+     *                  没有它的开关；签发页照样列出来。插件再登记同一个标识，那一家整个不予采用
+     * @param providers 插件的登记
+     */
+    public NovaApiRegistry(List<NovaApiScope> builtIn, List<NovaApiProvider> providers) {
+        for (NovaApiScope scope : builtIn) {
+            if (scopes.putIfAbsent(scope.id(), scope) != null) {
+                throw new IllegalArgumentException("底座的范围 " + scope.id() + " 重复登记");
+            }
+        }
         for (NovaApiProvider provider : providers) {
             try {
                 accept(provider);

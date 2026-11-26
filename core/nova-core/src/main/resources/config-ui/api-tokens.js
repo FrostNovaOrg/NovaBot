@@ -85,6 +85,8 @@ function renderRemote(state) {
     + '<p class="hint">默认只有「允许访问的来源 IP」里的地址（默认只有本机）调得了接口。'
     + '内网别的机器、经反向代理进来的公网访问要调哪一组，就在这里打开哪一组：开放只免去来源名单这一道，'
     + '令牌、范围与无效令牌限速照旧。至少打开一组时，自查接口 <code>/me</code> 也随之对任何地址开放。</p>'
+    + '<p class="hint">事件输出 <code>/nova/events</code> 不在这里：它只接受本机连接，这里的开关都管不到它；'
+    + '别的机器要读事件流，请用 SSH 隧道。</p>'
     + (groups.length ? '<div class="at-groups">' + rows + '</div>'
       : '<p class="hint">目前没有插件登记接口组，这里没有可打开的。</p>')
     + (ignored ? '<p class="hint at-stale">清单里另有 ' + ignored + ' 条没登记或写法不合规的组名，不起作用；'
