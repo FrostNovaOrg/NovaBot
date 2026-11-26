@@ -23,7 +23,9 @@ class OutboxSender implements Sender.DeferredDelivery {
 
     @PostConstruct
     void register() {
-        registry.addSender(new Sender(OutboxPluginAutoConfiguration.PLATFORM, null, "", 0, this), "外发");
+        // 外发会话在推送目标里按群记，号码是会话编号
+        registry.addSender(new Sender(OutboxPluginAutoConfiguration.PLATFORM, null, "", 0, this), "外发",
+                java.util.Set.of(org.frostnova.nova.core.enums.PushTargetType.GROUP));
     }
 
     @Override public JSONObject deliver(Map<String, String> headers, Map<String, Object> params, PushOrigin origin) {

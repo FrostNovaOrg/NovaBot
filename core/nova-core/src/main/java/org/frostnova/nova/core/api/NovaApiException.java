@@ -15,7 +15,14 @@ public class NovaApiException extends RuntimeException {
 
     private final String code;
 
+    /** 回包带的 {@code Retry-After}（秒）；0 表示不带 */
+    private final long retryAfterSeconds;
+
     public NovaApiException(int status, String code, String message) {
+        this(status, code, message, 0);
+    }
+
+    private NovaApiException(int status, String code, String message, long retryAfterSeconds) {
         super(message, null, false, false);
         if (status < 400 || status > 599) {
             throw new IllegalArgumentException("错误状态码必须在 400 到 599 之间: " + status);
@@ -25,6 +32,7 @@ public class NovaApiException extends RuntimeException {
         }
         this.status = status;
         this.code = code;
+        this.retryAfterSeconds = retryAfterSeconds;
     }
 
     public int status() {
@@ -33,6 +41,20 @@ public class NovaApiException extends RuntimeException {
 
     public String code() {
         return code;
+    }
+
+    /** 回包要带的 {@code Retry-After} 秒数；0 表示不带 */
+    public long retryAfterSeconds() {
+        return retryAfterSeconds;
+    }
+
+    /**
+     * 429：这个调用方此刻发得太多，过一会儿再来。回包带 {@code Retry-After}
+     * @param message           给人看的说明
+     * @param retryAfterSeconds 要等的秒数，不足 1 秒按 1 秒
+     */
+    public static NovaApiException tooManyRequests(String message, long retryAfterSeconds) {
+        return new NovaApiException(429, NovaApiErrors.TOO_MANY_REQUESTS, message, Math.max(1, retryAfterSeconds));
     }
 
     /** 400：请求参数或请求体不对。 */

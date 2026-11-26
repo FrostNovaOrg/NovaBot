@@ -31,11 +31,14 @@ public final class NovaApiErrors {
     /** 409 对象状态不允许 */
     public static final String CONFLICT = "conflict";
 
-    /** 429 同一来源连续出示无效令牌太多次 */
+    /** 429 同一来源连续出示无效令牌太多次；或某组接口给调用方定的量用完了（由具体接口说明） */
     public static final String TOO_MANY_REQUESTS = "too_many_requests";
 
     /** 500 处理时出错 */
     public static final String INTERNAL_ERROR = "internal_error";
+
+    /** 502 交给了发送去向，去向明确说没发出（推送接口用） */
+    public static final String DELIVERY_FAILED = "delivery_failed";
 
     private NovaApiErrors() {
     }

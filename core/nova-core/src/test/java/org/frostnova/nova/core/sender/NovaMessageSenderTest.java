@@ -995,4 +995,90 @@ class NovaMessageSenderTest {
             }
         }
     }
+
+    /**
+     * 替外部调用方当场发一条（{@link NovaMessageSender#deliverForCaller}）
+     */
+    @org.junit.jupiter.api.Nested
+    @DisplayName("替调用方当场发一条")
+    class DeliverForCaller {
+        // 抓的故障：外部程序发了一条，对方回得慢，核心按平常的重试又交了两次，群里收到三条一样的。
+        @Test
+        @DisplayName("走 HTTP 的去向等回包超时时只交一次、回送达不明；连接被拒才重试")
+        void anHttpDestinationThatNeverAnswersIsUnknown() {
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJson(anyString(), anyMap(), anyMap())).thenThrow(new org.springframework.web.client.ResourceAccessException(
+                    "I/O error on POST request", new java.net.SocketTimeoutException("Read timed out")));
+
+            DeliveryReceipt receipt = sender(http).deliverForCaller(message());
+
+            assertEquals(DeliveryReceipt.Outcome.UNKNOWN, receipt.outcome());
+            assertNull(receipt.id());
+            verify(http, times(1)).postJson(anyString(), anyMap(), anyMap());
+
+            HttpUtil refused = mock(HttpUtil.class);
+            when(refused.postJson(anyString(), anyMap(), anyMap())).thenThrow(new org.springframework.web.client.ResourceAccessException(
+                    "I/O error on POST request", new java.net.ConnectException("Connection refused")));
+
+            assertEquals(DeliveryReceipt.Outcome.UNREACHABLE, sender(refused).deliverForCaller(message()).outcome());
+            verify(refused, times(3)).postJson(anyString(), anyMap(), anyMap());
+        }
+
+        // 抓的故障：进程内的去向没连上（请求没离开本机），却回了「不明」，调用方不敢重发，这条就丢了。
+        @Test
+        @DisplayName("进程内的去向每一次都没接住时回连不上")
+        void anInProcessDestinationThatNeverTakesItIsUnreachable() {
+            AtomicInteger attempts = new AtomicInteger();
+            NovaMessageSender sender = localSender(mock(HttpUtil.class), (headers, params) -> {
+                attempts.incrementAndGet();
+                throw new IllegalStateException("Connection refused");
+            });
+
+            DeliveryReceipt receipt = sender.deliverForCaller(message());
+
+            assertEquals(DeliveryReceipt.Outcome.UNREACHABLE, receipt.outcome());
+            assertEquals(3, attempts.get(), "与平常一样只对没交出去的请求重试");
+        }
+
+        // 抓的故障：外部程序发的每一条都进了推送记录（完整号码与正文），或失败时把推送健康拖成「推送坏了」。
+        @Test
+        @DisplayName("结果交回调用方，不进推送记录")
+        void theResultGoesBackWithoutAPushRecord() {
+            HttpUtil http = mock(HttpUtil.class);
+            when(http.postJson(anyString(), anyMap(), anyMap()))
+                    .thenReturn(JSONObject.of("code", 0, "id", "m-9"))
+                    .thenReturn(JSONObject.of("code", -1, "message", "群不存在"));
+            java.util.List<TimelineEvent> events = new java.util.ArrayList<>();
+            PushActivityRecorder recorder = new PushActivityRecorder(events::add);
+            NovaMessageSender sender = sender(http, new NovaCoreProperties(), null, recorder);
+
+            DeliveryReceipt sent = sender.deliverForCaller(message());
+            DeliveryReceipt refused = sender.deliverForCaller(message());
+
+            assertEquals(new DeliveryReceipt(DeliveryReceipt.Outcome.SENT, "m-9", null), sent);
+            assertEquals(DeliveryReceipt.Outcome.FAILED, refused.outcome());
+            assertEquals("群不存在", refused.reason());
+            assertTrue(recorder.getHistory().isEmpty());
+            assertEquals(0, recorder.getFailureCount());
+            assertTrue(events.isEmpty());
+            verify(http, times(2)).postJson(anyString(), anyMap(), anyMap());
+        }
+
+        // 抓的故障：没有这个去向时抛异常，接口回了 500。
+        @Test
+        @DisplayName("没有这个去向时如实交回")
+        void aMissingDestinationIsReported() {
+            NovaSenderService senderService = mock(NovaSenderService.class);
+            when(senderService.getSender(anyString())).thenReturn(Optional.empty());
+            @SuppressWarnings("unchecked")
+            ObjectProvider<AtAllPermissionResolver> resolvers = mock(ObjectProvider.class);
+            NovaCoreProperties properties = new NovaCoreProperties();
+            NovaMessageSender sender = new NovaMessageSender(mock(HttpUtil.class), senderService,
+                    new PushActivityRecorder(TimelineWriter.NONE), new PushGate(properties), TimelineWriter.NONE,
+                    new org.frostnova.nova.core.service.AtAllQuotaService(properties), resolvers,
+                    new FirstPushTipService(new org.frostnova.nova.core.service.NovaStateStore(properties)));
+
+            assertEquals(DeliveryReceipt.Outcome.MISSING, sender.deliverForCaller(message()).outcome());
+        }
+    }
 }

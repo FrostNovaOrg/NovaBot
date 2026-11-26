@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.service;
 
 import org.frostnova.nova.core.config.NovaCoreProperties;
+import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.model.Sender;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -31,6 +34,13 @@ public class NovaSenderService {
      * {@link #displayName(String)} 回落成标识串本身。
      */
     private final Map<String, String> displayNames = new HashMap<>();
+
+    /** 没声明可发目标种类的去向，按好友与群都能发：与推送配置里的两种目标一致 */
+    private static final Set<PushTargetType> DEFAULT_TARGET_TYPES =
+            Collections.unmodifiableSet(EnumSet.of(PushTargetType.FRIEND, PushTargetType.GROUP));
+
+    /** 适配器登记时声明的可发目标种类；没声明的不进这张表 */
+    private final Map<String, Set<PushTargetType>> targetTypes = new HashMap<>();
 
     @Autowired
     public NovaSenderService(NovaCoreProperties properties) {
@@ -96,6 +106,35 @@ public class NovaSenderService {
             displayNames.put(sender.getName(), displayName.trim());
         }
         log.info("已注册推送平台 {}", sender.getName());
+    }
+
+    /**
+     * 添加推送平台，记下显示名，并声明它能发往哪几种目标
+     * <p>
+     * 只能发往群的去向（例如只收群消息的机器人、按会话编号存件的外发）在这里声明，
+     * 程序接口据此在发送之前就回「这个去向不支持这种目标」，不必真交过去再由去向拒收。
+     * @param sender 推送平台信息
+     * @param displayName 给人看的名字；空则不记
+     * @param targets 能发往的目标种类，只认好友与群；为空按两种都能发
+     */
+    public synchronized void addSender(@NonNull Sender sender, String displayName, Set<PushTargetType> targets) {
+        if (targets != null && targets.stream().anyMatch(type -> type != PushTargetType.FRIEND && type != PushTargetType.GROUP)) {
+            throw new IllegalArgumentException("推送平台 " + sender.getName() + " 声明的目标种类只能是好友或群");
+        }
+        addSender(sender, displayName);
+        if (targets != null && !targets.isEmpty()) {
+            targetTypes.put(sender.getName(), Collections.unmodifiableSet(EnumSet.copyOf(targets)));
+        }
+    }
+
+    /**
+     * 这个去向能发往哪几种目标
+     * @param platform 推送平台标识
+     * @return 目标种类，按好友、群的次序；没声明过的按两种都能发
+     */
+    public synchronized Set<PushTargetType> targetTypes(String platform) {
+        Set<PushTargetType> declared = targetTypes.get(platform);
+        return declared == null ? DEFAULT_TARGET_TYPES : declared;
     }
 
     /** 各去向在登记时提供的显示名。 */

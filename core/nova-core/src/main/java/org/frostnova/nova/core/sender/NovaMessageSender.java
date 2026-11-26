@@ -299,6 +299,84 @@ public class NovaMessageSender {
     }
 
     /**
+     * 替外部调用方当场发一条，交回这一次的结果
+     * <p>
+     * 给程序接口用：调用方要按「发出了／没发出／不明」决定下一步，所以结果原样交回，
+     * 由调用方自己去记。与 {@link #sendNow} 相同的是不排队、不看全局推送开关与静音时段——
+     * 这是调用方明确要发的一条，与对外的推送接口同一个口径；去向被停用时照样不发。
+     * <p>
+     * 与 {@link #sendNow} 不同的几处，都是为了交回去的结果就是这一条的实情：
+     * <ul>
+     *   <li>不记推送记录：那里记的是完整号码与正文摘要，调用方按自己的口径记（遮号码、不记正文）；
+     *       也不让外部程序的成败去左右推送健康的判断。</li>
+     *   <li>含图消息没发出时不剥图补发纯文字：补发出去的是另一条（没有图），再回「发出了」就不是实话。</li>
+     *   <li>不跟首推提示，不跑消息上的回调。</li>
+     * </ul>
+     * 交了没交到，分两种去向说：
+     * <ul>
+     *   <li>进程内的去向按约定只在请求没离开本机时才抛，照平常重试；每一次都抛了回
+     *       {@link DeliveryReceipt.Outcome#UNREACHABLE}。</li>
+     *   <li>走 HTTP 的去向<b>只在能确定对方没收到时才重试</b>（{@link #neverReached}：连接被拒、
+     *       找不到主机、连接没建起来）；每一次都是这样时回 {@link DeliveryReceipt.Outcome#UNREACHABLE}。
+     *       等回包超时、连接中途断开、读回包失败、回包是空的，以及认不出是哪一种的，对方都可能已经收下：
+     *       这一条只交这 1 次，回 {@link DeliveryReceipt.Outcome#UNKNOWN}——再交一次，群里就可能多出一条一样的。</li>
+     * </ul>
+     * @param message 一条消息，不含 {@code {next}}
+     * @return 结果
+     */
+    public DeliveryReceipt deliverForCaller(Message message) {
+        String blocked = platformBlock(message);
+        if (blocked != null) {
+            return DeliveryReceipt.of(DeliveryReceipt.Outcome.BLOCKED, blocked);
+        }
+        Sender sender = senderService.getSender(message.getPlatform()).orElse(null);
+        if (sender == null) {
+            return DeliveryReceipt.of(DeliveryReceipt.Outcome.MISSING, "没有这个去向");
+        }
+
+        AtAllDecision quota = sender.getLocalDelivery() instanceof Sender.DeferredDelivery
+                ? AtAllDecision.pass() : applyAtAllQuota(message);
+        if (!quota.send()) {
+            return DeliveryReceipt.of(DeliveryReceipt.Outcome.EMPTY, "摘掉 @全体成员 后没有内容");
+        }
+        AtomicReference<LocalDate> chargedOn = new AtomicReference<>(quota.chargedOn());
+        try {
+            boolean http = sender.getLocalDelivery() == null;
+            Attempts attempts = attempt(sender, headers(sender), params(message), message,
+                    http ? NovaMessageSender::neverReached : failure -> true);
+            JSONObject result = attempts.result();
+            if (result == null) {
+                String reason = attempts.error() == null ? "未知原因" : attempts.error().getMessage();
+                if (http && !neverReached(attempts.error())) {
+                    // 可能已经发出（例如等回包超时）：额度不退，那一次可能已经 @ 过
+                    chargedOn.set(null);
+                    return DeliveryReceipt.of(DeliveryReceipt.Outcome.UNKNOWN, reason);
+                }
+                releaseOnce(message, chargedOn);
+                return DeliveryReceipt.of(DeliveryReceipt.Outcome.UNREACHABLE, reason);
+            }
+            if (result.getBooleanValue(PlatformDeliveryGate.BLOCKED)) {
+                releaseOnce(message, chargedOn);
+                return DeliveryReceipt.of(DeliveryReceipt.Outcome.BLOCKED, result.getString("message"));
+            }
+            message.setCompleteTime(Instant.now());
+            if (Integer.valueOf(0).equals(result.getInteger("code"))) {
+                chargedOn.set(null);
+                return new DeliveryReceipt(DeliveryReceipt.Outcome.SENT, result.getString("id"), null);
+            }
+            if (Boolean.TRUE.equals(result.getBoolean(Sender.LocalDelivery.DELIVERY_UNKNOWN))) {
+                chargedOn.set(null);
+                return DeliveryReceipt.of(DeliveryReceipt.Outcome.UNKNOWN, result.getString("message"));
+            }
+            releaseOnce(message, chargedOn);
+            return DeliveryReceipt.of(DeliveryReceipt.Outcome.FAILED, result.getString("message"));
+        } catch (RuntimeException ex) {
+            releaseOnce(message, chargedOn);
+            throw ex;
+        }
+    }
+
+    /**
      * @全体成员 的占位符
      *
      * @see MessagePlaceholders 占位符的单一来源
@@ -430,11 +508,35 @@ public class NovaMessageSender {
      * @return 推送接口的响应；始终非空，彻底失败时返回一个带错误信息的对象
      */
     private JSONObject postWithRetry(Sender sender, Map<String, String> headers, Map<String, Object> params, Message message) {
+        Attempts attempts = attempt(sender, headers, params, message, failure -> true);
+        if (attempts.result() != null) {
+            return attempts.result();
+        }
+        RuntimeException last = attempts.error();
+        return new JSONObject()
+                .fluentPut("code", -1)
+                .fluentPut("message", "投递失败: " + (last == null ? "未知原因" : last.getMessage()));
+    }
+
+    /**
+     * 重试走完之后的样子
+     * @param result 去向的回包；每一次都抛了或什么也没回时为 null
+     * @param error  最后一次的异常，{@code result} 非空时为 null
+     */
+    private record Attempts(JSONObject result, RuntimeException error) {
+    }
+
+    /**
+     * {@link #postWithRetry} 的本体：同样的重试，只是把「每一次都没交出去」原样交回，不包成失败回包
+     * @param retryable 这一次没成之后还能不能再交一次；平常的推送一律能，见 {@link #deliverForCaller}
+     */
+    private Attempts attempt(Sender sender, Map<String, String> headers, Map<String, Object> params, Message message,
+                             Predicate<RuntimeException> retryable) {
         RuntimeException last = null;
 
         for (int attempt = 1; attempt <= SEND_MAX_ATTEMPTS; attempt++) {
             String reason = platformBlock(message);
-            if (reason != null) return PlatformDeliveryGate.blockedResponse(reason);
+            if (reason != null) return new Attempts(PlatformDeliveryGate.blockedResponse(reason), null);
             try {
                 // 适配器与核心同进程时直接交过去，不绕本机 HTTP。
                 // 绕一圈的代价不是那点开销，而是把投递压在自己服务端口的几个工作线程上：
@@ -449,13 +551,16 @@ public class NovaMessageSender {
                     result = local == null ? http.postJson(sender.getUrl(), headers, params) : local.deliver(headers, params);
                 }
                 if (result != null) {
-                    return result;
+                    return new Attempts(result, null);
                 }
                 last = new IllegalStateException("推送接口未返回任何内容");
             } catch (RuntimeException e) {
                 last = e;
             }
 
+            if (!retryable.test(last)) {
+                break;
+            }
             if (attempt < SEND_MAX_ATTEMPTS) {
                 log.warn("第 {} 次投递 [{}] 失败, {} 毫秒后重试: {}", attempt, message.getSequence(),
                         SEND_RETRY_INTERVAL_MILLIS * attempt, last.getMessage());
@@ -468,9 +573,35 @@ public class NovaMessageSender {
             }
         }
 
-        return new JSONObject()
-                .fluentPut("code", -1)
-                .fluentPut("message", "投递失败: " + (last == null ? "未知原因" : last.getMessage()));
+        return new Attempts(null, last);
+    }
+
+    /**
+     * 请求确定没到对方手里：连接被拒、找不到主机、路由不通、连接没建起来
+     * <p>
+     * 只认这几种明确的类型（沿起因链往下找）。等回包超时、连接中途断开、读回包失败这些，
+     * 请求可能已经写出去了；认不出类型的也一样，都不算。
+     * @param failure 这一次的异常，可为 null
+     * @return 确定没到时为 true
+     */
+    static boolean neverReached(Throwable failure) {
+        Throwable current = failure;
+        for (int depth = 0; current != null && depth < 8; depth++) {
+            if (current instanceof java.net.ConnectException
+                    || current instanceof java.net.UnknownHostException
+                    || current instanceof java.net.NoRouteToHostException
+                    || current instanceof java.net.PortUnreachableException
+                    || current instanceof java.net.http.HttpConnectTimeoutException
+                    || current instanceof java.nio.channels.UnresolvedAddressException) {
+                return true;
+            }
+            Throwable next = current.getCause();
+            if (next == current) {
+                break;
+            }
+            current = next;
+        }
+        return false;
     }
 
     /**
@@ -639,15 +770,17 @@ public class NovaMessageSender {
         }
     }
 
-    /**
-     * 投递一条已经决定要发的消息。没送达时把扣过的额度退回
-     */
-    private JSONObject deliver(Sender sender, Message message, boolean push, AtomicReference<LocalDate> chargedOn) {
+    /** 交给去向时带的请求头：只有去向配了推送接口 Token 时才带 */
+    private static Map<String, String> headers(Sender sender) {
         Map<String, String> headers = new HashMap<>();
         if (StringUtil.isNotBlank(sender.getToken())) {
             headers.put("Authorization", "Bearer " + sender.getToken());
         }
+        return headers;
+    }
 
+    /** 交给去向的消息参数，与推送接口的请求体字段一致 */
+    private static Map<String, Object> params(Message message) {
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("platform", message.getPlatform());
         params.put("type", message.getType().getCode());
@@ -659,6 +792,15 @@ public class NovaMessageSender {
         if (replyTo != null && !replyTo.isBlank()) {
             params.put("reply_to", replyTo);
         }
+        return params;
+    }
+
+    /**
+     * 投递一条已经决定要发的消息。没送达时把扣过的额度退回
+     */
+    private JSONObject deliver(Sender sender, Message message, boolean push, AtomicReference<LocalDate> chargedOn) {
+        Map<String, String> headers = headers(sender);
+        Map<String, Object> params = params(message);
 
         for (Predicate<Message> interceptor : message.getOnBeforeSendInterceptors()) {
             if (!interceptor.test(message)) {
