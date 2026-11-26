@@ -242,13 +242,22 @@ proxy_set_header Host $http_host;
 它按 IP 计数管不着的那条路，正是全局桶存在的理由。
 
 **本仓库提供的反代模板（`dist/templates/Caddyfile`）不让客户端自带的 `X-Forwarded-For` 送到本程序**：
-事件流那条把该头删掉，代签发那条由 Caddy 换成真实对端。自己写 Nginx 配置时，
+事件流那条把该头删掉，代签发与程序接口那两条由 Caddy 换成真实对端。自己写 Nginx 配置时，
 用 `proxy_set_header X-Forwarded-For $remote_addr;` 覆写，不用 `$proxy_add_x_forwarded_for`。
 覆写之后头里只有一段，最左＝最右＝真实对端，上面那个组合就不成立——
 **模板这么写不是随手写的，改它之前请先读完这一段**。
 
 本程序没有自己解析并覆盖 `getRemoteAddr()`：那样做的失败方向是把正常用户挡在门外，
 代价大于收益。若你的部署确实是追加式反代，请改成覆写，或不要开 `forward-headers-strategy`。
+
+**程序接口 `/nova/api/v1/` 自己认转发头，不靠 `forward-headers-strategy`。** 只在直接连进来的那一端是本机回环、
+请求又带了转发头时才看它们：`X-Forwarded-For` 取最右一段，`X-Real-IP` 只认一个值，`Forwarded` 取最后一项的 `for=`；
+带了几种就要几种都解析得出、而且是同一个地址，否则当作未知来访者（不是本机，也不在名单里）。
+直接连进来的不是本机时转发头一概不看。来源名单与无效令牌限速都按这样认出的来访者算；
+控制台、事件流、推送接口的判法不随之改变。名单以外的来访者能不能调某一组接口，
+由设置项 `novabot.core.config-ui.api-any-source-groups`（控制台「访问令牌」页的开关）决定，默认一组也不开放，
+开放之后仍须有效的访问令牌。本机的反向代理一个转发头也不写时，经它进来的请求与本机直连分不出来，
+不要用这样的代理转发 `/nova/api/v1/`。
 
 ### 关于安全响应头
 

@@ -418,7 +418,7 @@
       <div class="lc-hd"><b>访问令牌</b><span class="lc-cap"></span></div>
       <div class="lc-body">
         <p class="hint lc-intro">给自己写的脚本或别的程序调用 NovaBot 用。令牌挂在你的账号名下、权限跟着账号走：账号被停用或删除，令牌随即失效；成员的令牌只看得见自己名下的主播。</p>
-        <p class="hint">程序在请求头里带上 <code>Authorization: Bearer 令牌</code>，访问 <code>/nova/api/v1/</code> 下的接口；来源地址同样要在「允许访问的来源 IP」名单里。</p>
+        <p class="hint">程序在请求头里带上 <code>Authorization: Bearer 令牌</code>，访问 <code>/nova/api/v1/</code> 下的接口；来源地址要在「允许访问的来源 IP」名单里，或者管理员把那组接口设成了对任何地址开放。</p>
         <section class="lc-sub">
           <h3 class="lc-h">签发新令牌</h3>
           <div id="at-issue"></div>
@@ -428,6 +428,13 @@
           <h3 class="lc-h" id="at-list-title">我的令牌</h3>
           <div id="at-list"></div>
         </section>
+        <!-- 只给管理员：哪几组接口对任何地址开放、从本机／内网／公网各怎么连。成员那里整块藏着，也取不到 -->
+        <div class="lc-sub" id="at-remote" hidden>
+          <h3 class="lc-h">从别的机器访问</h3>
+          <p class="lc-result" id="at-remote-msg" role="status" hidden></p>
+          <div id="at-remote-groups"></div>
+          <div id="at-remote-routes"></div>
+        </div>
       </div>
     </div>
   </section>

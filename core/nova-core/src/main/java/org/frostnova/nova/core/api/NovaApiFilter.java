@@ -8,7 +8,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import org.frostnova.nova.core.config.ui.ConfigUiSecurityFilter;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccountStore;
 import org.frostnova.nova.core.util.IpMatcher;
@@ -41,13 +40,16 @@ import java.util.function.Supplier;
  * <ol>
  *   <li>路径写法：带分号、反斜杠、编码过的斜杠、{@code .}／{@code ..} 段的一律 400，与控制台同一组判据；
  *       各段解码之后再查一遍，是 {@code .}、{@code ..}，或含斜杠、反斜杠、控制字符的，也是 400；</li>
- *   <li>来源地址：控制台「允许访问的来源 IP」名单，取来源与判名单都调控制台那两段代码，名单每个请求现读；</li>
+ *   <li>来源地址：先判出来访者（{@link NovaApiVisitor}：对端不是本机回环就是对端；是本机回环又带了转发头的，
+ *       取转发头里离 NovaBot 最近的那一段），再按控制台「允许访问的来源 IP」名单判，名单每个请求现读。
+ *       不在名单里的，请求的这组接口在「对任何地址开放的接口组」里（{@link NovaApiOpenGroups}）就接着往下走，
+ *       否则 403。开放只免这一道，下面几道一道不少；</li>
  *   <li>令牌：<b>只认</b> {@code Authorization: Bearer <令牌>}。会话 Cookie、地址栏 {@code ?token=} 一概不看——
  *       Cookie 是浏览器自动附上的，认它就把这个前缀变成跨站伪造的靶子；地址栏里的东西会进代理日志与浏览器历史；</li>
  *   <li>令牌状态与账号状态：吊销、过期、账号停用或删除都是 401；成员此刻登不进控制台（{@link NovaApiMemberSignIn}）
  *       也是 401，开回来后下一个请求恢复。账号<b>每个请求现取</b>，
  *       管理员改了成员名下的主播、改了角色，下一个请求就按新的算；</li>
- *   <li>无效令牌按来源限速（{@link NovaApiThrottle}），超了回 429；</li>
+ *   <li>无效令牌按来访者限速（{@link NovaApiThrottle}），超了回 429；</li>
  *   <li>找接口、核范围（{@link NovaApiScope#adminOnly() 仅管理员}的范围再按账号此刻的角色核一次），
  *       交给处理器，把结果包成 {@code {"ok":true,"data":...}}。处理器出任何问题（含 {@link Error}、
  *       返回值转不成回包）都回固定文字的 500，细节只进服务端日志。</li>
@@ -85,10 +87,28 @@ public class NovaApiFilter extends OncePerRequestFilter {
 
     private final NovaApiMemberSignIn memberSignIn;
 
+    private final NovaApiOpenGroups openGroups;
+
+    /**
+     * 一组也不对名单以外开放的那一种
+     */
     public NovaApiFilter(Supplier<IpMatcher> allowList, NovaApiTokenStore tokens, ConfigUiAccountStore accounts,
                          NovaApiMemberSignIn memberSignIn, NovaApiRegistry registry, NovaApiThrottle throttle,
                          Supplier<List<String>> platforms, Supplier<List<NovaApiStreamer>> roster) {
+        this(allowList, NovaApiOpenGroups.none(registry), tokens, accounts, memberSignIn, registry, throttle, platforms,
+                roster);
+    }
+
+    /**
+     * @param allowList  控制台「允许访问的来源 IP」名单，每个请求现取
+     * @param openGroups 对任何来源地址开放的接口组，每个请求现取
+     */
+    public NovaApiFilter(Supplier<IpMatcher> allowList, NovaApiOpenGroups openGroups, NovaApiTokenStore tokens,
+                         ConfigUiAccountStore accounts, NovaApiMemberSignIn memberSignIn, NovaApiRegistry registry,
+                         NovaApiThrottle throttle, Supplier<List<String>> platforms,
+                         Supplier<List<NovaApiStreamer>> roster) {
         this.allowList = allowList;
+        this.openGroups = openGroups;
         this.tokens = tokens;
         this.accounts = accounts;
         this.memberSignIn = memberSignIn;
@@ -109,12 +129,17 @@ public class NovaApiFilter extends OncePerRequestFilter {
             return;
         }
 
-        String source = ConfigUiSecurityFilter.clientAddress(request);
-        if (!ConfigUiSecurityFilter.admits(allowList.get(), request)) {
-            log.warn("统一接口拒绝了来自 {} 的访问: 来源 IP 不在控制台允许访问的来源 IP 名单内", source);
-            error(response, 403, NovaApiErrors.SOURCE_NOT_ALLOWED,
-                    "来源地址不在控制台「允许访问的来源 IP」名单里");
-            return;
+        NovaApiVisitor visitor = NovaApiVisitor.of(request);
+        String source = visitor.describe();
+        boolean listed = visitor.address() != null && allowList.get().matches(visitor.address());
+        if (!listed) {
+            String group = group(request);
+            if (!openGroups.opens(group)) {
+                log.warn("统一接口拒绝了来自 {} 的访问: 来源不在控制台允许访问的来源 IP 名单内, 请求的这组接口也没有对任何地址开放",
+                        source);
+                error(response, 403, NovaApiErrors.SOURCE_NOT_ALLOWED, notOpen(group, visitor));
+                return;
+            }
         }
 
         String presented = bearer(request);
@@ -139,7 +164,7 @@ public class NovaApiFilter extends OncePerRequestFilter {
             }
         }
         if (refusal != null) {
-            NovaApiThrottle.Verdict verdict = throttle.failure(source);
+            NovaApiThrottle.Verdict verdict = throttle.failure(visitor.throttleKey());
             if (verdict.limited()) {
                 if (verdict.justLimited()) {
                     log.warn("统一接口: 来自 {} 的无效令牌过多, 暂停受理这个来源的无效令牌 {} 秒",
@@ -162,6 +187,31 @@ public class NovaApiFilter extends OncePerRequestFilter {
         tokens.used(token);
         NovaApiCaller caller = new NovaApiCaller(account, token, platforms.get(), registry::adminOnly);
         dispatch(request, response, caller);
+    }
+
+    /**
+     * 请求的是哪一组接口：{@code /nova/api/v1/} 之后的第一段
+     * @return 组名；不在 v1 之下、或第一段之后什么也没有时为 null
+     */
+    private static String group(HttpServletRequest request) {
+        List<String> parts = segments(request);
+        return parts == null || parts.isEmpty() ? null : parts.get(0);
+    }
+
+    /**
+     * 名单以外的来访者、请求的这组又没开放时那句话
+     * <p>
+     * 要说清去哪里打开：使用者多半是照着控制台的地址从另一台机器来调的，只回一句「不在名单里」，
+     * 他不知道还有「按组开放」这一条路，也不知道这件事要管理员去做。组名只在是已登记的组时才写出来，
+     * 请求路径里别的什么都不回显。
+     */
+    private String notOpen(String group, NovaApiVisitor visitor) {
+        String which = group != null && !NovaApiRegistry.RESERVED.contains(group)
+                && registry.segments().contains(group) ? "这组接口（" + group + "）" : "这组接口";
+        String who = visitor.kind() == NovaApiVisitor.Kind.UNKNOWN
+                ? "经本机反向代理进来、但转发头里认不出来访地址的请求，当作名单以外的来源。"
+                : "来源地址不在控制台「允许访问的来源 IP」名单里。";
+        return who + which + "没有对名单以外的地址开放；管理员可在控制台「访问令牌」页的「从别的机器访问」里打开";
     }
 
     /**

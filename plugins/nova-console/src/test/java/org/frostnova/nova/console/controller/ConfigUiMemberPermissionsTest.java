@@ -190,6 +190,8 @@ class ConfigUiMemberPermissionsTest {
             PUT outbox/conversations/{num}
             POST outbox/conversations/{num}/disable
             GET exec/notice
+            GET api-tokens/remote-access
+            POST api-tokens/remote-access
             """);
     private static Set<String> routes(String text) {
         var result = new TreeSet<String>();

@@ -65,6 +65,8 @@ novabot:
       token: coverage-console-token
       allow-ips:
         - 10.0.0.0/8
+      api-any-source-groups:
+        - coverage-group
       auth:
         password: coverage-password
         totp: false

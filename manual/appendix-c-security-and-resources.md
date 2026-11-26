@@ -174,7 +174,8 @@ location /config/admin/ {
 ### 让控制台打开 NapCat 界面
 
 下面是 nginx 的完整 HTTPS 站点示例。它把 `/config` 转给本机的 NovaBot，
-把 `/config/napcat/` 转给本机的 NapCat。需要 nginx 带有 `http_auth_request` 和 `http_sub` 模块。
+把 `/config/napcat/` 转给本机的 NapCat，把 `/nova/api/v1/` 转给 NovaBot 的程序接口（用不着可以删掉那一段，
+见下文「让别的机器经反向代理调程序接口」）。需要 nginx 带有 `http_auth_request` 和 `http_sub` 模块。
 把示例放到 `http` 块里（也可以放在由 `http` 块引入的站点文件中），换成自己的域名和证书路径。
 示例用控制台默认的 `7827` 和 NapCat WebUI 默认的 `6099`，改过端口的按实际填写。
 若已经有控制台站点，把 `map` 放在 `http` 块里，再把 NapCat 相关的 `location` 合进原站点的 `server` 块。
@@ -203,6 +204,19 @@ server {
         proxy_set_header X-Forwarded-Host $http_host;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
+    }
+
+    # 程序接口：只转发 /nova/api/v1/，带上真实来访地址，NovaBot 才认得出是谁在调。
+    # 转发了不等于放通：名单以外的来访者调不调得了，看控制台「访问令牌」页的开关。
+    # 客户端自己带来的 Forwarded 头去掉，免得与下面两个头说的不是同一个地址、被当成未知来访者。
+    # /nova/events、/nova/readonly-token 不在这个前缀下，不要另外转发，交给最后那条 404。
+    location /nova/api/v1/ {
+        proxy_pass http://127.0.0.1:7827;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Forwarded "";
     }
 
     # NapCat 以 root 运行，在 nginx 就挡住网页终端、调试、文件管理、插件安装和在线更新。
@@ -281,6 +295,23 @@ server {
 
 换好域名、证书和端口后，用 `nginx -t` 检查配置，再重载 nginx。
 
+### 让别的机器经反向代理调程序接口
+
+上面样板里的 `location /nova/api/v1/` 那一段，让外面的程序经 https 调 NovaBot 的程序接口
+（例如另一台设备上的外发箱取件程序），地址是 `https://<你的域名>/nova/api/v1/`。几点要知道：
+
+- **转发了不等于放通。** NovaBot 按这一段送下来的 `X-Real-IP`、`X-Forwarded-For` 认出真实来访者，
+  外面的人不在「允许访问的来源 IP」名单里，默认收到 403。要让它调某一组接口，管理员在控制台
+  「访问令牌」页的「从别的机器访问」里打开那一组（仍须有效的访问令牌）。
+- **转发头要写全。** 这一段写了 `X-Real-IP` 与 `X-Forwarded-For`、去掉了客户端带来的 `Forwarded`。
+  一个转发头也不写的话，经代理进来的请求在 NovaBot 看来与本机直连一样，默认名单会放它们进来。
+- **只转发 `/nova/api/v1/`。** 事件流 `/nova/events` 与只读口令代签发 `/nova/readonly-token` 不在这个前缀下，
+  它们另有自己的转发写法（见发行包里的 Caddy 模板），不要顺手把整个 `/nova` 转出去。
+- **一定走 https。** 没有反向代理、直接把 NovaBot 的端口放到公网，令牌会明文经过网络。
+- 控制台 `/config` 的来源判断不随这一段改变：它看的仍是直接连进来的那一端，也就是本机的 nginx。
+
+只想让内网的机器调、或者用 SSH 隧道，不需要这一段，见[附录 B「从另一台机器连」](appendix-b-advanced.md#从另一台机器连)。
+
 ### 挂在路径前缀下
 
 要把控制台挂在某个路径前缀下（例如 `https://example.com/novabot/config`），
@@ -295,6 +326,7 @@ server:
 - 反代**原样转发路径**，不剥前缀：`/novabot/` 下的请求照原路径转给 NovaBot。
   页面、接口、登录 Cookie 都按这个前缀写，地址对不上时登录后会又回到登录页。
 - NapCat 示例里 nginx 接收与生成的 `/config` 路径，以及控制台的会话检查地址，都加上前缀。
+  程序接口那一段同样加上前缀，例如 `location /novabot/nova/api/v1/`。
   例如 NapCat 的对外路径改成 `/novabot/config/napcat/`，转给 NapCat 的地址仍保留尾斜杠。
 - 反代剥掉前缀再转发、靠 `X-Forwarded-Prefix` 告诉 NovaBot 前缀的那种部署**不支持**：
   NovaBot 只认自己配置里的前缀，不认请求头里的。

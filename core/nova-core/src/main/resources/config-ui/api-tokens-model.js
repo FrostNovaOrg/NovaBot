@@ -90,3 +90,82 @@ export function fmtDate(ms) {
 export function expiryText(token) {
   return token.expiresAt ? fmtDate(token.expiresAt) : '不过期';
 }
+
+/** 地址里的主机：IPv6 加方括号 */
+function urlHost(host) {
+  return host.includes(':') && !host.startsWith('[') ? '[' + host + ']' : host;
+}
+
+/** 打开控制台用的主机是不是本机 */
+function loopbackHost(hostname) {
+  const host = String(hostname || '').toLowerCase();
+  return host === 'localhost' || host === '[::1]' || host === '::1' || /^127\./.test(host);
+}
+
+/**
+ * 「从别的机器访问」那一块的四种连法，值全取自服务端回包与部署前缀
+ * @param state GET /api-tokens/remote-access 的回包
+ * @param prefix 部署前缀（core.js 的 PREFIX），没配时为空串
+ * @param page 打开控制台用的地址，取 {protocol, hostname, host}
+ * @return {{local, lan, internet, tunnel}}
+ */
+export function remoteRoutes(state, prefix, page) {
+  const s = state || {};
+  const port = s.port || 7827;
+  const path = (prefix || '') + (s.apiPath || '/nova/api/v1/');
+  const listen = s.listen || {};
+  const hosts = s.lan || [];
+  const anyOpen = (s.groups || []).some(group => group.open);
+  const lanListening = listen.scope === 'all' || listen.scope === 'specific';
+  const admitted = anyOpen || !!s.allowListBeyondLocal;
+  const p = page || {};
+  const current = p.protocol === 'https:' && p.hostname && !loopbackHost(p.hostname)
+    ? 'https://' + p.host + path : null;
+  return {
+    local: {url: 'http://127.0.0.1:' + port + path},
+    lan: {
+      urls: (hosts.length ? hosts : ['<这台机器的内网地址>']).map(host => 'http://' + urlHost(host) + ':' + port + path),
+      known: hosts.length > 0,
+      state: !lanListening ? 'closed' : admitted ? 'ready' : 'refused',
+      anyOpen,
+      listed: !!s.allowListBeyondLocal,
+      address: listen.address || '',
+      restartPending: !!listen.restartPending,
+      port,
+    },
+    internet: {url: 'https://<你的域名>' + path, current},
+    tunnel: {
+      command: 'ssh -N -L ' + port + ':127.0.0.1:' + port + ' <用户名>@<这台机器的地址>',
+      url: 'http://127.0.0.1:' + port + path,
+    },
+  };
+}
+
+/**
+ * 内网那一条现在通不通，以及还差哪几步
+ * @param lan remoteRoutes(...).lan
+ * @return {{level: 'ok'|'warn'|'err', text: string, steps: string[]}}
+ */
+export function lanStatus(lan) {
+  const steps = [];
+  if (lan.state === 'closed') {
+    steps.push('到「设置」把「监听地址」改成 0.0.0.0（或这台机器的内网地址），保存后重启 NovaBot');
+    steps.push('来访的机器要么把它的地址加进「允许访问的来源 IP」，要么在上面打开它要调的那组接口');
+    return {level: 'err',
+      text: '现在连不上：监听地址是 ' + (lan.address || '127.0.0.1') + '，只有本机连得上。要从内网连，先做这两步：',
+      steps};
+  }
+  const listen = '监听地址是 ' + (lan.address || '0.0.0.0') + '，内网的机器连得到端口 ' + lan.port + '。';
+  if (lan.state === 'refused') {
+    steps.push('把来访机器的地址加进「允许访问的来源 IP」（它就能调全部接口，也能打开控制台的登录页）');
+    steps.push('或者在上面打开它要调的那组接口（只开那一组）');
+    return {level: 'warn',
+      text: listen + '但「允许访问的来源 IP」里只有本机，上面也没有打开任何一组，来访的机器现在会收到 403。二选一：',
+      steps};
+  }
+  const who = [];
+  if (lan.listed) who.push('地址在「允许访问的来源 IP」里的机器可以调全部接口');
+  if (lan.anyOpen) who.push('别的机器可以调上面已打开的那几组');
+  return {level: 'ok', text: listen + who.join('；') + '。都要带有效的访问令牌；这台机器的防火墙也要放行这个端口。',
+    steps};
+}

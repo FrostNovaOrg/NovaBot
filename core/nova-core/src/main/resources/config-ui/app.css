@@ -1046,3 +1046,27 @@ details.adv .inner{padding:0 16px 16px}
 #at-list .at-scope-line{font-size:var(--fs-xs);color:var(--dim)}
 /* 暂不可用的原因另起一行、自己折行：整格不折行的话，这句话会把「吊销」按钮挤出表格 */
 #at-list .at-reason{display:block;white-space:normal;min-width:12em;max-width:20em;margin:2px 0 0;font-size:var(--fs-xs)}
+
+/* 访问令牌页：从别的机器访问（只给管理员） */
+#at-remote .at-groups{display:grid;gap:10px;margin:10px 0}
+#at-remote .at-group{display:flex;justify-content:space-between;align-items:center;gap:10px 16px;flex-wrap:wrap;
+  padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-ctl)}
+#at-remote .at-group-text{flex:1 1 16em;min-width:0;font-size:var(--fs-sm)}
+#at-remote .at-group-text .hint{margin:2px 0 0}
+#at-remote .at-group .switch{font-size:var(--fs-sm)}
+#at-remote .at-stale{margin:6px 0 0}
+#at-remote .at-route-h{margin:18px 0 8px;font-size:var(--fs-sm);font-weight:600}
+#at-remote .at-routes{margin:0;display:grid;grid-template-columns:max-content minmax(0,1fr);gap:10px 16px;font-size:var(--fs-sm)}
+#at-remote .at-routes dt{font-weight:600;color:var(--dim)}
+#at-remote .at-routes dd{margin:0;min-width:0}
+#at-remote .at-routes code{word-break:break-all}
+#at-remote .at-routes .hint{margin:2px 0 0}
+#at-remote .at-lan{margin:6px 0 0}
+#at-remote .at-lan.err{color:var(--err)}
+#at-remote .at-lan.warn{color:var(--warn)}
+#at-remote .at-lan.ok{color:var(--ok)}
+#at-remote .at-steps{margin:4px 0 0;padding-left:1.4em}
+@media (max-width:560px){
+  #at-remote .at-routes{grid-template-columns:minmax(0,1fr);gap:4px}
+  #at-remote .at-routes dd{margin-bottom:8px}
+}

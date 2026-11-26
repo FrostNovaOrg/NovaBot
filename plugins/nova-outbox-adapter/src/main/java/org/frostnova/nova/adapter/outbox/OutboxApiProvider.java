@@ -41,6 +41,12 @@ public class OutboxApiProvider implements NovaApiProvider {
 
     @Override public String segment() { return "outbox"; }
 
+    @Override public String name() { return "外发箱"; }
+
+    @Override public String description() {
+        return "取件程序读取待发通知与图片、认领通知并回报发送结果用";
+    }
+
     @Override public List<NovaApiScope> scopes() {
         return List.of(new NovaApiScope(READ, "读取外发箱", "查看外发会话、可见的通知和图片"),
                 new NovaApiScope(DELIVER, "投递外发通知", "认领可见的通知并报告发送结果"));

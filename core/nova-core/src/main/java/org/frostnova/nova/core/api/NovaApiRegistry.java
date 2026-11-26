@@ -29,6 +29,8 @@ public class NovaApiRegistry {
 
     private final Map<String, List<NovaApiRoute>> routes = new HashMap<>();
 
+    private final Map<String, Group> groups = new LinkedHashMap<>();
+
     /** 查找结果 */
     public sealed interface Match permits Found, WrongMethod, Missing {
     }
@@ -85,9 +87,38 @@ public class NovaApiRegistry {
                 throw new IllegalArgumentException("接口 " + route.method() + " " + route.path() + " 登记了两次");
             }
         }
+        String name = provider.name();
+        String description = provider.description();
         declared.forEach(scope -> scopes.put(scope.id(), scope));
         routes.put(segment, list);
+        groups.put(segment, new Group(segment, name == null || name.isBlank() ? segment : name.strip(),
+                description == null ? "" : description.strip()));
         log.info("统一接口: 已登记 /nova/api/v1/{}/ 下 {} 个接口、{} 项范围", segment, list.size(), declared.size());
+    }
+
+    /**
+     * 登记了的接口组（段名），按登记先后
+     * @return 段名，不含底座自己的 {@code me}
+     */
+    public Set<String> segments() {
+        return java.util.Collections.unmodifiableSet(groups.keySet());
+    }
+
+    /**
+     * 登记了的接口组，连同显示名与说明，按登记先后
+     * @return 各组
+     */
+    public List<Group> groups() {
+        return List.copyOf(groups.values());
+    }
+
+    /**
+     * 一组接口
+     * @param segment     段名
+     * @param name        显示名
+     * @param description 一句说明，可为空串
+     */
+    public record Group(String segment, String name, String description) {
     }
 
     /** 全部已登记的范围，按标识排 */
