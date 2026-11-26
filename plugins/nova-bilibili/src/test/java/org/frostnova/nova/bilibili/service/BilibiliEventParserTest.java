@@ -10,6 +10,8 @@ import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.health.BilibiliRiskMetrics;
 import org.frostnova.nova.bilibili.enums.GuardOperateType;
 import org.frostnova.nova.bilibili.enums.GuardType;
+import org.frostnova.nova.bilibili.enums.RoomGuardLevel;
+import org.frostnova.nova.bilibili.protocol.NovaEventMapper;
 import org.frostnova.nova.bilibili.event.live.*;
 import org.frostnova.nova.bilibili.model.BilibiliUserInfo;
 import org.frostnova.nova.bilibili.model.FansMedal;
@@ -200,15 +202,11 @@ class BilibiliEventParserTest {
                     "STOP_LIVE_ROOM_LIST",
                     "ONLINE_RANK_V3",
                     "PK_WIDGET",
-                    "ENTRY_EFFECT",
                     "NOTICE_MSG",
                     "COMMON_NOTICE_DANMAKU",
                     "WIDGET_BANNER",
-                    "ANCHOR_LOT_AWARD",
                     "ANCHOR_LOT_CHECKSTATUS",
-                    "ANCHOR_LOT_END",
                     "ANCHOR_LOT_NOTICE",
-                    "ANCHOR_LOT_START",
                     "CHG_RANK_REFRESH",
                     "COLLECTION_PRAISE_STATUS",
                     "COLLECTION_PRAISE_UPDATE_PROCESS",
@@ -1039,6 +1037,103 @@ class BilibiliEventParserTest {
     }
 
     @Test
+    @DisplayName("天选开始时能暂停欢迎，开奖与结束先后到达也只恢复一次")
+    void lotteryLifecycle() {
+        String start = """
+                {"cmd":"ANCHOR_LOT_START","data":{"id":41,"current_time":1700000000,"time":90}}
+                """;
+        var room = new BilibiliConnectorHarness(parser);
+        room.receiveBody(start);
+        room.receiveBody("{\"cmd\":\"ANCHOR_LOT_AWARD\",\"data\":{\"id\":41}}");
+        room.receiveBody("{\"cmd\":\"ANCHOR_LOT_END\",\"data\":{\"id\":41}}");
+
+        var events = room.publishedEvents();
+        assertEquals(2, events.size(), "一次开始，开奖和结束合成一次结束");
+        var opened = assertInstanceOf(BilibiliLotteryStartEvent.class, events.get(0));
+        assertEquals(41L, opened.getLotteryId());
+        assertEquals(1700000090L, opened.getExpectedEnd().getEpochSecond());
+        assertNull(NovaEventMapper.map(opened));
+        var ended = assertInstanceOf(BilibiliLotteryEndEvent.class, events.get(1));
+        assertEquals(41L, ended.getLotteryId());
+        assertNull(NovaEventMapper.map(ended));
+    }
+
+    @Test
+    @DisplayName("进场特效带有观众和大航海等级时，订阅者能收到补充信号")
+    void guardEntryEffect() {
+        String effect = """
+                {"cmd":"ENTRY_EFFECT","data":{"uid":777,"privilege_type":3}}
+                """;
+        var event = assertInstanceOf(BilibiliGuardEntryEffectEvent.class, parse(effect).orElseThrow());
+        assertEquals(777L, event.getUid());
+        assertEquals(GuardType.Captain, event.getGuardType());
+        assertNull(NovaEventMapper.map(event));
+        assertTrue(parse(effect.replace("777", "0")).isEmpty(), "匿名特效无法指认观众");
+        assertTrue(parse(effect.replace(":3", ":0")).isEmpty(), "普通特效不提供大航海信号");
+    }
+
+    @Test
+    @DisplayName("天选缺倒计时也能暂停；先结束后开奖和无编号通知都不能让同场恢复两次")
+    void lotteryWithoutCountdown() {
+        var opened = assertInstanceOf(BilibiliLotteryStartEvent.class,
+                parse("{\"cmd\":\"ANCHOR_LOT_START\",\"data\":{\"id\":42}}").orElseThrow());
+        assertNull(opened.getExpectedEnd());
+        var ended = assertInstanceOf(BilibiliLotteryEndEvent.class, parse("{\"cmd\":\"ANCHOR_LOT_END\"}").orElseThrow());
+        assertNull(ended.getLotteryId(), "无编号的结束帧不补写场次号");
+        assertTrue(parse("{\"cmd\":\"ANCHOR_LOT_AWARD\",\"data\":{\"id\":42}}").isEmpty());
+        assertTrue(parse("{\"cmd\":\"ANCHOR_LOT_END\",\"data\":{\"id\":43}}").isPresent(),
+                "中途连入漏了开始，仍能得知结束");
+    }
+
+    @Test
+    @DisplayName("相同编号不会串房，上一场迟到的开奖也不能吞掉下一场结束")
+    void lotteryEndStaysInItsRoomAndRound() {
+        String end = "{\"cmd\":\"ANCHOR_LOT_END\",\"data\":{\"id\":41}}";
+        assertTrue(parse(end).isPresent());
+        assertTrue(parser.parse(JSON.parseObject(end), new LiveStreamerInfo(1234L, "主播乙", 123L)).isPresent());
+        assertTrue(parse("{\"cmd\":\"ANCHOR_LOT_START\",\"data\":{\"id\":42}}").isPresent());
+        assertTrue(parse("{\"cmd\":\"ANCHOR_LOT_AWARD\",\"data\":{\"id\":41}}").isEmpty());
+        assertTrue(parse("{\"cmd\":\"ANCHOR_LOT_END\",\"data\":{}}").isPresent());
+        assertTrue(parse("{\"cmd\":\"ANCHOR_LOT_AWARD\",\"data\":{\"id\":42}}").isEmpty());
+    }
+
+    @Test
+    @DisplayName("旧版进房可欢迎本房舰长，别家的舰长、普通观众和身份不全的报文各有区分")
+    void localGuardFromOldEnter() {
+        String frame = """
+                {"cmd":"INTERACT_WORD","data":{"msg_type":1,"uid":777,
+                "fans_medal":{"target_id":%d,"guard_level":3}}}
+                """;
+        assertEquals(RoomGuardLevel.CAPTAIN, localGuard(frame.formatted(SOURCE.getUid())));
+        assertEquals(RoomGuardLevel.NONE, localGuard(frame.formatted(1234)));
+        assertEquals(RoomGuardLevel.UNKNOWN, localGuard("""
+                {"cmd":"INTERACT_WORD","data":{"msg_type":1,"fans_medal":{"target_id":1234}}}
+                """), "只有别家牌子的归属，旧帧没有给观众的大航海等级");
+        assertEquals(RoomGuardLevel.UNKNOWN, localGuard("""
+                {"cmd":"INTERACT_WORD","data":{"msg_type":1,"privilege_type":2,"fans_medal":{"target_id":%d}}}
+                """.formatted(SOURCE.getUid())));
+        assertEquals(RoomGuardLevel.GOVERNOR, localGuard("""
+                {"cmd":"INTERACT_WORD","data":{"msg_type":1,"uinfo":{"medal":{"ruid":%d,"guard_level":1}}}}
+                """.formatted(SOURCE.getUid())));
+        assertEquals(RoomGuardLevel.NONE, localGuard("""
+                {"cmd":"INTERACT_WORD","data":{"msg_type":1,"privilege_type":0,"fans_medal":{"target_id":0,"guard_level":0}}}
+                """));
+        assertEquals(RoomGuardLevel.UNKNOWN, localGuard(frame.formatted(0)));
+        assertEquals(RoomGuardLevel.UNKNOWN, localGuard(frame.formatted(SOURCE.getUid())
+                .replace("\"guard_level\":3", "\"guard_level\":\"?\"")));
+        assertEquals(RoomGuardLevel.NONE, localGuard("""
+                {"cmd":"INTERACT_WORD","data":{"msg_type":1,"uid":777,"privilege_type":0}}
+                """));
+        assertEquals(RoomGuardLevel.UNKNOWN, localGuard("""
+                {"cmd":"INTERACT_WORD","data":{"msg_type":1,"uid":777}}
+                """));
+    }
+
+    private RoomGuardLevel localGuard(String json) {
+        return assertInstanceOf(BilibiliEnterRoomEvent.class, parse(json).orElseThrow()).getRoomGuardLevel();
+    }
+
+    @Test
     @DisplayName("解析进入直播间消息")
     void parseEnterRoom() {
         String json = "{\"cmd\":\"INTERACT_WORD\",\"data\":{\"msg_type\":1,\"uid\":777,\"uname\":\"观众\",\"timestamp\":1700000001,"
@@ -1394,6 +1489,34 @@ class BilibiliEventParserTest {
             assertNull(sender.getGuard());
             assertFalse(event.isFromPromotion());
             assertNull(event.getPromotionSource());
+        }
+
+        @Test
+        @DisplayName("新版进房只欢迎本房大航海，特权等级缺少归属时不会误欢迎")
+        void roomGuardOnEnter() {
+            assertEquals(RoomGuardLevel.CAPTAIN, localGuardV2(ENTER_WITH_GUARD));
+            assertEquals(RoomGuardLevel.NONE, localGuardV2(ENTER_PLAIN));
+            assertEquals(RoomGuardLevel.UNKNOWN, localGuardV2(WITHOUT_UINFO));
+            PbWriter commander = new PbWriter().message(6, new PbWriter().varint(1, 2));
+            assertEquals(RoomGuardLevel.UNKNOWN, localGuardV2(new PbWriter().varint(5, 1)
+                    .message(9, new PbWriter().varint(12, STREAMER_ROOM)).message(22, commander).base64()));
+            assertEquals(RoomGuardLevel.COMMANDER, localGuardV2(new PbWriter().varint(5, 1)
+                    .message(9, new PbWriter().varint(12, STREAMER_ROOM).varint(9, 2)).base64()));
+            PbWriter worn = new PbWriter().varint(10, 1234).varint(11, 3);
+            PbWriter uinfo = new PbWriter().message(3, worn).message(6, new PbWriter().varint(1, 3));
+            var foreign = assertInstanceOf(BilibiliEnterRoomEvent.class,
+                    parseV2(new PbWriter().varint(5, 1).message(22, uinfo).base64()).orElseThrow());
+            assertEquals(RoomGuardLevel.NONE, foreign.getRoomGuardLevel());
+            JSONObject envelope = NovaEventMapper.map(foreign);
+            assertEquals("enter", envelope.getString("kind"));
+            assertEquals(3, envelope.getJSONObject("user").getInteger("guardLevel"), "对外仍是原来的勋章等级");
+            assertTrue(envelope.getJSONObject("data").isEmpty());
+            assertEquals(RoomGuardLevel.UNKNOWN, localGuardV2(new PbWriter().varint(5, 1)
+                    .message(22, new PbWriter().message(6, new PbWriter().varint(1, 3))).base64()));
+        }
+
+        private RoomGuardLevel localGuardV2(String pb) {
+            return assertInstanceOf(BilibiliEnterRoomEvent.class, parseV2(pb).orElseThrow()).getRoomGuardLevel();
         }
 
         @Test
@@ -2753,7 +2876,7 @@ class BilibiliEventParserTest {
     @Test
     @DisplayName("未知消息类型安全忽略")
     void ignoresUnknownCommand() {
-        // 原样本 ENTRY_EFFECT 已登记为见过不处理，走的不再是未知那条路。
+        // 使用尚未登记的消息类型触发未知计数。
         // 换成仍属未知的 HOT_RANK_CHANGED（不在 SEEN_CMDS、也不在分派表；名不含收入禁词）
         assertFalse(BilibiliEventParser.SEEN_CMDS.contains("HOT_RANK_CHANGED"),
                 "样本 HOT_RANK_CHANGED 不得在 SEEN_CMDS");

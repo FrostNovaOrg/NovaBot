@@ -3,9 +3,13 @@ package org.frostnova.nova.bilibili.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.health.BilibiliRiskMetrics;
 import org.frostnova.nova.bilibili.enums.GuardOperateType;
+import org.frostnova.nova.bilibili.enums.GuardType;
+import org.frostnova.nova.bilibili.enums.RoomGuardLevel;
 import org.frostnova.nova.bilibili.event.live.*;
 import org.frostnova.nova.bilibili.model.BilibiliEmojiInfo;
 import org.frostnova.nova.bilibili.model.BilibiliUserInfo;
@@ -79,6 +83,15 @@ public class BilibiliEventParser {
      * 不去重就会把同一个红包反复感谢。
      */
     private final Map<String, Instant> seenRedPockets = new ConcurrentHashMap<>();
+
+    private record Lottery(Long roomId, Long id) {}
+    private record LotteryState(Long id, boolean ended) {}
+
+    // 没有编号的结束通知按本房最近一场归并；有编号的迟到开奖仍按它自己的场次归并。
+    private final Cache<Long, LotteryState> roomLotteries = Caffeine.newBuilder()
+            .expireAfterAccess(Duration.ofDays(1)).build();
+    private final Cache<Lottery, Boolean> endedLotteries = Caffeine.newBuilder()
+            .expireAfterWrite(Duration.ofDays(1)).build();
 
     /**
      * 按名记账的静默损失计数：解析失败的 cmd、截断的 pb、过短的弹幕 info 共用一本账
@@ -180,10 +193,11 @@ public class BilibiliEventParser {
      *   9.2   勋章等级          853/853
      *   9.3   勋章名称          853/853
      *   9.8   勋章是否点亮      284/853（proto3 省略 0，未出现即未点亮）
+     *   9.9   勋章的大航海等级（进房夹具与 22.3.11 对应）
      *  9.12   勋章所属房间号    853/853
      *  22.1   观众 uid          2122/2122
      *  22.2   基础信息 {1:昵称, 2:头像}
-     *  22.3   勋章全量 {11:大航海等级, 13:大航海图标}
+     *  22.3   勋章全量 {10:所属主播 uid, 11:大航海等级, 13:大航海图标}
      *  22.4   财富等级 {1:等级}
      *  22.6   大航海 {1:等级, 2:到期时间}
      * </pre>
@@ -224,6 +238,8 @@ public class BilibiliEventParser {
 
     private static final int V2_MEDAL_LIGHTED = 8;
 
+    private static final int V2_MEDAL_GUARD_LEVEL = 9;
+
     private static final int V2_MEDAL_ROOM_ID = 12;
 
     private static final int V2_UINFO_BASE = 2;
@@ -237,6 +253,8 @@ public class BilibiliEventParser {
     private static final int V2_BASE_NAME = 1;
 
     private static final int V2_BASE_FACE = 2;
+
+    private static final int V2_FULL_MEDAL_OWNER_UID = 10;
 
     private static final int V2_FULL_MEDAL_GUARD_LEVEL = 11;
 
@@ -443,15 +461,11 @@ public class BilibiliEventParser {
             "STOP_LIVE_ROOM_LIST",
             "ONLINE_RANK_V3",
             "PK_WIDGET",
-            "ENTRY_EFFECT",
             "NOTICE_MSG",
             "COMMON_NOTICE_DANMAKU",
             "WIDGET_BANNER",
-            "ANCHOR_LOT_AWARD",
             "ANCHOR_LOT_CHECKSTATUS",
-            "ANCHOR_LOT_END",
             "ANCHOR_LOT_NOTICE",
-            "ANCHOR_LOT_START",
             "CHG_RANK_REFRESH",
             "COLLECTION_PRAISE_STATUS",
             "COLLECTION_PRAISE_UPDATE_PROCESS",
@@ -627,6 +641,10 @@ public class BilibiliEventParser {
                 (data, source) -> parseRedPocket("POPULARITY_RED_POCKET_START", data, source));
         parsers.put("POPULARITY_RED_POCKET_V2_START",
                 (data, source) -> parseRedPocket("POPULARITY_RED_POCKET_V2_START", data, source));
+        parsers.put("ANCHOR_LOT_START", (data, source) -> parseLottery(data, source, true));
+        parsers.put("ANCHOR_LOT_AWARD", (data, source) -> parseLottery(data, source, false));
+        parsers.put("ANCHOR_LOT_END", (data, source) -> parseLottery(data, source, false));
+        parsers.put("ENTRY_EFFECT", this::parseEntryEffect);
         parsers.put("LIKE_INFO_V3_CLICK", this::parseLike);
         parsers.put("LIKE_INFO_V3_UPDATE", this::parseLikeUpdate);
         parsers.put("WATCHED_CHANGE", this::parseWatchedUpdate);
@@ -1093,7 +1111,8 @@ public class BilibiliEventParser {
         if (sender.getUname() == null) {
             sender.setUname(meta.getString("uname"));
         }
-        sender.setFansMedal(parseObjectFansMedal(meta.getJSONObject("fans_medal"), source));
+        JSONObject fansMedal = meta.getJSONObject("fans_medal");
+        sender.setFansMedal(parseObjectFansMedal(fansMedal, source));
 
         Instant timestamp = Optional.ofNullable(meta.getLong("timestamp")).map(Instant::ofEpochSecond).orElseGet(Instant::now);
 
@@ -1106,6 +1125,7 @@ public class BilibiliEventParser {
         switch (msgType) {
             case 1 -> {
                 BilibiliEnterRoomEvent event = new BilibiliEnterRoomEvent(source, sender, timestamp);
+                event.setRoomGuardLevel(roomGuardV1(meta, fansMedal, source));
                 event.setFromPromotion(isOne(meta.getInteger("is_spread")));
                 event.setPromotionSource(Optional.ofNullable(meta.getString("spread_desc")).filter(s -> !s.isBlank()).orElse(null));
                 return event;
@@ -1204,14 +1224,16 @@ public class BilibiliEventParser {
             return null;
         }
 
-        BilibiliUserInfo sender = buildSenderFromUinfoV2(message.message(V2_UINFO), source);
+        BilibiliProtobufReader uinfo = message.message(V2_UINFO);
+        BilibiliProtobufReader roomMedal = message.message(V2_FANS_MEDAL);
+        BilibiliUserInfo sender = buildSenderFromUinfoV2(uinfo, source);
         if (sender.getUid() == null) {
             sender.setUid(message.number(V2_UID));
         }
         if (sender.getUname() == null) {
             sender.setUname(message.string(V2_UNAME));
         }
-        sender.setFansMedal(parseFansMedalV2(message.message(V2_FANS_MEDAL), source));
+        sender.setFansMedal(parseFansMedalV2(roomMedal, source));
 
         // 字段 7 是秒级。事件模型内部统一用 Instant，换算成毫秒是事件输出协议的事，
         // 与醒目留言的 start_time / end_time 同一处理方式
@@ -1220,6 +1242,7 @@ public class BilibiliEventParser {
         return switch (msgType.intValue()) {
             case 1 -> {
                 BilibiliEnterRoomEvent event = new BilibiliEnterRoomEvent(source, sender, timestamp);
+                event.setRoomGuardLevel(roomGuardV2(message, roomMedal, uinfo, source));
                 // 字段 10 与 13 只在 3/2122 条里出现，值分别为 1 与「流量包推广」，
                 // 与 V1 的 is_spread / spread_desc 对得上。样本少，但取不到就是「没走推广位」，
                 // 与 V1 对字段缺失的处理一致，不会造成假信息
@@ -1309,6 +1332,109 @@ public class BilibiliEventParser {
                 .orElse(null));
 
         return sender;
+    }
+
+    private enum MedalScope { HERE, OTHER, UNKNOWN, CONFLICT }
+
+    /** 归属和等级取自同一块勋章数据。 */
+    private record GuardMedal(MedalScope scope, Long level) {
+        private static final GuardMedal ABSENT = new GuardMedal(MedalScope.UNKNOWN, null);
+
+        private static GuardMedal of(LiveStreamerInfo source, Long owner, Long room, Long level) {
+            if (source == null) {
+                return new GuardMedal(MedalScope.UNKNOWN, level);
+            }
+            boolean hasOwner = owner != null && owner > 0 && source.getUid() != null && source.getUid() > 0;
+            boolean hasRoom = room != null && room > 0 && source.getRoomId() != null && source.getRoomId() > 0;
+            boolean sameOwner = hasOwner && owner.equals(source.getUid());
+            boolean sameRoom = hasRoom && room.equals(source.getRoomId());
+            if (hasOwner && hasRoom && sameOwner != sameRoom) {
+                return new GuardMedal(MedalScope.CONFLICT, level);
+            }
+            if (sameOwner || sameRoom) {
+                return new GuardMedal(MedalScope.HERE, level);
+            }
+            return new GuardMedal(hasOwner || hasRoom ? MedalScope.OTHER : MedalScope.UNKNOWN, level);
+        }
+
+        boolean hasLocalLevel() {
+            return scope == MedalScope.HERE && level != null;
+        }
+
+        boolean hasForeignLevel() {
+            return scope == MedalScope.OTHER && RoomGuardLevel.fromLevel(level) != RoomGuardLevel.UNKNOWN;
+        }
+
+        boolean hasUnscopedLevel() {
+            return scope == MedalScope.UNKNOWN && level != null && level != 0;
+        }
+    }
+
+    private RoomGuardLevel roomGuardV1(JSONObject meta, JSONObject fans, LiveStreamerInfo source) {
+        JSONObject uinfo = meta.getJSONObject("uinfo");
+        JSONObject worn = uinfo == null ? null : uinfo.getJSONObject("medal");
+        GuardMedal fansGuard = fans == null ? GuardMedal.ABSENT : GuardMedal.of(source,
+                optionalLong(fans, "target_id"), optionalLong(fans, "anchor_roomid"), optionalLong(fans, "guard_level"));
+        GuardMedal wornGuard = worn == null ? GuardMedal.ABSENT : GuardMedal.of(source,
+                optionalLong(worn, "ruid"), null, optionalLong(worn, "guard_level"));
+        return roomGuard(fansGuard, wornGuard, optionalLong(meta, "privilege_type"));
+    }
+
+    private RoomGuardLevel roomGuardV2(BilibiliProtobufReader message, BilibiliProtobufReader fans,
+                                       BilibiliProtobufReader uinfo, LiveStreamerInfo source) {
+        BilibiliProtobufReader worn = uinfo == null ? null : uinfo.message(V2_UINFO_MEDAL);
+        BilibiliProtobufReader guard = uinfo == null ? null : uinfo.message(V2_UINFO_GUARD);
+        if (message.isTruncated() || (fans != null && fans.isTruncated()) || (uinfo != null && uinfo.isTruncated())
+                || (worn != null && worn.isTruncated()) || (guard != null && guard.isTruncated())) {
+            return RoomGuardLevel.UNKNOWN;
+        }
+        GuardMedal fansGuard = fans == null ? GuardMedal.ABSENT : GuardMedal.of(source,
+                fans.number(V2_MEDAL_TARGET_UID), fans.number(V2_MEDAL_ROOM_ID), fans.number(V2_MEDAL_GUARD_LEVEL));
+        GuardMedal wornGuard = worn == null ? GuardMedal.ABSENT : GuardMedal.of(source,
+                worn.number(V2_FULL_MEDAL_OWNER_UID), null, worn.number(V2_FULL_MEDAL_GUARD_LEVEL));
+        Long level = guard == null ? null : guard.number(V2_LEVEL);
+        // proto3 的普通观众省略零值。缺整块观众资料时无法这样判。
+        if (level == null && uinfo != null && uinfo.bytes(V2_UINFO_BASE) != null) {
+            level = 0L;
+        }
+        return roomGuard(fansGuard, wornGuard, level);
+    }
+
+    private RoomGuardLevel roomGuard(GuardMedal fans, GuardMedal worn, Long level) {
+        if (fans.scope() == MedalScope.CONFLICT || worn.scope() == MedalScope.CONFLICT
+                || (fans.hasLocalLevel() && worn.hasLocalLevel() && !fans.level().equals(worn.level()))) {
+            return RoomGuardLevel.UNKNOWN;
+        }
+        if (fans.hasLocalLevel()) {
+            return RoomGuardLevel.fromLevel(fans.level());
+        }
+        if (worn.hasLocalLevel()) {
+            return RoomGuardLevel.fromLevel(worn.level());
+        }
+        if (fans.hasForeignLevel() || worn.hasForeignLevel()) {
+            return RoomGuardLevel.NONE;
+        }
+        if (fans.hasUnscopedLevel() || worn.hasUnscopedLevel()) {
+            return RoomGuardLevel.UNKNOWN;
+        }
+        // 独立的特权等级没有勋章归属。即使另有一块本房普通勋章，也不能拼成一次本房上舰。
+        return Long.valueOf(0).equals(level) ? RoomGuardLevel.NONE : RoomGuardLevel.UNKNOWN;
+    }
+
+    /** 可选字段变形时仍发布原有事件。仅接受整数和整数字符串。 */
+    private static Long optionalLong(JSONObject object, String key) {
+        Object value = object == null ? null : object.get(key);
+        if (value instanceof Long || value instanceof Integer) {
+            return ((Number) value).longValue();
+        }
+        if (value instanceof String digits) {
+            try {
+                return Long.valueOf(digits);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     /**
@@ -1721,6 +1847,60 @@ public class BilibiliEventParser {
      */
     private Instant epochSecond(Long seconds) {
         return seconds == null || seconds <= 0 ? null : Instant.ofEpochSecond(seconds);
+    }
+
+    private synchronized NovaBaseLiveEvent parseLottery(JSONObject frame, LiveStreamerInfo source, boolean start) {
+        JSONObject data = frame.getJSONObject("data");
+        if (source == null || source.getRoomId() == null) {
+            return null;
+        }
+        Long room = source.getRoomId();
+        Long announcedRoom = optionalLong(data, "room_id");
+        if (announcedRoom != null && announcedRoom > 0 && !room.equals(announcedRoom)) {
+            return null;
+        }
+        Long id = optionalLong(data, "id");
+        LotteryState current = roomLotteries.getIfPresent(room);
+        if (start) {
+            if (id != null && endedLotteries.getIfPresent(new Lottery(room, id)) != null) {
+                return null;
+            }
+            Long seconds = optionalLong(data, "current_time");
+            Instant now = seconds != null && seconds > 0 && seconds <= Long.MAX_VALUE / 1000
+                    ? Instant.ofEpochSecond(seconds) : Instant.now();
+            Long remaining = optionalLong(data, "time");
+            Instant end = remaining != null && remaining >= 0 && remaining <= Integer.MAX_VALUE
+                    ? now.plusSeconds(remaining) : null;
+            roomLotteries.put(room, new LotteryState(id, false));
+            return new BilibiliLotteryStartEvent(source, id, now, end);
+        }
+
+        Long endedId = id == null && current != null ? current.id() : id;
+        if (endedId != null && endedLotteries.asMap().putIfAbsent(new Lottery(room, endedId), true) != null) {
+            return null;
+        }
+        if (current != null && current.ended() && (id == null || current.id() == null)) {
+            roomLotteries.put(room, new LotteryState(endedId, true));
+            return null;
+        }
+        // 上一场迟到的结束通知不能覆盖已经开始的下一场。
+        if (current == null || current.ended() || current.id() == null || current.id().equals(endedId)) {
+            roomLotteries.put(room, new LotteryState(endedId, true));
+        }
+        return new BilibiliLotteryEndEvent(source, id);
+    }
+
+    private NovaBaseLiveEvent parseEntryEffect(JSONObject frame, LiveStreamerInfo source) {
+        JSONObject data = requireData(frame, "ENTRY_EFFECT");
+        if (data == null) {
+            return null;
+        }
+        Long uid = optionalLong(data, "uid");
+        Long level = optionalLong(data, "privilege_type");
+        if (uid == null || uid <= 0 || level == null || level < 1 || level > 3) {
+            return null;
+        }
+        return new BilibiliGuardEntryEffectEvent(source, uid, GuardType.of(level.intValue()));
     }
 
     /**

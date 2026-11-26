@@ -86,6 +86,20 @@ class BilibiliLivePkDetailTest {
     }
 
     @Test
+    @DisplayName("天选和进场特效不会给直播报告多算一次进房或收入，也不会增加明细行")
+    void roomSignalsDoNotAffectSession() {
+        play("{\"cmd\":\"INTERACT_WORD\",\"data\":{\"msg_type\":1,\"uid\":777}}");
+        var metrics = snapshotMetrics();
+        var users = snapshotMetricUsers();
+        assertTrue(play(
+                "{\"cmd\":\"ANCHOR_LOT_START\",\"data\":{\"id\":41}}",
+                "{\"cmd\":\"ENTRY_EFFECT\",\"data\":{\"uid\":777,\"privilege_type\":3}}",
+                "{\"cmd\":\"ANCHOR_LOT_END\",\"data\":{\"id\":41}}").isEmpty());
+        assertEquals(metrics, snapshotMetrics());
+        assertEquals(users, snapshotMetricUsers());
+    }
+
+    @Test
     @DisplayName("直播中打完一场 1v1 定时 PK，明细里什么都没留下——应恰有开打、结算各一行，本房票数与结果对；发起方与被匹配方两种站位都要对")
     void type6BattleLeavesOpenAndSettleRows() {
         List<String> red = new ArrayList<>();

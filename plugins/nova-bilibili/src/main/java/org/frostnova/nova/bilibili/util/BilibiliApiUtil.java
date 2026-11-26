@@ -90,6 +90,8 @@ public class BilibiliApiUtil {
 
     private static final String MASTER_INFO_API = "https://api.live.bilibili.com/live_user/v1/Master/info?uid=";
 
+    private static final String ONLINE_GOLD_RANK_API = "https://api.live.bilibili.com/xlive/general-interface/v1/rank/getOnlineGoldRank";
+
     private static final String ROOM_INFO_API = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=";
 
     /**
@@ -227,6 +229,8 @@ public class BilibiliApiUtil {
         registerKnownKeys(table, COOKIE_REFRESH_API, "COOKIE_REFRESH_API", "refresh_token");
         registerKnownKeys(table, CONFIRM_REFRESH_API, "CONFIRM_REFRESH_API");
         registerKnownKeys(table, MASTER_INFO_API, "MASTER_INFO_API", "info", "room_id", "follower_num");
+        registerKnownKeys(table, ONLINE_GOLD_RANK_API, "ONLINE_GOLD_RANK_API", "onlineNum");
+        registerResidentKeys(table, ONLINE_GOLD_RANK_API, "list");
         registerKnownKeys(table, FANS_MEDAL_RANK_API, "FANS_MEDAL_RANK_API", "num");
         registerKnownKeys(table, GUARD_TAB_API, "GUARD_TAB_API", "info", "top3", "list");
         registerKnownKeys(table, GUARD_LIST_API, "GUARD_TAB_API", "info");
@@ -1767,6 +1771,12 @@ public class BilibiliApiUtil {
             log.debug("获取直播间 {} 的大航海人数失败: {}", roomId, e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /** 在线高能榜的总人数。榜单只取第一页，名单长度可能小于总数。 */
+    public Optional<Integer> getOnlineRankCount(@NonNull Long roomId, @NonNull Long uid) {
+        JSONObject data = requestBilibiliApi(ONLINE_GOLD_RANK_API + "?page=1&pageSize=1&roomId=" + roomId + "&ruid=" + uid);
+        return Optional.ofNullable(data.getInteger("onlineNum"));
     }
 
     /**
