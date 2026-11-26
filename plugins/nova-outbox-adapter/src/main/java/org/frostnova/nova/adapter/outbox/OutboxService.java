@@ -21,10 +21,13 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
@@ -117,14 +120,25 @@ public class OutboxService {
 
     /** 编号升序，afterId 为上一页末条编号，首页用 0。status 为空时包含全部状态。 */
     public synchronized List<OutboxRecord> list(Status status, long afterId, int limit, Predicate<Streamer> visible) {
+        return page(status, afterId, limit, visible, false);
+    }
+
+    /** 编号倒序，beforeId 为上一页末条编号，首页用 0。 */
+    public synchronized List<OutboxRecord> newest(Status status, long beforeId, int limit, Predicate<Streamer> visible) {
+        return page(status, beforeId, limit, visible, true);
+    }
+
+    private List<OutboxRecord> page(Status status, long cursor, int limit, Predicate<Streamer> visible, boolean newest) {
         Objects.requireNonNull(visible, "须提供主播可见范围");
-        if (afterId < 0 || limit <= 0) throw new IllegalArgumentException("外发箱游标或条数无效");
+        if (cursor < 0 || limit <= 0) throw new IllegalArgumentException("外发箱游标或条数无效");
         advance(clock.instant());
         return database.transaction(db -> {
             var result = new ArrayList<OutboxRecord>();
-            String query = "SELECT * FROM records WHERE id>?" + (status == null ? "" : " AND status=?") + " ORDER BY id";
+            String range = newest && cursor != 0 ? "id<?" : "id>?";
+            String query = "SELECT * FROM records WHERE " + range + (status == null ? "" : " AND status=?")
+                    + (newest ? " ORDER BY id DESC" : " ORDER BY id");
             try (var sql = db.prepareStatement(query)) {
-                sql.setLong(1, afterId);
+                sql.setLong(1, cursor);
                 if (status != null) sql.setString(2, status.name());
                 try (var rows = sql.executeQuery()) {
                     while (result.size() < limit && rows.next()) {
@@ -137,11 +151,40 @@ public class OutboxService {
         });
     }
 
+    /** 当前待发、发送中，以及最近一天进入异常结果的可见记录。聚合时无需读正文。 */
+    synchronized Map<Status, Long> summary(Predicate<Streamer> visible) {
+        Instant now = clock.instant();
+        advance(now);
+        return database.transaction(db -> {
+            var counts = new EnumMap<Status, Long>(Status.class);
+            for (var status : List.of(PENDING, SENDING, FAILED, UNKNOWN, EXPIRED)) counts.put(status, 0L);
+            try (var sql = prepare(db, """
+                    SELECT status, streamer_platform, streamer_uid, streamer_name, count(*) AS total FROM records
+                    WHERE status IN ('PENDING','SENDING') OR (status IN ('FAILED','UNKNOWN','EXPIRED') AND
+                        COALESCE(result_at, CASE status WHEN 'EXPIRED' THEN expires_at
+                            WHEN 'UNKNOWN' THEN claimed_at + ? ELSE claimed_at END) >= ?)
+                    GROUP BY status, streamer_platform, streamer_uid, streamer_name
+                    """, settings.getClaimTimeout().toMillis(), now.minus(Duration.ofDays(1)).toEpochMilli());
+                 var rows = sql.executeQuery()) {
+                while (rows.next()) {
+                    if (visible.test(streamer(rows))) {
+                        counts.merge(Status.valueOf(rows.getString("status")), rows.getLong("total"), Long::sum);
+                    }
+                }
+            }
+            return counts;
+        });
+    }
+
     /** segmentIndex 从 0 开始，仅内联图片段有本地字节。 */
     public synchronized byte[] readImage(long id, int segmentIndex) {
+        return readImage(id, segmentIndex, streamer -> true);
+    }
+
+    synchronized byte[] readImage(long id, int segmentIndex, Predicate<Streamer> visible) {
         advance(clock.instant());
         return database.transaction(db -> {
-            var segments = require(db, id).segments();
+            var segments = require(db, id, visible).segments();
             if (segmentIndex < 0 || segmentIndex >= segments.size() || segments.get(segmentIndex).type() != SegmentType.IMAGE_BYTES) {
                 throw new IllegalArgumentException("这段没有本地图片");
             }
@@ -181,7 +224,7 @@ public class OutboxService {
             var claimed = require(db, id);
             expect(claimed, SENDING);
             if (claimNumber != claimed.claimNumber()) throw new IllegalStateException("该次认领已结束");
-            update(db, "UPDATE records SET status=?, note=? WHERE id=?", outcome.name(), note, id);
+            update(db, "UPDATE records SET status=?, note=?, result_at=? WHERE id=?", outcome.name(), note, now.toEpochMilli(), id);
             return require(db, id);
         });
         if (outcome == FAILED) timeline.record(event(result, FAILED, now));
@@ -195,7 +238,7 @@ public class OutboxService {
             var record = require(db, id);
             expect(record, FAILED, UNKNOWN, EXPIRED);
             update(db, """
-                    UPDATE records SET status='PENDING', expires_at=?, claimant=NULL, claimed_at=NULL, note=NULL WHERE id=?
+                    UPDATE records SET status='PENDING', expires_at=?, claimant=NULL, claimed_at=NULL, note=NULL, result_at=NULL WHERE id=?
                     """, now.plus(settings.ttl(record.kind())).toEpochMilli(), id);
             return require(db, id);
         });
@@ -212,15 +255,25 @@ public class OutboxService {
 
     private static void expect(OutboxRecord record, Status... allowed) {
         for (var status : allowed) if (record.status() == status) return;
-        throw new IllegalStateException("记录当前为「" + record.status().label() + "」，无法执行此操作");
+        throw new StatusConflict("记录当前为「" + record.status().label() + "」，无法执行此操作");
+    }
+
+    static class StatusConflict extends IllegalStateException {
+        StatusConflict(String message) { super(message); }
     }
 
     private static String imageName(long id, int part) { return id + "-" + part + ".bin"; }
 
     private static OutboxRecord require(Connection db, long id) throws SQLException {
+        return require(db, id, streamer -> true);
+    }
+
+    private static OutboxRecord require(Connection db, long id, Predicate<Streamer> visible) throws SQLException {
         try (var sql = prepare(db, "SELECT * FROM records WHERE id=?", id); var rows = sql.executeQuery()) {
             if (!rows.next()) throw new IllegalArgumentException("外发记录不存在");
-            return read(rows, streamer(rows));
+            var owner = streamer(rows);
+            if (!visible.test(owner)) throw new IllegalArgumentException("外发记录不存在");
+            return read(rows, owner);
         }
     }
 
@@ -275,7 +328,8 @@ public class OutboxService {
             }
             if (!events.isEmpty()) {
                 update(db, "UPDATE records SET status='EXPIRED' WHERE status='PENDING' AND expires_at<=?", now.toEpochMilli());
-                update(db, "UPDATE records SET status='UNKNOWN' WHERE status='SENDING' AND claimed_at<=?", claimCutoff);
+                update(db, "UPDATE records SET status='UNKNOWN', result_at=claimed_at+? WHERE status='SENDING' AND claimed_at<=?",
+                        settings.getClaimTimeout().toMillis(), claimCutoff);
             }
             return update(db, "DELETE FROM records WHERE created_at<=?", now.minus(settings.getRetention()).toEpochMilli());
         });

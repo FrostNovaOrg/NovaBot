@@ -249,6 +249,33 @@ class OutboxServiceTest {
         assertEquals(List.of(records.get(1)), service.list(null, records.get(0).id(), 1, owner::equals));
     }
 
+    @Test @DisplayName("更新后旧外发记录或图片消失，或新收到的失败结果提前从概况里消失")
+    void existingOutboxAndRecentResultsSurviveUpgrade() {
+        var first = put("{image_base64=AQID}").get(0);
+        service.receipt(first.id(), service.claim(first.id(), "设备").claimNumber(), FAILED, "设备离线");
+        // 还原早期外发箱的表结构；旧失败记录只存了认领时刻。
+        new OutboxDatabase(root).transaction(db -> {
+            try (var sql = db.createStatement()) {
+                sql.execute("ALTER TABLE records DROP COLUMN result_at");
+                sql.execute("PRAGMA user_version=0");
+            }
+            return null;
+        });
+        reopen(settings(Map.of()));
+        assertEquals(1L, service.summary(owner::equals).get(FAILED));
+        assertArrayEquals(new byte[]{1, 2, 3}, service.readImage(first.id(), 0));
+        var later = service.claim(put("稍后失败").get(0).id(), "设备");
+        now = now.plusSeconds(600);
+        reopen(settings(Map.of()));
+        service.receipt(later.id(), later.claimNumber(), FAILED, "");
+        now = now.plus(Duration.ofHours(24));
+        reopen(settings(Map.of()));
+        assertEquals(1L, service.summary(owner::equals).get(FAILED));
+        now = now.plusMillis(1);
+        reopen(settings(Map.of()));
+        assertEquals(0L, service.summary(owner::equals).get(FAILED));
+    }
+
     @Test @DisplayName("未取到主播昵称时，成员的时间线上缺少本人的外发失败摘要")
     void timelineKeepsStreamerWithoutNickname() {
         var record = service.enqueue(conversation, new OutboxRecord.Streamer("live", 123L, null),

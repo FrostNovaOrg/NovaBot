@@ -102,6 +102,11 @@ for scenario in main welcome revoke result; do
     fi
 done
 
+PAGES="plugins/nova-outbox-adapter/src/main/resources/config-ui-pages"
+for f in "$PAGES"/outbox.js; do
+    check_syntax "$f"
+done
+
 # —— 末行汇总 ——
 # 档尺（.mjs）的末句只数它自己的格，语法红盖不进去：语法红而档全对时，
 # 整把尺的最后一句会是「十二档全对」，读起来像全绿。末行由本尺自己收
