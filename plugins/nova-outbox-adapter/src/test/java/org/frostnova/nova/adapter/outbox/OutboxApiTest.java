@@ -28,6 +28,7 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferByte;
 import java.io.ByteArrayOutputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
@@ -197,6 +198,35 @@ class OutboxApiTest {
         assertEquals("SENT", result.getString("status"));
         assertTrue(data(read("messages")).getJSONArray("items").isEmpty());
         assertEquals(record.id(), data(read("messages?status=SENT")).getJSONArray("items").getJSONObject(0).getLongValue("id"));
+    }
+
+    @Test @DisplayName("一张图片文件丢了，所有通知都取不到了")
+    void missingImageStillAllowsPickup() throws Exception {
+        long id = put(OWNER, "开播{image_base64=AQID}").id();
+        long otherId = put(OWNER, "稍后开播").id();
+        var images = context.getBean(OutboxDatabase.class).images;
+        Files.move(images.resolve(id + "-1.bin"), directory.resolve("moved.bin"));
+
+        var items = data(read("messages")).getJSONArray("items").toList(JSONObject.class);
+        assertEquals(List.of(id, otherId), items.stream().map(item -> item.getLong("id")).toList());
+        var message = items.get(0);
+        var picture = message.getJSONArray("segments").getJSONObject(1);
+        assertEquals("IMAGE_BYTES", picture.getString("type"));
+        assertEquals(1, picture.get("index"));
+        assertTrue(picture.containsKey("byteCount"));
+        assertNull(picture.get("byteCount"));
+        assertEquals(true, picture.get("unavailable"));
+        assertEquals(message, data(read("messages/" + id)));
+
+        var claim = data(submit(id, "claim", ""));
+        long claimNumber = claim.getLongValue("claimNumber");
+        assertTrue(claimNumber > 0);
+        assertEquals(message.getJSONArray("segments"), claim.getJSONObject("message").getJSONArray("segments"));
+        var missing = call(device, get(picture.getString("url")));
+        assertEquals(error(read("messages/" + id + "/images/0"), 404, "not_found"),
+                error(missing, 404, "not_found"));
+        assertEquals("FAILED", data(submit(id, "receipt", JSONObject.of("claimNumber", claimNumber,
+                "outcome", "FAILED").toJSONString())).getString("status"));
     }
 
     @Test @DisplayName("成员能按编号读取、认领或修改别人的通知，或从错误信息判断通知存在")

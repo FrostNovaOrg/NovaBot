@@ -143,7 +143,7 @@ NovaBot 认的来源是**直接连进来的那一端**。放在反向代理后�
 
 | HTTP | `error.code` | 什么时候 |
 |---|---|---|
-| 400 | `bad_request` | 路径写法不对（含分号、反斜杠、编码过的斜杠、`.`／`..` 段；各段解码之后是 `.`、`..`，或含斜杠、反斜杠、控制字符，例如 `%2e%2e`、`%0a`），请求体不是 JSON 对象，参数不对 |
+| 400 | `bad_request` | 路径写法不对（含分号、反斜杠、编码过的斜杠、`.`／`..` 段；各段解码之后是 `.`、`..`，或含斜杠、反斜杠、控制字符，例如 `%2e%2e`、`%0a`），请求体无法解析为对象，参数不对 |
 | 401 | `unauthenticated` | 没带令牌；令牌不存在、已吊销、已过期；所属账号已停用或已删除；所属账号是成员而成员此刻登录不了控制台 |
 | 403 | `source_not_allowed` | 来源地址不在「允许访问的来源 IP」名单里 |
 | 403 | `insufficient_scope` | 令牌有效，但没勾这个接口要求的范围 |
@@ -247,6 +247,12 @@ curl -H "Authorization: Bearer nvb_..." http://127.0.0.1:7827/nova/api/v1/me
 按 `segments` 数组顺序处理各段。`IMAGE_BYTES.url` 是本机取图路径，包含部署前缀，需要带读取令牌。
 `IMAGE_URL.url` 是原图网址，访问外站时不要带 NovaBot 的令牌。
 
+本机图片文件不可读时，列表、单条记录和认领响应都保留该段的下标和取图地址，`byteCount` 为 `null`。仅在这种情况下返回 `unavailable: true`。
+
+```json
+{"type":"IMAGE_BYTES","index":1,"url":"/nova/api/v1/outbox/messages/41/images/1","byteCount":null,"unavailable":true}
+```
+
 有下一页时保持相同的 `status`，把 `next` 原样作为 `cursor` 带回。
 翻页期间新入箱的记录编号更大，会出现在后续页。当前已到末页时 `next` 为 `null`。
 未知状态、无效游标、无效页长均返回 400 `bad_request`。
@@ -284,7 +290,7 @@ X-Content-Type-Options: nosniff
 89 50 4E 47 0D 0A 1A 0A
 ```
 
-无法识别图片格式时使用 `application/octet-stream`。下标越界、指向文字或网址图片段均返回 404 `not_found`，错误正文仍为 JSON。
+无法识别图片格式时使用 `application/octet-stream`。下标越界、指向文字或网址图片段、本机图片文件丢失或不可读，均返回相同的 404 `not_found`，错误正文仍为 JSON。
 
 ### `POST /nova/api/v1/outbox/messages/{id}/claim`
 
@@ -330,7 +336,8 @@ X-Content-Type-Options: nosniff
 {"ok":true,"data":{"id":42,"status":"SENT"}}
 ```
 
-正文不是 JSON 对象、超过 256 KB、必填字段缺失、字段类型或结果不合法、说明超长均返回 400 `bad_request`。
+正文为空或无法解析为对象（例如数组、无法解析的文本）时，返回 400 `bad_request`。解析器接受单引号和对象末尾多出的逗号。
+正文超过 256 KB、必填字段缺失、字段类型或结果不合法、说明超长也会返回 400 `bad_request`。
 记录未认领、已经结束或认领编号过时，返回 409 `conflict`，提交的结果不会覆盖当前状态。
 
 ### `GET /nova/api/v1/outbox/conversations`
@@ -347,7 +354,8 @@ X-Content-Type-Options: nosniff
 1. 定时从首页列出待发通知，沿 `next` 翻到末页。下一轮从首页重新列，以便发现管理员重新放回待发的旧编号。
 2. 按编号认领。只有收到成功响应才处理通知，保存这次的 `claimNumber`。认领返回 409 时跳过该条。
 3. 按段顺序准备文字和图片，通过 `IMAGE_BYTES.url` 取回本机原图。发送前核对 `expiresAt`，已过期就跳过并报告 `SKIPPED`。
-4. 发出后用本次 `claimNumber` 报告 `SENT`。认领后取图或发送失败也要报告 `FAILED`，可在 `note` 简述原因。
+   若图片段带有 `unavailable: true`，或取图时收到 404，用本次 `claimNumber` 报告 `FAILED` 或 `SKIPPED`，然后继续处理下一条通知。
+4. 发出后用本次 `claimNumber` 报告 `SENT`。认领后遇到其他取图或发送故障也要报告 `FAILED`，可在 `note` 简述原因。
    若已发出而报告结果时断线，可查单条记录核对状态，避免重复发送。
 
 认领后默认 15 分钟仍未报告结果，记录会变成 `UNKNOWN`（结果不明），系统不会自动重发。

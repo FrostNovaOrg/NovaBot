@@ -38,6 +38,7 @@ import static org.frostnova.nova.adapter.outbox.OutboxRecord.Status.*;
 
 /** 外发箱的本机取件、发送状态与管理入口。所有时刻均以本机时钟为准。 */
 public class OutboxService {
+    static final String NO_LOCAL_IMAGE = "这段没有本地图片";
     private static final Pattern NEXT = Pattern.compile(Pattern.quote(MessagePlaceholders.NEXT));
     private final OutboxDatabase database;
     private final OutboxSettings settings;
@@ -181,9 +182,17 @@ public class OutboxService {
         return database.transaction(db -> require(db, id, visible));
     }
 
-    /** 为可见记录的图片段取长度，列清单无需载入图片。 */
-    long imageSize(long id, int segmentIndex) throws IOException {
-        return Files.size(database.images.resolve(imageName(id, segmentIndex)));
+    /** 图片不可读时返回 null，列出记录无需载入图片内容。 */
+    Long readableImageSize(long id, int segmentIndex) {
+        Path path = database.images.resolve(imageName(id, segmentIndex));
+        try {
+            if (!Files.isRegularFile(path)) return null;
+            try (var image = Files.newByteChannel(path, StandardOpenOption.READ)) {
+                return image.size();
+            }
+        } catch (IOException | SecurityException unavailable) {
+            return null;
+        }
     }
 
     /** segmentIndex 从 0 开始，仅内联图片段有本地字节。 */
@@ -195,10 +204,16 @@ public class OutboxService {
         advance(clock.instant());
         return database.transaction(db -> {
             var segments = require(db, id, visible).segments();
-            if (segmentIndex < 0 || segmentIndex >= segments.size() || segments.get(segmentIndex).type() != SegmentType.IMAGE_BYTES) {
-                throw new NotFound("这段没有本地图片");
+            Path path = database.images.resolve(imageName(id, segmentIndex));
+            try {
+                if (segmentIndex < 0 || segmentIndex >= segments.size()
+                        || segments.get(segmentIndex).type() != SegmentType.IMAGE_BYTES || !Files.isRegularFile(path)) {
+                    throw new NotFound(NO_LOCAL_IMAGE);
+                }
+                return Files.readAllBytes(path);
+            } catch (IOException | SecurityException unavailable) {
+                throw new NotFound(NO_LOCAL_IMAGE);
             }
-            return Files.readAllBytes(database.images.resolve(imageName(id, segmentIndex)));
         });
     }
 

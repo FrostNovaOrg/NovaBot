@@ -19,6 +19,7 @@ import javax.imageio.stream.MemoryCacheImageInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -62,7 +63,7 @@ public class OutboxApiProvider implements NovaApiProvider {
         return streamer -> streamer.uid() == null ? caller.admin() : caller.canSee(streamer.platform(), streamer.uid());
     }
 
-    private NovaApiPage list(NovaApiRequest request) throws IOException {
+    private NovaApiPage list(NovaApiRequest request) {
         String filter = request.query("status");
         Status status;
         try {
@@ -80,15 +81,23 @@ public class OutboxApiProvider implements NovaApiProvider {
         return NovaApiPage.of(items, next);
     }
 
-    private Map<String, Object> message(OutboxRecord row) throws IOException {
+    private Map<String, Object> message(OutboxRecord row) {
         var segments = new ArrayList<Map<String, Object>>(row.segments().size());
         for (int index = 0; index < row.segments().size(); index++) {
             var part = row.segments().get(index);
             segments.add(switch (part.type()) {
                 case TEXT -> Map.of("type", part.type(), "text", part.value());
                 case IMAGE_URL -> Map.of("type", part.type(), "url", part.value());
-                case IMAGE_BYTES -> Map.of("type", part.type(), "index", index,
-                        "byteCount", service.imageSize(row.id(), index), "url", messagesPath + row.id() + "/images/" + index);
+                case IMAGE_BYTES -> {
+                    Long size = service.readableImageSize(row.id(), index);
+                    var image = new LinkedHashMap<String, Object>();
+                    image.put("type", part.type());
+                    image.put("index", index);
+                    image.put("url", messagesPath + row.id() + "/images/" + index);
+                    image.put("byteCount", size);
+                    if (size == null) image.put("unavailable", true);
+                    yield image;
+                }
             });
         }
         return Map.of("id", row.id(), "status", row.status(), "createdAt", row.createdAt().toString(),
@@ -102,7 +111,7 @@ public class OutboxApiProvider implements NovaApiProvider {
         try {
             index = Integer.parseInt(request.path("index"));
         } catch (NumberFormatException invalid) {
-            throw NovaApiException.notFound("这段没有本地图片");
+            throw NovaApiException.notFound(OutboxService.NO_LOCAL_IMAGE);
         }
         byte[] bytes = service.readImage(id(request), index, visible(request));
         return new NovaApiBytes(imageType(bytes), bytes);
@@ -125,7 +134,7 @@ public class OutboxApiProvider implements NovaApiProvider {
         return MediaType.APPLICATION_OCTET_STREAM;
     }
 
-    private Object claim(NovaApiRequest request) throws IOException {
+    private Object claim(NovaApiRequest request) {
         var claimed = service.claim(id(request), request.caller().tokenName(), visible(request));
         return Map.of("message", message(claimed), "claimNumber", claimed.claimNumber());
     }
