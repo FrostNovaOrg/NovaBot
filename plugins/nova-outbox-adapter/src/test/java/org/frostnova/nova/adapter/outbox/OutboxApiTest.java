@@ -4,22 +4,34 @@ import com.alibaba.fastjson2.JSONObject;
 import jakarta.servlet.ServletContext;
 import org.frostnova.nova.adapter.outbox.OutboxRecord.Streamer;
 import org.frostnova.nova.core.api.*;
+import org.frostnova.nova.core.alert.AlertChannel;
+import org.frostnova.nova.core.alert.AlertService;
+import org.frostnova.nova.core.alert.HealthAlertMonitor;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConsoleAllowList;
+import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplier;
+import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplierContributor;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccountStore;
 import org.frostnova.nova.core.config.ui.auth.oidc.OidcClient;
 import org.frostnova.nova.core.model.Message.PushKind;
+import org.frostnova.nova.core.health.HealthProbe;
+import org.frostnova.nova.core.health.HealthStatus;
 import org.frostnova.nova.core.service.NovaSenderService;
 import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.timeline.TimelineWriter;
+import org.frostnova.nova.core.timeline.TimelineEvent;
+import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.web.SecurityHeadersFilter;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.beans.factory.support.StaticListableBeanFactory;
+import org.springframework.core.env.MapPropertySource;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockServletContext;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -33,9 +45,11 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -45,6 +59,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.frostnova.nova.adapter.outbox.OutboxRecord.Status.*;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 
 class OutboxApiTest {
@@ -55,6 +70,8 @@ class OutboxApiTest {
     private static final Streamer OWNER = new Streamer("live", 101L, "青山");
     private static final Streamer OTHER = new Streamer("other", 101L, "远山");
     private static final String SENT_BODY = "{\"claimNumber\":1,\"outcome\":\"SENT\"}";
+    private static final String PICKUP_ALERT = "novabot.adapter.outbox.pickup-alert-enabled";
+    private static final String PICKUP_MINUTES = "novabot.adapter.outbox.pickup-alert-minutes";
 
     @TempDir Path directory;
     private final AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
@@ -136,6 +153,235 @@ class OutboxApiTest {
         assertEquals(false, json.get("ok"));
         assertEquals(code, json.getJSONObject("error").getString("code"));
         return json.getJSONObject("error").getString("message");
+    }
+
+    @Test @DisplayName("取件设备停了一晚却没人收到提醒，或通知过期后明明没人来取却报恢复")
+    void alertsOnceAndWaitsForPickupAfterExpiry() throws Exception {
+        var watch = new PickupWatch();
+        assertTrue(watch.settings.applyAndTrack(Map.of(PICKUP_ALERT, "true")).isEmpty());
+        put(OWNER, "私有通知正文");
+        watch.elapse(4);
+        assertTrue(watch.mail.messages.isEmpty());
+        watch.elapse(1);
+        assertEquals(1, watch.mail.messages.size());
+        var alert = watch.mail.messages.get(0);
+        for (String word : List.of("1 条", "5 分钟", "早班", "启动后还没有来取过", "外发箱")) {
+            assertTrue(alert.contains(word), alert);
+        }
+        assertFalse(alert.contains("私有通知正文"));
+        assertFalse(alert.contains(device));
+        assertEquals(HealthStatus.Level.DEGRADED, watch.probe().checkForConsole().level());
+        assertEquals(true, watch.summary().get("pickupAlert"));
+
+        put(OWNER, "又一条通知");
+        watch.elapse(15);
+        assertTrue(service.list(PENDING, 0, 10, streamer -> true).isEmpty());
+        assertEquals(1, watch.mail.messages.size());
+        assertEquals(HealthStatus.Level.DEGRADED, watch.probe().checkForConsole().level());
+        assertEquals(true, watch.summary().get("pickupAlert"));
+
+        assertTrue(data(read("messages")).getJSONArray("items").isEmpty());
+        watch.monitor.check();
+        watch.monitor.check();
+        assertEquals(2, watch.mail.messages.size());
+        assertTrue(watch.mail.messages.get(1).contains("恢复"));
+        assertEquals(HealthStatus.Level.OK, watch.probe().checkForConsole().level());
+        assertEquals(false, watch.summary().get("pickupAlert"));
+        assertEquals(List.of("DEGRADED", "OK"), watch.events.stream()
+                .filter(event -> event.type() == TimelineEventType.PROBE_CHANGED)
+                .map(event -> event.detail().get("to")).toList());
+    }
+
+    @Test @DisplayName("还没开告警就收到通知，或把门槛改成两分钟后仍按原来的时长等")
+    void appliesSettingsImmediatelyAndSilencesWhenDisabled() {
+        var watch = new PickupWatch();
+        put(OWNER, "早班通知");
+        watch.elapse(3);
+        assertTrue(watch.mail.messages.isEmpty());
+        assertTrue(watch.probes().stream().noneMatch(HealthProbe::active));
+        assertFalse(watch.settings.validateValues(Map.of(PICKUP_MINUTES, "0")).isEmpty());
+        assertFalse(watch.settings.validateValues(Map.of(PICKUP_MINUTES, "61")).isEmpty());
+        assertFalse(watch.settings.validateValues(Map.of(PICKUP_MINUTES, "两分钟")).isEmpty());
+        assertFalse(watch.settings.validateValues(Map.of(PICKUP_ALERT, "稍后")).isEmpty());
+        assertTrue(watch.settings.validateValues(Map.of(PICKUP_MINUTES, "60")).isEmpty());
+        watch.settings.applyAndTrack(Map.of(PICKUP_ALERT, "true"));
+        watch.monitor.check();
+        assertTrue(watch.mail.messages.isEmpty());
+        assertTrue(watch.settings.applyAndTrack(Map.of(PICKUP_MINUTES, "2")).isEmpty());
+        assertEquals(true, watch.summary().get("pickupAlert"));
+        watch.monitor.check();
+        assertEquals(1, watch.mail.messages.size());
+        watch.settings.applyAndTrack(Map.of(PICKUP_ALERT, "false"));
+        assertFalse(watch.probe().active());
+        assertEquals(false, watch.summary().get("pickupAlert"));
+        // 关闭、重新开启发生在同一轮检查间隔内。
+        watch.settings.applyAndTrack(Map.of(PICKUP_ALERT, "true"));
+        watch.monitor.check();
+        assertEquals(2, watch.mail.messages.size());
+        assertTrue(watch.mail.messages.get(1).contains("异常"));
+        watch.settings.applyAndTrack(Map.of(PICKUP_ALERT, "false"));
+        watch.elapse(2);
+        assertEquals(2, watch.mail.messages.size());
+    }
+
+    @Test @DisplayName("设备刚回来列待发就报恢复，但排队很久的通知其实还没取完")
+    void recoversWhenOldPendingMessagesAreClaimed() throws Exception {
+        var watch = new PickupWatch();
+        watch.settings.applyAndTrack(Map.of(PICKUP_ALERT, "true"));
+        long first = put(OWNER, "先到的").id();
+        watch.elapse(4);
+        data(submit(first, "claim", ""));
+        long second = put(OWNER, "后到的").id();
+        long third = put(OWNER, "也在等").id();
+        watch.elapse(1);
+        assertTrue(watch.mail.messages.isEmpty());
+        watch.elapse(4);
+        assertEquals(1, watch.mail.messages.size());
+        assertTrue(watch.mail.messages.get(0).contains("2 条"));
+        assertTrue(watch.mail.messages.get(0).contains("最近一次取件"));
+
+        data(read("messages"));
+        data(submit(second, "claim", ""));
+        watch.monitor.check();
+        assertEquals(1, watch.mail.messages.size());
+        data(submit(third, "claim", ""));
+        watch.monitor.check();
+        assertEquals(2, watch.mail.messages.size());
+        assertTrue(watch.mail.messages.get(1).contains("恢复"));
+    }
+
+    @Test @DisplayName("普通查询冒充取件，或列空箱和认领没有更新控制台的最近取件时刻")
+    void onlyPickupRequestsUpdateTheTimestamp() throws Exception {
+        var watch = new PickupWatch();
+        long id = put(OWNER, "早班通知").id();
+        data(read("messages/" + id));
+        data(read("messages?status=SENT"));
+        data(read("conversations"));
+        error(submit(Long.MAX_VALUE, "claim", ""), 404, "not_found");
+        assertNull(watch.summary().get("lastPickupAt"));
+        data(read("messages"));
+        assertEquals(watch.now.toString(), watch.summary().get("lastPickupAt"));
+        watch.elapse(1);
+        data(submit(id, "claim", ""));
+        assertEquals(watch.now.toString(), watch.summary().get("lastPickupAt"));
+        watch.elapse(1);
+        data(submit(id, "receipt", SENT_BODY));
+        assertNotEquals(watch.now.toString(), watch.summary().get("lastPickupAt"));
+        assertTrue(data(read("messages?status=PENDING")).getJSONArray("items").isEmpty());
+        assertEquals(watch.now.toString(), watch.summary().get("lastPickupAt"));
+    }
+
+    @Test @DisplayName("外发会话停用或限量后，还收到这条通知等待过久的告警")
+    void ignoresDisabledConversationsAndLimitedRecords() {
+        var watch = new PickupWatch();
+        watch.settings.applyAndTrack(Map.of(PICKUP_ALERT, "true"));
+        var limited = conversations.create("限量会话", "", 0, 1);
+        long claimed = service.enqueue(limited.id(), OWNER, PushKind.LIVE_ON, "一条入箱").get(0).id();
+        service.claim(claimed, "设备");
+        assertEquals(LIMITED, service.enqueue(limited.id(), OWNER, PushKind.LIVE_ON, "不入箱").get(0).status());
+        put(OWNER, "停用前的通知");
+        conversations.disable(conversation);
+        watch.elapse(5);
+        assertEquals(1L, ((Map<?, ?>) watch.summary().get("counts")).get(PENDING));
+        assertEquals(false, watch.summary().get("pickupAlert"));
+        assertTrue(watch.mail.messages.isEmpty());
+    }
+
+    @Test @DisplayName("告警落进没人取的外发会话，或跳过这个收件人时其他通道也没收到")
+    void skipsOnlyTheAlertRouteBackToTheOutbox() throws Exception {
+        var watch = new PickupWatch();
+        watch.qq.platform = "outbox";
+        watch.settings.applyAndTrack(Map.of(PICKUP_ALERT, "true"));
+        put(OWNER, "早班通知");
+        watch.elapse(5);
+        assertEquals(1, watch.mail.messages.size());
+        assertTrue(watch.qq.messages.isEmpty());
+        data(read("messages"));
+        service.voidPending(service.list(PENDING, 0, 1, streamer -> true).get(0).id());
+        watch.monitor.check();
+        assertEquals(2, watch.mail.messages.size());
+        assertTrue(watch.qq.messages.isEmpty());
+        watch.qq.platform = "qq";
+        put(OWNER, "午班通知");
+        watch.elapse(5);
+        assertEquals(1, watch.qq.messages.size());
+        assertEquals(3, watch.mail.messages.size());
+    }
+
+    @Test @DisplayName("重启后漏掉之前积压的待发，或没有告警收件人时首页和时间线也看不出故障")
+    void restartStillDetectsPersistedBacklogWithoutConfiguredRecipients() throws Exception {
+        var watch = new PickupWatch();
+        put(OWNER, "上一次运行时入箱");
+        data(read("messages"));
+        watch.elapse(9);
+        var restart = new AnnotationConfigApplicationContext();
+        try (restart) {
+            restart.getEnvironment().getPropertySources().addFirst(new MapPropertySource(
+                    "outbox", Map.of(PICKUP_ALERT, "true")));
+            restart.registerBean(NovaCoreProperties.class, () -> properties);
+            restart.registerBean(NovaSenderService.class, () -> new NovaSenderService(properties));
+            restart.registerBean(TimelineWriter.class, () -> watch.events::add);
+            restart.register(OutboxPluginAutoConfiguration.class);
+            restart.refresh();
+            var restartedService = restart.getBean(OutboxService.class);
+            ReflectionTestUtils.setField(restartedService, "clock", watch.clock);
+            restartedService.maintain();
+            // 待发在启动时已等候过久，第一次定时告警检查前刚好过期。
+            watch.now = watch.now.plus(Duration.ofMinutes(2));
+            restartedService.maintain();
+            var noChannels = new StaticListableBeanFactory().getBeanProvider(AlertChannel.class);
+            new HealthAlertMonitor(restart.getBeanProvider(HealthProbe.class),
+                    new AlertService(properties, noChannels, watch.events::add), watch.events::add).check();
+            var restartedProbe = restart.getBean(HealthProbe.class);
+            assertEquals(HealthStatus.Level.DEGRADED, restartedProbe.checkForConsole().level());
+            assertTrue(restartedProbe.checkForConsole().summary().contains("启动后还没有来取过"));
+            assertNull(new OutboxRecordController(restartedService).summary().get("lastPickupAt"));
+            assertTrue(watch.events.stream().anyMatch(event -> event.type() == TimelineEventType.PROBE_CHANGED));
+        }
+    }
+
+    private final class PickupWatch {
+        private Instant now = Instant.parse("2026-01-12T10:00:00Z");
+        private final Clock clock = mock(Clock.class);
+        private final List<TimelineEvent> events = new ArrayList<>();
+        private final CaptureChannel mail = new CaptureChannel("mail");
+        private final CaptureChannel qq = new CaptureChannel("qq");
+        private final RuntimeConfigurationApplier settings = new RuntimeConfigurationApplier(properties,
+                context.getBeanProvider(RuntimeConfigurationApplierContributor.class), TimelineWriter.NONE);
+        private final HealthAlertMonitor monitor;
+
+        private PickupWatch() {
+            when(clock.getZone()).thenReturn(ZoneOffset.UTC);
+            when(clock.instant()).thenAnswer(call -> now);
+            when(clock.millis()).thenAnswer(call -> now.toEpochMilli());
+            ReflectionTestUtils.setField(service, "clock", clock);
+            var channels = new StaticListableBeanFactory(Map.of("mail", mail, "qq", qq));
+            monitor = new HealthAlertMonitor(context.getBeanProvider(HealthProbe.class),
+                    new AlertService(properties, channels.getBeanProvider(AlertChannel.class), events::add), events::add);
+        }
+
+        private List<HealthProbe> probes() { return context.getBeanProvider(HealthProbe.class).orderedStream().toList(); }
+        private HealthProbe probe() { return context.getBean(HealthProbe.class); }
+        private Map<String, Object> summary() { return new OutboxRecordController(service).summary(); }
+
+        private void elapse(int minutes) {
+            now = now.plus(Duration.ofMinutes(minutes));
+            service.maintain();
+            monitor.check();
+        }
+    }
+
+    private static final class CaptureChannel implements AlertChannel {
+        private final String id;
+        private final List<String> messages = new ArrayList<>();
+        private String platform;
+
+        private CaptureChannel(String id) { this.id = id; }
+        @Override public String id() { return id; }
+        @Override public String name() { return id; }
+        @Override public boolean isAvailable() { return true; }
+        @Override public void send(String subject, String content) { messages.add(subject + "\n" + content); }
+        @Override public boolean routesTo(String target) { return target.equals(platform); }
     }
 
     @Test @DisplayName("取件设备无法按通知段顺序取回完整大图，或停用会话后积压通知发不出去")

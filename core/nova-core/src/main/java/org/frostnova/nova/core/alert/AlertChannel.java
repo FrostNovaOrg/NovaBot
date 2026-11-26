@@ -40,6 +40,11 @@ public interface AlertChannel {
         return false;
     }
 
+    /** 本通道是否发往指定推送平台。 */
+    default boolean routesTo(String platform) {
+        return false;
+    }
+
     /**
      * 发送告警
      * @param subject 标题
@@ -68,6 +73,11 @@ public interface AlertChannel {
             result = SendResult.failed(e.getMessage() != null ? e.getMessage() : e.toString(), e);
         }
         callback.accept(result);
+    }
+
+    /** 路由可变的通道在实际选定收件位置时也须核对排除的平台。 */
+    default void sendReporting(String subject, String content, String excludedPlatform, Consumer<SendResult> callback) {
+        sendReporting(subject, content, callback);
     }
 
     /**

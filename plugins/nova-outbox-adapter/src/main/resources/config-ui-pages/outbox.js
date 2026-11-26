@@ -43,6 +43,10 @@ export function render(section) {
       .ob-counts {display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:16px}
       .ob-counts .card {padding:12px 16px}
       .ob-counts small,.ob-caption,.ob-meta {font-size:var(--fs-sm);color:var(--dim)}
+      .ob-pickup {margin:0 0 12px;color:var(--dim);font-size:var(--fs-sm)}
+      .ob-pickup-alert {margin:0 0 16px;padding:10px 14px;border-inline-start:3px solid var(--warn);
+        border-radius:var(--r-ctl);background:var(--warnsoft);color:var(--text)}
+      .ob-pickup-alert strong {color:var(--warn)}
       .ob-panel {padding:18px}
       .ob-toolbar select {margin-left:8px}
       .ob-item,.ob-conv {padding:12px 0;border-top:1px solid var(--line)}
@@ -85,6 +89,9 @@ export function render(section) {
     </style>
     <header class="ob-head"><h2>外发箱</h2><nav aria-label="外发箱分区" class="ob-tabs">
       <a href="#/outbox">记录</a><a href="#/outbox/conversations">会话</a></nav></header>
+    <p class="ob-pickup" hidden></p>
+    <p class="ob-pickup-alert" role="status" hidden><strong>外发箱取件异常。</strong>
+      请检查取件设备的网络和取件程序，再到「记录」查看待发和过期通知。</p>
     <div class="ob-error" role="alert"></div>
     <section class="ob-records">
       <div class="ob-counts"></div>
@@ -167,6 +174,7 @@ async function load() {
       if (part('select').value) query.set('status', part('select').value);
       const [summary, page] = await Promise.all([outbox('/summary', options), outbox('/records?' + query, options)]);
       if (request.signal.aborted) return;
+      showPickup(summary);
       showCounts(summary.counts);
       const snapshot = JSON.stringify(page);
       if (previousData !== snapshot) {
@@ -174,8 +182,10 @@ async function load() {
         previousData = snapshot;
       }
     } else {
-      const result = await outbox('/conversations', options);
+      const [result, summary] = await Promise.all([outbox('/conversations', options),
+        isAdmin() ? outbox('/summary', options) : null]);
       if (request.signal.aborted) return;
+      if (summary) showPickup(summary);
       const snapshot = JSON.stringify(result.conversations);
       if (previousData !== snapshot) {
         showConversations(result.conversations);
@@ -194,6 +204,18 @@ async function load() {
       timer = setTimeout(load, 30000);
     }
   }
+}
+
+function showPickup(summary) {
+  const pickup = part('.ob-pickup');
+  pickup.hidden = !Object.hasOwn(summary, 'pickupAlert');
+  part('.ob-pickup-alert').hidden = !summary.pickupAlert;
+  if (pickup.hidden) return;
+  const lastPickup = new Date(summary.lastPickupAt);
+  const known = summary.lastPickupAt && Number.isFinite(lastPickup.getTime());
+  const minutes = known ? Math.max(0, Math.floor((Date.now() - lastPickup.getTime()) / 60000)) : 0;
+  pickup.textContent = '最近一次取件：' + (known ? minutes + ' 分钟前' : '启动后还没有来取过');
+  pickup.title = known ? lastPickup.toLocaleString('zh-CN') : '';
 }
 
 function showCounts(counts) {

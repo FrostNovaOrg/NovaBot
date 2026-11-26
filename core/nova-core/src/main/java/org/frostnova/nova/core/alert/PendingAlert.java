@@ -19,21 +19,27 @@ import java.util.function.BooleanSupplier;
  * @param occurredAt 问题<b>首次</b>发生的时刻
  * @param attempts 已尝试投递的次数（含首次）
  * @param active 这条告警是否仍有效
+ * @param excludedPlatform 这条告警不能发往的推送平台
  */
 public record PendingAlert(String key, String subject, String content, Instant occurredAt, int attempts,
-                           BooleanSupplier active) {
+                           BooleanSupplier active, String excludedPlatform) {
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     static final BooleanSupplier ALWAYS_ACTIVE = () -> true;
 
     public PendingAlert(String key, String subject, String content, Instant occurredAt, int attempts) {
-        this(key, subject, content, occurredAt, attempts, ALWAYS_ACTIVE);
+        this(key, subject, content, occurredAt, attempts, ALWAYS_ACTIVE, null);
+    }
+
+    public PendingAlert(String key, String subject, String content, Instant occurredAt, int attempts,
+                        BooleanSupplier active) {
+        this(key, subject, content, occurredAt, attempts, active, null);
     }
 
     /**
      * 再记一次失败
      */
     public PendingAlert retried() {
-        return new PendingAlert(key, subject, content, occurredAt, attempts + 1, active);
+        return new PendingAlert(key, subject, content, occurredAt, attempts + 1, active, excludedPlatform);
     }
 
     /**
