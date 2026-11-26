@@ -163,7 +163,9 @@ class Api:
             if error.rejected:
                 raise ImageError(f'取不到本机图片（HTTP {error.status}）') from None
             raise
-        if len(data) != part['byteCount']:
+        if len(data) < part['byteCount']:
+            raise RoundError('本机图片传输未完成')
+        if len(data) > part['byteCount']:
             raise ImageError('取到的图片字节数与记录不符')
         content_type = headers.get('Content-Type', '').partition(';')[0].strip().lower()
         return data, IMAGE_EXTENSIONS.get(content_type, '.bin')
@@ -300,8 +302,7 @@ class Pickup:
         if 'report' in state:
             self.report(folder, state)
             return
-        if 'claimNumber' in state and self.expired(state):
-            self.report(folder, state, 'SKIPPED', '过期未发')
+        if 'claimNumber' in state and self.report_expired(folder, state):
             return
         number = state['id']
         record = self.api.message(number)
@@ -312,15 +313,23 @@ class Pickup:
             else:
                 label = STATUS_LABELS.get(status, '记录不可查')
                 self.archive(folder, number, f'未能保存认领编号，无法回报。当前状态为「{label}」。')
-        elif status == 'SENDING' and record['expiresAt'] == state['expiresAt']:
+        elif status in ('SENDING', 'UNKNOWN') and record['expiresAt'] == state['expiresAt']:
             self.prepare(folder, state)
         else:
             label = STATUS_LABELS.get(status, '记录不可查')
             self.archive(folder, number, f'文件夹尚未交接，记录当前为「{label}」，无法继续该次认领。')
 
-    def prepare(self, folder, state):
-        if self.expired(state):
+    def report_expired(self, folder, state):
+        if not self.expired(state):
+            return False
+        if 'imageRetry' in state:
+            self.report(folder, state, 'FAILED', f'到期仍未取到图片：{state["imageRetry"]}')
+        else:
             self.report(folder, state, 'SKIPPED', '过期未发')
+        return True
+
+    def prepare(self, folder, state):
+        if self.report_expired(folder, state):
             return
         if 'message' in state:
             try:
@@ -329,14 +338,14 @@ class Pickup:
                 self.report(folder, state, 'FAILED', str(error))
                 return
             except RoundError as error:
-                self.save_report(folder, state, 'FAILED', f'取图失败：{error}')
-                raise
+                state['imageRetry'] = str(error)
+                save_state(folder, state)
+                raise RoundError(f'通知 {state["id"]} 取图暂时失败：{error}', error.retry_after) from None
             del state['message']
+            state.pop('imageRetry', None)
             save_state(folder, state)
-        if self.expired(state):
-            self.report(folder, state, 'SKIPPED', '过期未发')
-            return
-        folder.rename(self.pending / folder.name)
+        if not self.report_expired(folder, state):
+            folder.rename(self.pending / folder.name)
 
     def write_message(self, folder, message):
         name = message['conversation']['name']
@@ -368,6 +377,7 @@ class Pickup:
     @staticmethod
     def save_report(folder, state, outcome, note):
         state.pop('message', None)
+        state.pop('imageRetry', None)
         state['report'] = {'outcome': outcome, 'note': note[:200] if note else None}
         save_state(folder, state)
 

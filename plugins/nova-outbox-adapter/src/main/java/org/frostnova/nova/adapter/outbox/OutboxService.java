@@ -255,7 +255,7 @@ public class OutboxService {
         advance(now);
         var result = database.transaction(db -> {
             var claimed = require(db, id, visible);
-            expect(claimed, SENDING);
+            expect(claimed, SENDING, UNKNOWN);
             if (claimNumber != claimed.claimNumber()) throw new StatusConflict("该次认领已结束");
             update(db, "UPDATE records SET status=?, note=?, result_at=? WHERE id=?", outcome.name(), note, now.toEpochMilli(), id);
             return require(db, id);

@@ -1,7 +1,8 @@
 """取件程序的文件交接测试，网络响应由本地替身提供。"""
 
 import contextlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from http.client import IncompleteRead
 import importlib.util
 import io
 import json
@@ -118,7 +119,7 @@ class NovaBot:
                 record['status'] = 'SENDING'
                 result = {'message': record, 'claimNumber': 7}
             elif action == ['receipt']:
-                if record['status'] != 'SENDING':
+                if record['status'] not in ('SENDING', 'UNKNOWN'):
                     self.fail(409, 'conflict')
                 receipt = json.loads(request.data)
                 assert receipt['claimNumber'] == 7
@@ -254,18 +255,18 @@ class PickupTest(unittest.TestCase):
         self.assertFalse(any(route.endswith('/receipt') for _, route in self.nova.requests))
 
     def test_rejected_result_is_archived_once(self):
-        """认领已超时，程序仍一轮一轮地回报同一条结果。"""
+        """管理员重新放回待发后，程序仍一轮一轮地提交旧设备的回报。"""
         self.nova.add(message(7))
         self.client.run_round()
         folder, = self.folders('待发')
         self.move(folder, '已发')
-        self.nova.records[7]['status'] = 'UNKNOWN'
+        self.nova.records[7]['status'] = 'PENDING'
         self.client.run_round()
         self.client.run_round()
         folder, = self.archived()
         report = (folder / '回报未被接受.txt').read_text(encoding='utf-8')
         self.assertIn('409', report)
-        self.assertIn('结果不明', report)
+        self.assertIn('待发', report)
         self.assertEqual(self.nova.requests.count(('POST', 'messages/7/receipt')), 1)
         self.assertEqual(len(self.log), 1)
         self.assertNotIn(TOKEN, self.log[0])
@@ -302,6 +303,52 @@ class PickupTest(unittest.TestCase):
         self.assertIn(('GET', 'messages/2/images/0'), self.nova.requests)
         for number in (1, 2):
             self.assertIn('图片', self.nova.receipts[number]['note'])
+
+    def test_retries_images_after_connection_failures_until_expiry(self):
+        """网络抖了一下，本来能发的通知被报成没发成。"""
+        record = message(9, segments=[image(9, 0)])
+        record.update(kind='DYNAMIC', expiresAt='2026-01-01T01:00:00Z')
+        self.nova.add(record)
+        failures = iter([URLError(TOKEN), TimeoutError(TOKEN), IncompleteRead(PNG[:4], 4), 503, 429])
+
+        def fail_image(route):
+            if '/images/' not in route:
+                return
+            failure = next(failures, None)
+            if isinstance(failure, Exception):
+                raise failure
+            if failure:
+                self.nova.fail(failure, headers={'Retry-After': '123'})
+
+        self.nova.on_request = fail_image
+        for _ in range(5):
+            result = pickup.run(self.new_client(), 60, True)
+            self.assertEqual(self.nova.receipts, {})
+            self.assertEqual(self.folders('待发'), [])
+            self.assertEqual(result, 1)
+            self.now += timedelta(minutes=4)
+        self.nova.records[9]['status'] = 'UNKNOWN'
+        self.new_client().run_round()
+        folder, = self.folders('待发')
+        self.assertEqual((folder / '图片-1.png').read_bytes(), PNG)
+        self.assertEqual(self.nova.requests.count(('POST', 'messages/9/claim')), 1)
+
+        self.nova.add(message(10, segments=[image(10, 0)]))
+        self.nova.records[10]['expiresAt'] = '2026-01-01T01:00:00Z'
+        failures = iter([TimeoutError(TOKEN)])
+        with self.assertRaises(pickup.RoundError):
+            self.new_client().run_round()
+        self.assertEqual(self.folders('待发'), [folder])
+        self.assertEqual(self.nova.receipts, {})
+        self.now = NOW + timedelta(hours=1)
+        self.nova.records[10]['status'] = 'UNKNOWN'
+        self.new_client().run_round()
+        result, = (entry for entry in self.archived() if entry.name.startswith('10-'))
+        self.assertFalse((result / pickup.REJECTION_NAME).exists())
+        self.assertEqual(self.nova.receipts[10]['outcome'], 'FAILED')
+        self.assertIn('到期', self.nova.receipts[10]['note'])
+        self.assertIn('图片', self.nova.receipts[10]['note'])
+        self.assertEqual(self.nova.requests.count(('GET', 'messages/10/images/0')), 1)
 
     def test_outside_image_address_is_never_requested(self):
         """取图地址指向别处时，访问令牌随取图请求被带到另一台服务器。"""

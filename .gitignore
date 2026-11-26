@@ -33,6 +33,7 @@ cookies.json.plain.bak
 /*.????????-??????-[0-9]*.bak
 datasource.json
 template-defaults.json
+outbox-pickup.json
 application-local.yml
 application-dev.yml
 logs/
