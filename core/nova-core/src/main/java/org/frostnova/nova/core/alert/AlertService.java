@@ -234,10 +234,10 @@ public class AlertService implements SettingsAppliedListener {
      * @param content 内容
      */
     public void alert(String key, String subject, String content) {
-        alert(key, subject, content, PendingAlert.ALWAYS_ACTIVE);
+        alert(key, subject, content, PendingAlert.ALWAYS_ACTIVE, null);
     }
 
-    void alert(String key, String subject, String content, BooleanSupplier active) {
+    void alert(String key, String subject, String content, BooleanSupplier active, String excludedPlatform) {
         if (!properties.getAlert().isEnabled() || !active.getAsBoolean()) {
             return;
         }
@@ -247,12 +247,12 @@ public class AlertService implements SettingsAppliedListener {
             return;
         }
 
-        send(key, subject, content, active);
+        send(key, subject, content, active, excludedPlatform);
     }
 
     /** 同一条通知中的成员分别收敛，正文只列仍需提醒的成员。 */
     void alertMembers(Map<String, String> members, String subject,
-                      Function<Collection<String>, String> content, BooleanSupplier active) {
+                      Function<Collection<String>, String> content, BooleanSupplier active, String excludedPlatform) {
         if (!properties.getAlert().isEnabled() || !active.getAsBoolean()) {
             return;
         }
@@ -263,7 +263,7 @@ public class AlertService implements SettingsAppliedListener {
             }
         });
         if (!eligible.isEmpty()) {
-            send(String.join(",", eligible.keySet()), subject, content.apply(eligible.values()), active);
+            send(String.join(",", eligible.keySet()), subject, content.apply(eligible.values()), active, excludedPlatform);
         }
     }
 
@@ -274,9 +274,9 @@ public class AlertService implements SettingsAppliedListener {
         }
     }
 
-    private void send(String key, String subject, String content, BooleanSupplier active) {
+    private void send(String key, String subject, String content, BooleanSupplier active, String excludedPlatform) {
         Instant now = Instant.now();
-        Delivery delivery = deliver(new PendingAlert(key, subject, content, now, 0, active), content);
+        Delivery delivery = deliver(new PendingAlert(key, subject, content, now, 0, active, excludedPlatform), content);
 
         if (!delivery.attempted()) {
             log.warn("未配置任何可用的告警通道, 以下问题仅记录在日志中: {} - {}", subject, content);
@@ -517,6 +517,9 @@ public class AlertService implements SettingsAppliedListener {
         List<AlertChannel> available = new ArrayList<>();
         boolean suppressed = false;
         for (AlertChannel channel : channels.orderedStream().toList()) {
+            if (alert.excludedPlatform() != null && channel.routesTo(alert.excludedPlatform())) {
+                continue;
+            }
             if (channel.suppresses(alert.occurredAt())) {
                 suppressed = true;
             } else if (channel.isAvailable()) {
@@ -642,7 +645,11 @@ public class AlertService implements SettingsAppliedListener {
                 enqueueOrLose(alert.retried(), false);
             };
             try {
-                channel.sendReporting(alert.subject(), sendContent, onResult);
+                if (alert.excludedPlatform() == null) {
+                    channel.sendReporting(alert.subject(), sendContent, onResult);
+                } else {
+                    channel.sendReporting(alert.subject(), sendContent, alert.excludedPlatform(), onResult);
+                }
             } catch (Exception e) {
                 String reason = e.getMessage() != null ? e.getMessage() : e.toString();
                 onResult.accept(AlertChannel.SendResult.failed(reason, e));

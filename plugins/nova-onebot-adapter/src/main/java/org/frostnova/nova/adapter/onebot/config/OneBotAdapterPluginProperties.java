@@ -314,7 +314,7 @@ public class OneBotAdapterPluginProperties {
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
         @ConfigLabel("机器人告警 · 推送平台")
         @ConfigSummary(value = "留空即停用机器人告警。", details = false)
-        private String platform = "";
+        private volatile String platform = "";
 
         /**
          * 告警发到哪：填 1 发到群，填 0 发给好友，与推送页的「群／好友」同一套数字。改完立即生效。

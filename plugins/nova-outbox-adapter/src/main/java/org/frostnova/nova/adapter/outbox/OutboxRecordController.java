@@ -11,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -41,7 +42,17 @@ public class OutboxRecordController implements ConfigUiOperationProvider {
 
     @GetMapping("/summary")
     public Map<String, Object> summary() {
-        return Map.of("success", true, "counts", service.summary(OutboxRecordController::visible));
+        boolean includePickup = ConfigUiAccess.memberAccount() == null;
+        var overview = service.summary(OutboxRecordController::visible, includePickup);
+        var response = new LinkedHashMap<String, Object>();
+        response.put("success", true);
+        response.put("counts", overview.counts());
+        if (includePickup) {
+            var lastPickupAt = overview.lastPickupAt();
+            response.put("lastPickupAt", lastPickupAt == null ? null : lastPickupAt.toString());
+            response.put("pickupAlert", overview.pickupAlert());
+        }
+        return response;
     }
 
     @GetMapping("/records/{num}/images/{segment}")

@@ -27,6 +27,21 @@ public interface HealthProbe {
         return check();
     }
 
+    /** 定时告警检查可先刷新本地状态，再返回供界面读取的结果。 */
+    default HealthStatus checkForAlert() {
+        return check();
+    }
+
+    /** 停用后重新启用时更换此值，告警监控可丢弃上一次启用期间的状态。 */
+    default long activationVersion() {
+        return 0;
+    }
+
+    /** 本探针的告警不能发往的推送平台。 */
+    default String excludedAlertPlatform() {
+        return null;
+    }
+
     /**
      * 当前是否启用。停用时从状态页和告警检查中略过。
      * @return 启用时返回 true

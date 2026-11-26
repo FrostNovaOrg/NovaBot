@@ -73,7 +73,7 @@ public class OutboxApiProvider implements NovaApiProvider {
         }
         int limit = (int) queryNumber(request.query("limit"), 20, 1, 100, "每页条数须为 1 至 100");
         long cursor = queryNumber(request.query("cursor"), 0, 0, Long.MAX_VALUE, "游标须为非负整数");
-        var rows = service.list(status, cursor, limit + 1, visible(request));
+        var rows = service.listForDevice(status, cursor, limit + 1, visible(request));
         var page = rows.subList(0, Math.min(rows.size(), limit));
         var items = new ArrayList<>(page.size());
         for (var row : page) items.add(message(row));
@@ -135,7 +135,7 @@ public class OutboxApiProvider implements NovaApiProvider {
     }
 
     private Object claim(NovaApiRequest request) {
-        var claimed = service.claim(id(request), request.caller().tokenName(), visible(request));
+        var claimed = service.claimForDevice(id(request), request.caller().tokenName(), visible(request));
         return Map.of("message", message(claimed), "claimNumber", claimed.claimNumber());
     }
 
