@@ -5,6 +5,7 @@ import org.frostnova.nova.bilibili.event.live.BilibiliDanmuEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliEmojiEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOffEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOnEvent;
+import org.frostnova.nova.bilibili.exception.ResponseCodeException;
 import org.frostnova.nova.bilibili.service.BilibiliAccountService;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.config.NovaCoreProperties;
@@ -384,6 +385,25 @@ class AutoDanmakuQueueTest {
         offer(2, "新弹幕", 1, 60);
         queue.tick();
         assertEquals(List.of("触发限制", "新弹幕"), sent);
+    }
+
+    @Test
+    @DisplayName("查字数时账号已掉登录，机器人仍每隔几分钟向平台查询并发送弹幕")
+    void logoutDuringLimitLookupStopsScheduledRequests() {
+        properties.getDanmaku().setPauseMinutes(6);
+        configure(1, true, true, plan(2, false));
+        configure(2, true, true);
+        offer(2, "另一间排着的", -1, 900);
+        when(speaker.get(anyString(), isNull()))
+                .thenThrow(new ResponseCodeException(-101, "账号未登录"));
+
+        tick(120);
+        verify(speaker, never()).postOnce(anyString(), anyMap());
+        assertEquals("另一间排着的", dropped(2).get(0).getString("text"));
+        tick(240);
+        tick(360);
+        verify(speaker, times(1)).get(anyString(), isNull());
+        verify(speaker, never()).postOnce(anyString(), anyMap());
     }
 
     @Test

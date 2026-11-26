@@ -285,10 +285,15 @@ public class AutoDanmakuQueue {
         Item item = next();
         if (item == null) return;
         if (item.parts == null) {
-            int limit = sender.lengthLimit(item.room.streamer.roomId()).max();
+            var limit = sender.lengthLimit(item.room.streamer.roomId());
             synchronized (this) {
+                if (limit.loginRejection() != null) {
+                    if (item.room.pending.contains(item)) drop(item, limit.loginRejection());
+                    purge(sender.automaticAccountStatus(), clock.get());
+                    return;
+                }
                 if (!item.room.pending.contains(item)) return;
-                item.parts = split(item.text.strip(), limit);
+                item.parts = split(item.text.strip(), limit.max());
             }
         }
         String text = item.parts.get(item.part);

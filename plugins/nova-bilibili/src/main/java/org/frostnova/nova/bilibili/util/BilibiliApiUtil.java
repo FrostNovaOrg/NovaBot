@@ -94,6 +94,9 @@ public class BilibiliApiUtil {
 
     private static final String ROOM_INFO_API = "https://api.live.bilibili.com/room/v1/Room/get_info?room_id=";
 
+    /** 当前账号在直播间的发言属性，包括弹幕字数上限。 */
+    public static final String USER_ROOM_INFO_API = "https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByUser";
+
     /**
      * 粉丝团（粉丝勋章）成员排行。只取第一页一条，要的是响应里的总人数 {@code data.num}
      */
@@ -734,6 +737,10 @@ public class BilibiliApiUtil {
                 } catch (RiskCooldownException e) {
                     throw e;
                 } catch (RuntimeException e) {
+                    // 查询发言账号的房间信息时，首个 401 就交给发送方处理。
+                    if (read && USER_ROOM_INFO_API.equals(path) && httpStatus(e) == 401) {
+                        throw e;
+                    }
                     last = e;
                     log.debug("请求 {} 第 {} 次失败: {}", path, attempt, e.getMessage());
 

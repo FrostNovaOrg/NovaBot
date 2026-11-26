@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.event.live.BilibiliDanmuEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliEmojiEvent;
+import org.frostnova.nova.bilibili.exception.ResponseCodeException;
 import org.frostnova.nova.bilibili.exception.RiskCooldownException;
 import org.frostnova.nova.bilibili.service.BilibiliAccountService;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
@@ -65,7 +66,7 @@ public class LiveDanmakuService {
     /**
      * 本账号在某个房间里的信息，字数上限在 {@code data.property.danmu.length}
      */
-    static final String USER_ROOM_INFO_URL = "https://api.live.bilibili.com/xlive/web-room/v1/index/getInfoByUser?room_id=";
+    static final String USER_ROOM_INFO_URL = BilibiliApiUtil.USER_ROOM_INFO_API + "?room_id=";
 
     /**
      * 取不到字数上限时按多少字算
@@ -103,6 +104,8 @@ public class LiveDanmakuService {
      * 平台说「校验失败」的代码
      */
     static final int CODE_CHECK_FAILED = -111;
+
+    private static final String HTTP_LOGIN_REJECTION = "平台拒绝了账号的登录凭据（HTTP 401），请到「连接」页重新扫码登录";
 
     /**
      * 风控类的代码：拦截、校验不过、请求过快、访问受限
@@ -180,8 +183,12 @@ public class LiveDanmakuService {
      * 这个房间里一条弹幕最多多少字
      * @param max 最多多少字
      * @param fromPlatform 是从平台取到的；为 false 时是取不到、按 {@value #DEFAULT_LENGTH_LIMIT} 字算的
+     * @param loginRejection 平台拒绝账号时的原因，此时不能提交本条弹幕
      */
-    public record LengthLimit(int max, boolean fromPlatform) {
+    public record LengthLimit(int max, boolean fromPlatform, String loginRejection) {
+        public LengthLimit(int max, boolean fromPlatform) {
+            this(max, fromPlatform, null);
+        }
     }
 
     /**
@@ -302,7 +309,10 @@ public class LiveDanmakuService {
             return queued == null ? tooFast(roomId, text, account.choice(), interval) : null;
         }
 
-        LengthLimit limit = lengthLimit(account, roomId);
+        LengthLimit limit = lengthLimit(account, key, roomId);
+        if (limit.loginRejection() != null) {
+            return refused(DanmakuFailure.ACCOUNT_UNAVAILABLE, limit.loginRejection(), roomId, text, account.choice());
+        }
         int length = length(text);
         if (length > limit.max()) {
             return refused(DanmakuFailure.TOO_LONG, "这条有 " + length + " 个字，这个房间一条最多 " + limit.max() + " 个字"
@@ -350,7 +360,7 @@ public class LiveDanmakuService {
             return refused(DanmakuFailure.ACCOUNT_UNAVAILABLE, account.choice().shortName() + "此刻用不了，这条没发："
                     + e.getMessage(), roomId, text, account.choice());
         } catch (RuntimeException e) {
-            return requestFailed(e, roomId, text, account.choice());
+            return requestFailed(e, roomId, text, account.choice(), key);
         }
         if (response == null) {
             return new DanmakuResult(false, DanmakuFailure.UNCERTAIN, "没收到平台的回包，不知道发没发出，请到直播间看一眼；不会自动重发",
@@ -420,7 +430,7 @@ public class LiveDanmakuService {
     /**
      * 请求没办成：连不上的确定没发出；被平台按 HTTP 状态拒掉的也没发出；其余（超时、中途断开、回包读不出）不知道
      */
-    private DanmakuResult requestFailed(RuntimeException e, long roomId, String text, DanmakuAccountChoice choice) {
+    private DanmakuResult requestFailed(RuntimeException e, long roomId, String text, DanmakuAccountChoice choice, String key) {
         if (connectFailure(e)) {
             log.info("弹幕：连不上哔哩哔哩，往房间 {} 的这条没发出（{}）", roomId, e.getClass().getSimpleName());
             return new DanmakuResult(false, DanmakuFailure.NETWORK, "连不上哔哩哔哩，请求没到平台，这条没发出。请检查本机网络",
@@ -429,6 +439,11 @@ public class LiveDanmakuService {
         HttpStatusCodeException status = find(e, HttpStatusCodeException.class);
         if (status != null && status.getStatusCode().is4xxClientError()) {
             int http = status.getStatusCode().value();
+            if (http == 401) {
+                pacing.rejectLogin(key, clock.get(), pauseLength());
+                return new DanmakuResult(false, DanmakuFailure.ACCOUNT_UNAVAILABLE, HTTP_LOGIN_REJECTION,
+                        roomId, text, choice, null, "HTTP 401");
+            }
             return new DanmakuResult(false, DanmakuFailure.PLATFORM_ERROR, "平台拒绝了这次请求（HTTP " + http + "），这条没发",
                     roomId, text, choice, null, "HTTP " + http);
         }
@@ -481,25 +496,28 @@ public class LiveDanmakuService {
      */
     public LengthLimit lengthLimit(long roomId) {
         SpeakingAccount account = current();
-        if (account.refusal().isPresent() || account.key() == null) {
+        String key = account.key();
+        if (account.refusal().isPresent() || key == null) {
             return new LengthLimit(DEFAULT_LENGTH_LIMIT, false);
         }
-        return lengthLimit(account, roomId);
+        return lengthLimit(account, key, roomId);
     }
 
-    private LengthLimit lengthLimit(SpeakingAccount account, long roomId) {
-        String cacheKey = limitKey(account.key(), roomId);
+    private LengthLimit lengthLimit(SpeakingAccount account, String key, long roomId) {
+        String cacheKey = limitKey(key, roomId);
         Instant now = clock.get();
         CachedLimit cached = limits.get(cacheKey);
         if (cached != null && now.isBefore(cached.expiresAt())) {
             return cached.limit();
         }
-        LengthLimit limit = fetchLimit(account, roomId);
-        limits.put(cacheKey, new CachedLimit(limit, now.plus(limit.fromPlatform() ? LIMIT_TTL : FALLBACK_LIMIT_TTL)));
+        LengthLimit limit = fetchLimit(account, key, roomId);
+        if (limit.loginRejection() == null) {
+            limits.put(cacheKey, new CachedLimit(limit, now.plus(limit.fromPlatform() ? LIMIT_TTL : FALLBACK_LIMIT_TTL)));
+        }
         return limit;
     }
 
-    private LengthLimit fetchLimit(SpeakingAccount account, long roomId) {
+    private LengthLimit fetchLimit(SpeakingAccount account, String key, long roomId) {
         try {
             JSONObject data = account.get(USER_ROOM_INFO_URL + roomId);
             JSONObject property = data == null ? null : data.getJSONObject("property");
@@ -510,9 +528,27 @@ public class LiveDanmakuService {
             }
             log.info("弹幕：房间 {} 的回包里没有字数上限，按 {} 字算", roomId, DEFAULT_LENGTH_LIMIT);
         } catch (RuntimeException e) {
+            String rejection = loginRejection(e);
+            if (rejection != null) {
+                pacing.rejectLogin(key, clock.get(), pauseLength());
+                return new LengthLimit(DEFAULT_LENGTH_LIMIT, false, rejection);
+            }
             log.info("弹幕：没能取到房间 {} 的字数上限（{}），按 {} 字算", roomId, e.getClass().getSimpleName(), DEFAULT_LENGTH_LIMIT);
         }
         return new LengthLimit(DEFAULT_LENGTH_LIMIT, false);
+    }
+
+    private static String loginRejection(RuntimeException e) {
+        ResponseCodeException business = find(e, ResponseCodeException.class);
+        if (business != null) {
+            return switch (business.getCode()) {
+                case CODE_NOT_LOGGED_IN -> "平台说账号未登录（-101），请到「连接」页重新扫码登录";
+                case CODE_CHECK_FAILED -> "平台说账号校验失败（-111），请到「连接」页重新扫码登录";
+                default -> null;
+            };
+        }
+        HttpStatusCodeException http = find(e, HttpStatusCodeException.class);
+        return http != null && http.getStatusCode().value() == 401 ? HTTP_LOGIN_REJECTION : null;
     }
 
     private static String limitKey(String accountKey, long roomId) {
