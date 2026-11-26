@@ -390,6 +390,18 @@
         "text": "下播"
       },
       {
+        "name": "DANMAKU_SENT",
+        "text": "弹幕已发出"
+      },
+      {
+        "name": "DANMAKU_NOT_SENT",
+        "text": "弹幕没发出"
+      },
+      {
+        "name": "DANMAKU_UNCERTAIN",
+        "text": "弹幕发出不明"
+      },
+      {
         "name": "PROBE_CHANGED",
         "text": "状态变化"
       },

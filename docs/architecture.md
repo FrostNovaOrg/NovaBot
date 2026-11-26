@@ -14,7 +14,7 @@
 ├── core/novacore/                                      核心：事件模型、事件输出协议、数据源接口
 ├── core/nova-core/                                  壳：应用宿主、控制台、配置、推送与命令框架
 ├── plugins/nova-bilibili/                           采集侧
-├── plugins/nova-bilibili-interact/                  直播间互动：发言账号（依赖 nova-bilibili，可不装）
+├── plugins/nova-bilibili-interact/                  直播间互动：发言账号、发弹幕与试发（依赖 nova-bilibili，可不装）
 ├── plugins/nova-onebot-adapter/                     投递侧
 ├── plugins/nova-onebot-adapter-napcat-extension/    依赖 onebot-adapter
 ├── plugins/nova-qqbot-adapter/                      QQ 官方机器人凭据与接口

@@ -163,6 +163,10 @@ public final class ConfigUiPermissions {
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/qqbot/groups/{num}/remark");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/qqbot/admin-claims/code");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/qqbot/admin-claims/{memberNum}/revoke");
+        // 直播间互动：选发弹幕的账号、查房间字数上限、试发一条，只给管理员
+        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/interact/danmaku/state");
+        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/interact/danmaku/limit");
+        add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/interact/danmaku/test");
         add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/bot/targets/lookup");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/exec/notice");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/assistant/status");

@@ -178,6 +178,9 @@ class ConfigUiMemberPermissionsTest {
             POST qqbot/groups/{num}/remark
             POST qqbot/admin-claims/code
             POST qqbot/admin-claims/{memberNum}/revoke
+            GET interact/danmaku/state
+            GET interact/danmaku/limit
+            POST interact/danmaku/test
             POST outbox/records/{num}/requeue
             POST outbox/records/{num}/void
             POST outbox/conversations
