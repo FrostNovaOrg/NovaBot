@@ -1322,6 +1322,18 @@ function showIssues(issues) {
     + issues.map(i => '<li>' + esc(i) + '</li>').join('') + '</ul>';
 }
 
+/**
+ * 保存前要先问的那几句，逐句问
+ * @param questions 服务端回的 confirm 一栏：[{name, title, body}]
+ * @return {Promise<boolean>} 每一句都点了确定才为 true
+ */
+async function confirmAll(questions) {
+  for (const question of questions) {
+    if (!await ask({title: question.title, body: question.body})) return false;
+  }
+  return true;
+}
+
 export async function save() {
   const target = saveTarget();
   if (target !== 'values') return;
@@ -1334,11 +1346,25 @@ export async function save() {
     // 发出去的是此刻这一份。回包之前使用者可能又改了几项：那几项没随这一趟发出去，
     // 不能被回包后的重取当成已存——快照交给 load 逐项对账，见 load 里的 sentDrafts
     const sent = Object.assign({}, store.dirty);
-    const res = await api('/values', {
+    const post = path => api(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(sent)
     });
+    let res = await post('/values');
+
+    // 有的改动能存、但后果多半没想到（新的推送来源名单把本机挡在外面）：服务端一项没写，
+    // 回来要问的话。逐句问，都点了确定才带着「已确认」把同一份再送一次；
+    // 点了取消就回到编辑，草稿原样留着，配置文件不动
+    if (!res.success && Array.isArray(res.confirm) && res.confirm.length) {
+      if (!await confirmAll(res.confirm)) {
+        say('未保存，可继续修改', 'err');
+        markDirty();
+        return;
+      }
+      say('正在保存…');
+      res = await post('/values?confirmed=true');
+    }
 
     // 保存成功就整体重取一遍，草稿态与「还欠一次重启」都由那一趟自己算。
     // 在这里按 store.dirty 顺手把新值抄进 store.values 是不行的：真正落盘的是哪几项

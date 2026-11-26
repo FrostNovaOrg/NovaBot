@@ -116,6 +116,36 @@ public class OneBotRuntimeAppliers implements RuntimeConfigurationApplierContrib
     }
 
     /**
+     * 新名单不放行本机时要问的那句话
+     */
+    public static final String LOOPBACK_DROPPED_QUESTION =
+            "新名单里没有本机地址（127.0.0.1、::1），本机上的程序再推送会被挡住。确定这样保存吗？";
+
+    @Override
+    public Map<String, Function<String, String>> saveConfirmations() {
+        return Map.of(ALLOW_IPS_KEY, OneBotRuntimeAppliers::loopbackDropped);
+    }
+
+    /**
+     * 新的来源 IP 名单对 127.0.0.1 与 ::1 都不放行时，回要问的那句话
+     * <p>
+     * 按推送接口过滤器用的同一个匹配器判，127.0.0.0/8、0.0.0.0/0 这类网段同样算放行本机；
+     * 放行其中一个就不问。写错或留空的名单不在这里问，保存时照旧整份拒绝。
+     * @param value 新名单，每行一条
+     * @return 要问的那句话，不用问时为 null
+     */
+    static String loopbackDropped(String value) {
+        List<String> entries;
+        try {
+            entries = allowIps(value);
+        } catch (IllegalArgumentException invalid) {
+            return null;
+        }
+        IpMatcher matcher = new IpMatcher(entries);
+        return matcher.matches("127.0.0.1") || matcher.matches("::1") ? null : LOOPBACK_DROPPED_QUESTION;
+    }
+
+    /**
      * 先把这一批全部读懂，有一项读不懂就抛出、一项也不写；再在安全设置那把锁下一起写回。
      * 删键（null）回到默认值。
      */

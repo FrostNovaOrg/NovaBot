@@ -12,7 +12,7 @@ novabot.adapter.onebot.napcat.enabled|java.lang.Boolean|true|是否通过 NapCat
 novabot.adapter.onebot.napcat.token-hash|java.lang.String||上一项换算出的哈希，程序自动写回，不必手填；NapCat 的登录接口收的就是这个形态。
 novabot.adapter.onebot.napcat.token|java.lang.String||NapCat WebUI 的令牌，填明文即可，启动时自动换成哈希写回、明文不留盘。哈希与令牌权限等同，别当成了加密就放松保管。
 novabot.adapter.onebot.napcat.totp-secret|java.lang.String||NapCat WebUI 的二次验证密钥（Base32），它开了 2FA 才需要填；只能明文保存，配置文件权限要收紧到仅属主可读。
-novabot.adapter.onebot.security.allow-ips|java.util.List<java.lang.String>|<null>|允许调用推送接口的来源 IP 白名单，支持精确 IP 与 CIDR 网段；默认仅放行本机回环，外部程序要调用时在这里追加。
+novabot.adapter.onebot.security.allow-ips|java.util.List<java.lang.String>|[127.0.0.1/32, ::1/128]|允许调用推送接口的来源 IP 白名单，支持精确 IP 与 CIDR 网段；默认仅放行本机回环，外部程序要调用时在这里追加。
 novabot.adapter.onebot.security.audit-log|java.lang.Boolean|true|是否输出鉴权失败的审计日志。
 novabot.adapter.onebot.security.enabled|java.lang.Boolean|true|是否启用推送接口安全校验，仅在完全可信的隔离网络中才建议关闭。
 novabot.adapter.onebot.security.fail-on-weak-config|java.lang.Boolean|false|推送接口令牌过弱（太短，或含常见词）时是否直接终止启动；只查这一项。默认只告警不拦，对外网可达的部署建议开。

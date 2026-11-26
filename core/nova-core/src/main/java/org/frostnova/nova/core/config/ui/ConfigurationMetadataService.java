@@ -9,8 +9,13 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.stereotype.Service;
 
 import java.io.InputStream;
+import java.lang.reflect.Array;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -128,6 +133,7 @@ public class ConfigurationMetadataService {
     private List<ConfigurationField> load() {
         Map<String, ConfigurationField> merged = new LinkedHashMap<>();
         Map<String, String> types = new HashMap<>();
+        Map<String, Object> instances = new HashMap<>();
 
         // 核心与插件的元数据都来自这一条类路径
         try {
@@ -136,7 +142,7 @@ public class ConfigurationMetadataService {
 
             for (Resource resource : resources) {
                 try (InputStream stream = resource.getInputStream()) {
-                    parse(new String(stream.readAllBytes(), StandardCharsets.UTF_8), merged, types);
+                    parse(new String(stream.readAllBytes(), StandardCharsets.UTF_8), merged, types, instances);
                 } catch (Exception e) {
                     log.debug("解析配置元数据 {} 失败: {}", resource, e.getMessage());
                 }
@@ -165,7 +171,8 @@ public class ConfigurationMetadataService {
      * @param content 文件内容
      * @param merged 合并结果
      */
-    private void parse(String content, Map<String, ConfigurationField> merged, Map<String, String> types) {
+    private void parse(String content, Map<String, ConfigurationField> merged, Map<String, String> types,
+                       Map<String, Object> instances) {
         JSONArray properties = JSON.parseObject(content).getJSONArray("properties");
         if (properties == null) {
             return;
@@ -196,10 +203,107 @@ public class ConfigurationMetadataService {
                 continue;
             }
 
+            Object defaultValue = property.get("defaultValue");
+            if (defaultValue == null && isPlainList(type)) {
+                defaultValue = listDefault(property.getString("sourceType"), name, instances);
+            }
+
             merged.put(name, new ConfigurationField(name, type,
-                    cleanDescription(property.getString("description")),
-                    property.get("defaultValue")));
+                    cleanDescription(property.getString("description")), defaultValue));
         }
+    }
+
+    /**
+     * 是不是设置页上每行一项的那种列表（元素为文字、数字这类简单值）
+     */
+    private static boolean isPlainList(String type) {
+        return "list".equals(new ConfigurationField("", type, null, null).widget());
+    }
+
+    /**
+     * 读不到默认值时记下的占位，免得同一个类每一项都重试一遍
+     */
+    private static final Object UNREADABLE = new Object();
+
+    /**
+     * 列表项的默认值：照配置类里那个字段的初值取
+     * <p>
+     * 编译期元数据只认写成字面量的默认值。列表一律写成 {@code new ArrayList<>(List.of(...))}
+     * 这类调用，元数据里那一栏就是空的，设置页于是把「默认只放行本机」画成一个空框，
+     * 「恢复默认」还会把框清空。这里新建一份配置对象，读那个字段此刻装着的值，
+     * 与程序没写这一项时真用的是同一份。读不到（没有无参构造、找不到字段、元素不是简单值）
+     * 就照旧不给，不编一个出来。
+     * @param sourceType 元数据里这一项所在的类
+     * @param name 配置项名，取最后一段对字段名
+     * @param instances 本次加载里已建过的配置对象，按类名
+     * @return 各元素的文字，读不到为 null
+     */
+    private Object listDefault(String sourceType, String name, Map<String, Object> instances) {
+        if (sourceType == null) {
+            return null;
+        }
+        Object instance = instances.computeIfAbsent(sourceType, this::instantiate);
+        if (instance == UNREADABLE) {
+            return null;
+        }
+        String segment = name.substring(name.lastIndexOf('.') + 1);
+        for (Class<?> type = instance.getClass(); type != null && type != Object.class; type = type.getSuperclass()) {
+            for (Field field : type.getDeclaredFields()) {
+                if (Modifier.isStatic(field.getModifiers())
+                        || !ConfigurationPropertyFields.toKebab(field.getName()).equals(segment)) {
+                    continue;
+                }
+                try {
+                    field.setAccessible(true);
+                    return plainItems(field.get(instance));
+                } catch (RuntimeException | ReflectiveOperationException e) {
+                    log.debug("读取配置项 {} 的默认值失败: {}", name, e.getMessage());
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    private Object instantiate(String sourceType) {
+        try {
+            Constructor<?> constructor = Class.forName(sourceType, true, metadataClassLoader).getDeclaredConstructor();
+            constructor.setAccessible(true);
+            return constructor.newInstance();
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            log.debug("新建配置类 {} 以读取默认值失败: {}", sourceType, e.toString());
+            return UNREADABLE;
+        }
+    }
+
+    /**
+     * 列表、集合或数组里的简单值逐个转成文字；有一个不是简单值就不给
+     */
+    private static List<String> plainItems(Object value) {
+        if (value == null) {
+            return null;
+        }
+        Collection<?> items;
+        if (value instanceof Collection<?> collection) {
+            items = collection;
+        } else if (value.getClass().isArray()) {
+            List<Object> elements = new ArrayList<>();
+            for (int i = 0; i < Array.getLength(value); i++) {
+                elements.add(Array.get(value, i));
+            }
+            items = elements;
+        } else {
+            return null;
+        }
+        List<String> result = new ArrayList<>();
+        for (Object item : items) {
+            if (!(item instanceof CharSequence || item instanceof Number || item instanceof Boolean
+                    || item instanceof Character || item instanceof Enum<?>)) {
+                return null;
+            }
+            result.add(item instanceof Enum<?> constant ? constant.name() : item.toString());
+        }
+        return List.copyOf(result);
     }
 
     /**

@@ -525,6 +525,11 @@ public class RuntimeConfigurationApplier {
     private final Map<String, Function<String, String>> contributedValidators;
 
     /**
+     * 插件申报的「存之前先问一句」。核心自有表不在这里。
+     */
+    private final Map<String, Function<String, String>> contributedConfirmations;
+
+    /**
      * 事件时间线
      * <p>
      * 🔴 <b>只记改了哪一组，不记改成了什么。</b>时间线是逐行落在磁盘上的
@@ -582,12 +587,14 @@ public class RuntimeConfigurationApplier {
         this.contributedBatches = contributed.batches();
         this.contributedAppliedElsewhere = contributed.elsewhere();
         this.contributedValidators = contributed.validators();
+        this.contributedConfirmations = contributed.confirmations();
         this.timeline = timeline;
     }
 
     private record Contributed(Map<String, Consumer<String>> appliers, Map<String, BatchApplier> batches,
                                Map<String, String> elsewhere,
-                               Map<String, Function<String, String>> validators) {
+                               Map<String, Function<String, String>> validators,
+                               Map<String, Function<String, String>> confirmations) {
     }
 
     /**
@@ -621,13 +628,14 @@ public class RuntimeConfigurationApplier {
     private static Contributed mergeContributions(
             Collection<RuntimeConfigurationApplierContributor> contributors) {
         if (contributors == null || contributors.isEmpty()) {
-            return new Contributed(Map.of(), Map.of(), Map.of(), Map.of());
+            return new Contributed(Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
         }
 
         Map<String, Consumer<String>> appliers = new LinkedHashMap<>();
         Map<String, BatchApplier> batches = new LinkedHashMap<>();
         Map<String, String> elsewhere = new LinkedHashMap<>();
         Map<String, Function<String, String>> validators = new LinkedHashMap<>();
+        Map<String, Function<String, String>> confirmations = new LinkedHashMap<>();
         for (RuntimeConfigurationApplierContributor contributor : contributors) {
             if (contributor == null) {
                 continue;
@@ -644,20 +652,22 @@ public class RuntimeConfigurationApplier {
                     batches.put(key, batch);
                 }
             }
-            mergeValidators(contributor.valueValidators(), validators);
+            mergeValidators(contributor.valueValidators(), validators, "取值校验");
+            mergeValidators(contributor.saveConfirmations(), confirmations, "保存前确认");
         }
         return new Contributed(Collections.unmodifiableMap(appliers), Collections.unmodifiableMap(batches),
-                Collections.unmodifiableMap(elsewhere), Collections.unmodifiableMap(validators));
+                Collections.unmodifiableMap(elsewhere), Collections.unmodifiableMap(validators),
+                Collections.unmodifiableMap(confirmations));
     }
 
     /**
-     * 合并各插件的取值校验
+     * 合并各插件的取值校验（保存前确认同一套规矩）
      * <p>
      * 同一条键被两方校验时抛 {@link IllegalStateException}：范围这种东西两方各说各的，
      * 存下来的值就等于谁也没校验过
      */
     private static void mergeValidators(Map<String, Function<String, String>> declared,
-                                        Map<String, Function<String, String>> validators) {
+                                        Map<String, Function<String, String>> validators, String what) {
         if (declared == null) {
             return;
         }
@@ -668,7 +678,7 @@ public class RuntimeConfigurationApplier {
                 continue;
             }
             if (validators.containsKey(key)) {
-                throw new IllegalStateException("即时生效配置项 " + key + " 的取值校验被写了两次");
+                throw new IllegalStateException("即时生效配置项 " + key + " 的" + what + "被写了两次");
             }
             validators.put(key, validator);
         }
@@ -868,6 +878,32 @@ public class RuntimeConfigurationApplier {
             }
         }
         return problems;
+    }
+
+    /**
+     * 问一遍插件：这批取值里有没有存之前要先问一句的
+     * <p>
+     * 只问取值本身能收、但存下去会出使用者多半没想到的后果的那种（比如新名单把本机挡在外面）。
+     * 取值读不懂的不在这里，那是 {@link #validateValues} 的事，整批拒绝、不问。删键（null）不问。
+     * @param changes 待写入的配置项名到取值
+     * @return 配置项名到要问的那句话，按传入顺序；空表表示不用问
+     */
+    public Map<String, String> confirmationsFor(Map<String, String> changes) {
+        Map<String, String> questions = new LinkedHashMap<>();
+        if (changes == null || changes.isEmpty()) {
+            return questions;
+        }
+        for (Map.Entry<String, String> change : changes.entrySet()) {
+            Function<String, String> confirmation = contributedConfirmations.get(change.getKey());
+            if (confirmation == null || change.getValue() == null) {
+                continue;
+            }
+            String question = confirmation.apply(change.getValue());
+            if (question != null) {
+                questions.put(change.getKey(), question);
+            }
+        }
+        return questions;
     }
 
     /**
