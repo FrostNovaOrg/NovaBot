@@ -4,10 +4,12 @@ import com.alibaba.fastjson2.JSONObject;
 import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.event.live.BilibiliDanmuEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliEmojiEvent;
 import org.frostnova.nova.bilibili.exception.RiskCooldownException;
 import org.frostnova.nova.bilibili.service.BilibiliAccountService;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.event.live.base.NovaLiveMessageEvent;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.timeline.TimelineEvent;
@@ -33,6 +35,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
@@ -78,6 +81,8 @@ public class LiveDanmakuService {
      * 取不到、按 20 字算的那一份记多久：短一些，平台恢复后很快就能用上真实的上限
      */
     static final Duration FALLBACK_LIMIT_TTL = Duration.ofMinutes(2);
+
+    private static final Duration ECHO_WINDOW = Duration.ofSeconds(30);
 
     /**
      * 平台说「太频繁」的代码
@@ -132,6 +137,8 @@ public class LiveDanmakuService {
     private final DanmakuPacing pacing = new DanmakuPacing();
 
     private final Map<String, CachedLimit> limits = new ConcurrentHashMap<>();
+
+    private final ConcurrentLinkedQueue<Outgoing> recentSends = new ConcurrentLinkedQueue<>();
 
     private volatile Supplier<Instant> clock = Instant::now;
 
@@ -193,6 +200,8 @@ public class LiveDanmakuService {
     private record CachedLimit(LengthLimit limit, Instant expiresAt) {
     }
 
+    private record Outgoing(String accountKey, long roomId, String text, Instant at) {}
+
     /**
      * 往一位已添加的主播的直播间发一条弹幕
      * <p>
@@ -212,10 +221,20 @@ public class LiveDanmakuService {
         return pacing.tooSoon(key, clock.get(), interval()).isEmpty();
     }
 
-    /** 回传事件中的发送者是否为当前选中的发言账号。 */
-    public boolean isOwnDanmaku(BilibiliDanmuEvent event) {
-        if (event == null || event.getSender() == null || event.getSender().getUid() == null) return false;
-        return event.getSender().getUid().equals(current().uid());
+    /** 回传 UID 可见时认账号。UID 为零的普通弹幕按当前账号在本房间最近发过的原文识别。 */
+    public boolean isOwnDanmaku(NovaLiveMessageEvent event) {
+        if (!(event instanceof BilibiliDanmuEvent || event instanceof BilibiliEmojiEvent)) return false;
+        if (event.getSender() == null || event.getSender().getUid() == null) return false;
+        Long uid = event.getSender().getUid();
+        SpeakingAccount account = current();
+        if (uid != 0) return uid > 0 && uid.equals(account.uid());
+        if (!(event instanceof BilibiliDanmuEvent danmu) || event.getSource() == null
+                || event.getSource().getRoomId() == null) return false;
+        String key = account.key();
+        long room = event.getSource().getRoomId();
+        Instant cutoff = clock.get().minus(ECHO_WINDOW);
+        return recentSends.stream().anyMatch(sent -> sent.at().isAfter(cutoff) && sent.roomId() == room
+                && sent.accountKey().equals(key) && sent.text().equals(danmu.getContent()));
     }
 
     /** 消息仍有效时才调用 reserveAccount，占到账号名额才把这一段标为发送中。 */
@@ -272,7 +291,7 @@ public class LiveDanmakuService {
         if (queued != null && (account.choice() != queued.account().choice() || !queued.account().uid().equals(account.uid()))) {
             return refused(DanmakuFailure.NO_ACCOUNT, "发送账号已更换", roomId, text, account.choice());
         }
-        Optional<Duration> paused = pacing.pausedFor(key, clock.get());
+        Optional<Duration> paused = pacing.pausedFor(key, clock.get(), queued != null);
         if (paused.isPresent()) {
             return refused(DanmakuFailure.PAUSED, account.choice().shortName() + "刚被平台限制，暂停发弹幕中，这条没发。还要等"
                     + wait(paused.get()) + "；到点自动恢复", roomId, text, account.choice());
@@ -291,7 +310,7 @@ public class LiveDanmakuService {
                     + "，没发。请删短一些，不会自动截断或拆成几条", roomId, text, account.choice());
         }
 
-        BooleanSupplier reserve = () -> pacing.reserve(key, clock.get(), interval);
+        BooleanSupplier reserve = () -> pacing.reserve(key, clock.get(), interval, queued != null);
         boolean reserved = queued == null ? reserve.getAsBoolean() : queued.admit().reserveIfCurrent(reserve);
         if (!reserved) {
             return queued == null ? tooFast(roomId, text, account.choice(), interval) : null;
@@ -305,6 +324,18 @@ public class LiveDanmakuService {
         form.put("mode", 1);
         form.put("bubble", 0);
 
+        // 房间回传可能比发送接口的回包先到。明确没发出的只撤销这一次，结果不明的仍可能回传。
+        Instant now = clock.get();
+        Instant cutoff = now.minus(ECHO_WINDOW);
+        recentSends.removeIf(sent -> !sent.at().isAfter(cutoff));
+        var outgoing = new Outgoing(key, roomId, text, now);
+        recentSends.add(outgoing);
+        DanmakuResult result = postOnce(roomId, text, account, key, form);
+        if (!result.sent() && !result.uncertain()) recentSends.remove(outgoing);
+        return result;
+    }
+
+    private DanmakuResult postOnce(long roomId, String text, SpeakingAccount account, String key, Map<String, Object> form) {
         JSONObject response;
         try {
             response = account.postOnce(SEND_URL, form);
@@ -372,10 +403,12 @@ public class LiveDanmakuService {
                     + "），没发。请删短一些再发", roomId, text, choice, code, hint);
         }
         if (code == CODE_NOT_LOGGED_IN) {
+            pacing.rejectLogin(key, clock.get(), pauseLength());
             return new DanmakuResult(false, DanmakuFailure.ACCOUNT_UNAVAILABLE, "平台说" + choice.shortName() + "没有登录（" + code
                     + "），这条没发。请到「连接」页重新扫码登录", roomId, text, choice, code, hint);
         }
         if (code == CODE_CHECK_FAILED) {
+            pacing.rejectLogin(key, clock.get(), pauseLength());
             return new DanmakuResult(false, DanmakuFailure.ACCOUNT_UNAVAILABLE, "平台说校验失败（" + code + quoted(hint)
                     + "），这条没发。多半是" + choice.shortName() + "的登录态不完整，请到「连接」页重新扫码登录",
                     roomId, text, choice, code, hint);
@@ -491,15 +524,25 @@ public class LiveDanmakuService {
      * @return 状态
      */
     public AccountStatus accountStatus() {
+        return accountStatus(false);
+    }
+
+    /** 自动队列还要遵守平台拒绝登录态后的暂停。 */
+    public AccountStatus automaticAccountStatus() {
+        return accountStatus(true);
+    }
+
+    private AccountStatus accountStatus(boolean automatic) {
         SpeakingAccount account = current();
         Optional<SpeakingAccount.Refusal> refusal = account.refusal();
         if (refusal.isPresent()) {
             return new AccountStatus(account.choice(), false, refusal.get().failure(), refusal.get().message(),
                     account.uid(), null);
         }
-        String key = account.key();
-        Duration paused = key == null ? null : pacing.pausedFor(key, clock.get()).orElse(null);
-        return new AccountStatus(account.choice(), true, null, null, account.uid(), paused);
+        Long uid = account.uid();
+        String key = SpeakingAccount.key(account.choice(), uid);
+        Duration paused = key == null ? null : pacing.pausedFor(key, clock.get(), automatic).orElse(null);
+        return new AccountStatus(account.choice(), true, null, null, uid, paused);
     }
 
     /**

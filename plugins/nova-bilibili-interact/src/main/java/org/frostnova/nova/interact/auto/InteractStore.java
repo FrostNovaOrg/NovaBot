@@ -11,7 +11,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 /** 设置立即存盘，发送记录随核心的运行状态定期存盘。 */
 @NovaComponent
@@ -44,19 +43,6 @@ public class InteractStore {
                     value -> section.put(key, value), () -> section.remove(key)));
             throw new IllegalStateException("主播设置未能写入磁盘");
         }
-    }
-
-    synchronized void remove(long uid) {
-        String key = String.valueOf(uid);
-        if (store.read(SETTINGS, key, section -> true).isEmpty()) return;
-        store.write(SETTINGS, section -> section.remove(key));
-        store.save();
-    }
-
-    synchronized void retainStreamers(Set<String> uids) {
-        if (uids.containsAll(store.namespace(SETTINGS).keySet())) return;
-        store.write(SETTINGS, section -> section.keySet().retainAll(uids));
-        store.save();
     }
 
     public void result(Room room, String feature, DanmakuResult result, Instant now) {

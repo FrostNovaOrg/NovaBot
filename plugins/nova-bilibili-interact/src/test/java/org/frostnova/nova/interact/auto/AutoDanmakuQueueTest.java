@@ -2,13 +2,17 @@ package org.frostnova.nova.interact.auto;
 
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.event.live.BilibiliDanmuEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliEmojiEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOffEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOnEvent;
 import org.frostnova.nova.bilibili.service.BilibiliAccountService;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
+import org.frostnova.nova.core.event.datasource.change.NovaDataSourceAddEvent;
 import org.frostnova.nova.core.event.datasource.change.NovaDataSourceRemoveEvent;
+import org.frostnova.nova.core.event.datasource.other.NovaDataSourceLoadCompleteEvent;
+import org.frostnova.nova.core.model.EmojiInfo;
 import org.frostnova.nova.core.model.LiveStreamerInfo;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.model.UserInfo;
@@ -22,6 +26,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.file.Path;
@@ -121,6 +126,13 @@ class AutoDanmakuQueueTest {
         runtime.danmaku(new BilibiliDanmuEvent(streamer, new UserInfo(uid, "发言者"), "你好", "你好", now));
     }
 
+    private AnnotationConfigApplicationContext events() {
+        var context = new AnnotationConfigApplicationContext();
+        context.registerBean(LiveInteractRuntime.class, () -> runtime);
+        context.refresh();
+        return context;
+    }
+
     private List<JSONObject> dropped(long uid) {
         return store.history(uid, InteractStore.Outcome.DROPPED, 1, now).rows();
     }
@@ -166,6 +178,35 @@ class AutoDanmakuQueueTest {
         when(listener.getLoginUid()).thenReturn(9L);
         assertTrue(sender.isOwnDanmaku(new BilibiliDanmuEvent(streamer, new UserInfo(9L, ""), "", "")));
         assertFalse(sender.isOwnDanmaku(new BilibiliDanmuEvent(streamer, new UserInfo(7L, ""), "", "")));
+    }
+
+    @Test
+    @DisplayName("观众在刷表情或匿名聊天，定时弹幕却一直因无人发言而跳过")
+    void recognizesEmojiAndMaskedChatWhileExcludingOwnEchoes() {
+        configure(1, true, true, plan(2, true));
+        var emoji = new EmojiInfo("smile", "微笑", null);
+        var masked = new UserInfo(0L, "");
+        try (var events = events()) {
+            events.publishEvent(new BilibiliEmojiEvent(streamer, new UserInfo(88L, "观众"), emoji));
+            tick(120);
+            assertEquals(List.of("甲一"), sent);
+
+            now = start.plusSeconds(149);
+            events.publishEvent(new BilibiliDanmuEvent(streamer, masked, "甲一", "甲一"));
+            events.publishEvent(new BilibiliEmojiEvent(streamer, new UserInfo(7L, ""), emoji));
+            tick(240);
+            assertEquals(List.of("甲一"), sent);
+
+            assertTrue(sender.send(101, "试发").sent());
+            events.publishEvent(new BilibiliDanmuEvent(streamer, masked, "有观众", "有观众"));
+            tick(360);
+            assertEquals(List.of("甲一", "试发", "二"), sent);
+
+            now = start.plusSeconds(391);
+            events.publishEvent(new BilibiliDanmuEvent(streamer, masked, "二", "二"));
+            tick(480);
+            assertEquals(List.of("甲一", "试发", "二", "三"), sent);
+        }
     }
 
     @Test
@@ -217,6 +258,22 @@ class AutoDanmakuQueueTest {
     }
 
     @Test
+    @DisplayName("把某条定时计划停用了，它排着的弹幕和下一轮弹幕还在发")
+    void disablingPlanCancelsPendingAndFutureSends() {
+        var active = plan(2, false);
+        configure(1, true, true, active);
+        tick(120);
+        now = start.plusSeconds(240);
+        assertTrue(sender.send(101, "试发").sent());
+        queue.tick();
+        configure(1, true, true, new RoomSettings.Plan(active.id(), false, active.minutes(), active.texts(),
+                active.random(), active.skipQuiet()));
+        tick(243);
+        tick(360);
+        assertEquals(List.of("甲一", "试发"), sent);
+    }
+
+    @Test
     @DisplayName("两个房间同时到点或刚有人试发，一条自动弹幕撞上账号限速")
     void sharesTheDirectSendIntervalBetweenRooms() {
         configure(1, true, true);
@@ -248,6 +305,26 @@ class AutoDanmakuQueueTest {
         tick(63);
         tick(66);
         assertEquals(List.of("条7", "条8", "条9"), sent.subList(6, 9));
+    }
+
+    @Test
+    @DisplayName("把房间每分钟上限调成两条还是按六条发，或两个房间没按设置里的账号间隔发送")
+    void honorsCustomRoomQuotaAndAccountInterval() {
+        properties.getDanmaku().setMinInterval(2);
+        queue.save(1, new RoomSettings(true, 2, Map.of("timed", true), List.of()));
+        configure(2, true, true);
+        for (String text : List.of("甲一", "甲二", "甲三")) offer(1, text, 1, 90);
+        offer(2, "乙", 1, 90);
+        tick(0);
+        tick(1);
+        assertEquals(List.of("甲一"), sent);
+        tick(2);
+        assertEquals(List.of("甲一", "甲二"), sent);
+        tick(4);
+        tick(59);
+        assertEquals(List.of("甲一", "甲二", "乙"), sent);
+        tick(60);
+        assertEquals(List.of("甲一", "甲二", "乙", "甲三"), sent);
     }
 
     @Test
@@ -310,6 +387,52 @@ class AutoDanmakuQueueTest {
     }
 
     @Test
+    @DisplayName("平台已说账号掉了登录，机器人还是每到定时计划的时间就发请求")
+    void platformLogoutStopsRequestsForTheConfiguredPause() {
+        properties.getDanmaku().setPauseMinutes(6);
+        configure(1, true, true, plan(2, false));
+        configure(2, true, true);
+        offer(2, "另一间排着的", -1, 900);
+        code = -101;
+        tick(120);
+        offer(2, "另一间新来的", 1, 900);
+        tick(240);
+        tick(360);
+        tick(479);
+        assertEquals(List.of("甲一"), sent);
+        verify(speaker, times(1)).get(anyString(), isNull());
+        assertEquals(2, dropped(2).size());
+        code = 0;
+        tick(480);
+        assertEquals(List.of("甲一", "甲一"), sent);
+    }
+
+    @Test
+    @DisplayName("平台校验失败后重新登录，直播间一口气冒出几条过时的弹幕")
+    void discardsArrivalsDuringLoginFailureEvenIfManualSendRecovers() {
+        properties.getDanmaku().setPauseMinutes(1);
+        configure(1, true, true);
+        configure(2, true, true);
+        offer(2, "乙已排队", 1, 900);
+        code = -111;
+        var account = sender.accountStatus();
+        queue.accountResult(account, sender.send(101, "试发遇到校验失败"));
+        offer(1, "重新登录前", 1, 900);
+        now = start.plusSeconds(3);
+        code = 0;
+        assertTrue(sender.send(101, "重新登录后试发").sent());
+        now = start.plusSeconds(59);
+        offer(2, "重新登录后仍在暂停", 1, 900);
+        tick(60);
+        offer(2, "到点以后", 1, 60);
+        queue.tick();
+        tick(63);
+        assertEquals(List.of("试发遇到校验失败", "重新登录后试发", "到点以后"), sent);
+        assertEquals(1, dropped(1).size());
+        assertEquals(2, dropped(2).size());
+    }
+
+    @Test
     @DisplayName("退出登录后的队列在再登录时补发，或者没选好账号还出网")
     void noAccountDiscardsExistingAndNewItems() {
         configure(1, true, true);
@@ -346,9 +469,10 @@ class AutoDanmakuQueueTest {
     }
 
     @Test
-    @DisplayName("主播下播了队列还在发，删除后重新添加又冒出旧计划")
-    void offlineAndRemovalClearWorkAndDeletedSettings() {
+    @DisplayName("主播下播了队列还在发，或临时停用主播再启用后定时弹幕计划全没了")
+    void offlineAndRemovalClearWorkButPreserveSettingsForReactivation() {
         configure(1, true, true, plan(2, false));
+        var saved = store.settings(1);
         offer(1, "已排", 1, 600);
         living.put(1L, false);
         runtime.liveOff(new BilibiliLiveOffEvent(streamer, now));
@@ -358,12 +482,21 @@ class AutoDanmakuQueueTest {
         living.put(1L, true);
         runtime.liveOn(new BilibiliLiveOnEvent(streamer, now));
         offer(1, "又排", 1, 600);
-        runtime.streamerChanged(new NovaDataSourceRemoveEvent(a));
-        assertEquals(RoomSettings.DEFAULT, store.settings(1));
-        restart();
-        tick(600);
-        assertTrue(sent.isEmpty());
-        assertEquals(RoomSettings.DEFAULT, store.settings(1));
+        try (var events = events()) {
+            a.setEnabled(false);
+            events.publishEvent(new NovaDataSourceRemoveEvent(a));
+            events.publishEvent(new NovaDataSourceLoadCompleteEvent(List.of()));
+            tick(600);
+            assertTrue(sent.isEmpty());
+            assertEquals("又排", dropped(1).get(0).getString("text"));
+            assertEquals(saved, new InteractStore(new NovaStateStore(core)).settings(1));
+            a.setEnabled(true);
+            events.publishEvent(new NovaDataSourceAddEvent(a));
+            tick(719);
+            assertTrue(sent.isEmpty());
+            tick(720);
+            assertEquals(List.of("甲一"), sent);
+        }
     }
 
     @Test

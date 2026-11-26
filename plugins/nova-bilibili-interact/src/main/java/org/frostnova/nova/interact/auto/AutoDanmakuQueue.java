@@ -1,7 +1,7 @@
 package org.frostnova.nova.interact.auto;
 
 import org.frostnova.nova.bilibili.BilibiliPlatform;
-import org.frostnova.nova.bilibili.event.live.BilibiliDanmuEvent;
+import org.frostnova.nova.core.event.live.base.NovaLiveMessageEvent;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.service.LiveDataService;
 import org.frostnova.nova.interact.danmaku.DanmakuFailure;
@@ -118,11 +118,6 @@ public class AutoDanmakuQueue {
         syncLive(state, clock.get());
     }
 
-    synchronized void remove(long uid) {
-        forgetRoom(uid, "主播已移除");
-        store.remove(uid);
-    }
-
     synchronized void forgetRoom(long uid, String reason) {
         RoomState state = rooms.remove(uid);
         if (state != null) clear(state, reason);
@@ -185,9 +180,9 @@ public class AutoDanmakuQueue {
         room.session = null;
     }
 
-    synchronized void viewer(BilibiliDanmuEvent event) {
+    synchronized void viewer(NovaLiveMessageEvent event) {
         if (event.getSource() == null || event.getSender() == null
-                || event.getSender().getUid() == null || event.getSender().getUid() <= 0) return;
+                || event.getSender().getUid() == null || event.getSender().getUid() < 0) return;
         RoomState room = rooms.get(event.getSource().getUid());
         if (room != null && room.session != null && room.settings.allows(RoomSettings.TIMED)
                 && !sender.isOwnDanmaku(event)) room.session.viewerSpoke();
@@ -206,7 +201,7 @@ public class AutoDanmakuQueue {
     }
 
     private void offer(RoomState room, String feature, String text, int priority, Instant expires, TimedDanmakuPlans.Timer timer) {
-        AccountStatus account = sender.accountStatus();
+        AccountStatus account = sender.automaticAccountStatus();
         Item item = new Item(room, account, feature, text, priority, ++sequence, Objects.requireNonNull(expires), timer);
         Instant now = clock.get();
         // 入队也检查现有条目，避免暂停期间积压，或过期条目占满房间。
@@ -257,7 +252,7 @@ public class AutoDanmakuQueue {
         }
         if (account.pausedFor() != null) return "账号暂停发送中";
         if (account.choice() != item.account.choice() || !account.uid().equals(item.account.uid())) return "发送账号已更换";
-        if (item.timer != null && item.part == 0 && item.timer.plan.skipQuiet() && room.session.quiet()) return "没有观众发言";
+        if (item.timer != null && item.part == 0 && item.timer.plan.skipQuiet() && room.session.quiet(item.timer)) return "没有观众发言";
         return null;
     }
 
@@ -312,7 +307,7 @@ public class AutoDanmakuQueue {
             }
         }
         if (rooms.values().stream().allMatch(r -> r.pending.isEmpty())) return null;
-        AccountStatus status = sender.accountStatus();
+        AccountStatus status = sender.automaticAccountStatus();
         purge(status, now);
         if (!sender.intervalElapsed(status)) return null;
         return rooms.values().stream().filter(r -> r.hasCapacity(now))
@@ -325,7 +320,7 @@ public class AutoDanmakuQueue {
         Instant now = clock.get();
         syncLive(room, now);
         if (!room.pending.contains(item)) return false;
-        String reason = reason(item, sender.accountStatus(), now);
+        String reason = reason(item, sender.automaticAccountStatus(), now);
         if (reason != null) {
             drop(item, reason);
             return false;
@@ -366,7 +361,7 @@ public class AutoDanmakuQueue {
             }
         }
         if (!result.sent()) {
-            purge(sender.accountStatus(), clock.get());
+            purge(sender.automaticAccountStatus(), clock.get());
         }
     }
 

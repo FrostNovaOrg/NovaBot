@@ -19,23 +19,31 @@ final class DanmakuPacing {
     private final Map<String, Instant> lastAttempt = new HashMap<>();
 
     private final Map<String, Instant> pausedUntil = new HashMap<>();
+    private final Map<String, Instant> loginRejectedUntil = new HashMap<>();
 
     /**
      * 这个账号还要暂停多久
      * @param key 账号标识
      * @param now 此刻
+     * @param automatic 自动发送还须等待登录被拒后的暂停结束
      * @return 剩余的暂停时长，不在暂停期时为空。到点即解除
      */
-    synchronized Optional<Duration> pausedFor(String key, Instant now) {
-        Instant until = pausedUntil.get(key);
-        if (until == null) {
-            return Optional.empty();
+    synchronized Optional<Duration> pausedFor(String key, Instant now, boolean automatic) {
+        Instant until = pauseEnd(pausedUntil, key, now);
+        if (automatic) {
+            Instant login = pauseEnd(loginRejectedUntil, key, now);
+            if (login != null && (until == null || login.isAfter(until))) until = login;
         }
-        if (!now.isBefore(until)) {
-            pausedUntil.remove(key);
-            return Optional.empty();
+        return until == null ? Optional.empty() : Optional.of(Duration.between(now, until));
+    }
+
+    private static Instant pauseEnd(Map<String, Instant> pauses, String key, Instant now) {
+        Instant until = pauses.get(key);
+        if (until != null && !now.isBefore(until)) {
+            pauses.remove(key);
+            return null;
         }
-        return Optional.of(Duration.between(now, until));
+        return until;
     }
 
     /**
@@ -59,10 +67,11 @@ final class DanmakuPacing {
      * @param key 账号标识
      * @param now 此刻
      * @param interval 最短间隔
+     * @param automatic 是否为自动发送
      * @return 占到时为 true
      */
-    synchronized boolean reserve(String key, Instant now, Duration interval) {
-        if (pausedFor(key, now).isPresent() || tooSoon(key, now, interval).isPresent()) {
+    synchronized boolean reserve(String key, Instant now, Duration interval, boolean automatic) {
+        if (pausedFor(key, now, automatic).isPresent() || tooSoon(key, now, interval).isPresent()) {
             return false;
         }
         lastAttempt.put(key, now);
@@ -86,5 +95,10 @@ final class DanmakuPacing {
         }
         pausedUntil.put(key, until);
         return until;
+    }
+
+    /** 平台拒绝登录态时只暂停自动发送，管理员重新登录后可以试发。 */
+    synchronized void rejectLogin(String key, Instant now, Duration length) {
+        loginRejectedUntil.merge(key, now.plus(length), (old, next) -> old.isAfter(next) ? old : next);
     }
 }

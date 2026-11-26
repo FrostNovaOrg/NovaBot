@@ -11,11 +11,13 @@ import java.util.function.Consumer;
 final class TimedDanmakuPlans {
     static final class Timer {
         final RoomSettings.Plan plan;
+        final long audienceAtStart;
         Instant due;
         int cursor;
 
-        Timer(RoomSettings.Plan plan, Instant now) {
+        Timer(RoomSettings.Plan plan, Instant now, long audienceAtStart) {
             this.plan = plan;
+            this.audienceAtStart = audienceAtStart;
             schedule(now);
         }
 
@@ -40,7 +42,7 @@ final class TimedDanmakuPlans {
             for (RoomSettings.Plan plan : settings.plans()) {
                 if (!plan.enabled()) continue;
                 Timer previous = timers.get(plan.id());
-                active.put(plan.id(), previous != null && plan.equals(previous.plan) ? previous : new Timer(plan, now));
+                active.put(plan.id(), previous != null && plan.equals(previous.plan) ? previous : new Timer(plan, now, viewerMessages));
             }
         }
         timers.clear();
@@ -63,8 +65,8 @@ final class TimedDanmakuPlans {
         viewerMessages++;
     }
 
-    boolean quiet() {
-        return viewerMessages == atLastSend;
+    boolean quiet(Timer timer) {
+        return viewerMessages == atLastSend || viewerMessages == timer.audienceAtStart;
     }
 
     long audienceCount() {
