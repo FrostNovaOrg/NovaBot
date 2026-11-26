@@ -36,6 +36,7 @@ class ExamplePluginTemplateShapeTest {
             "plugins/nova-qqbot-adapter/pom.xml",
             "plugins/nova-outbox-adapter/pom.xml",
             "plugins/nova-bilibili/pom.xml",
+            "plugins/nova-bilibili-interact/pom.xml",
             "plugins/nova-console/pom.xml",
             "plugins/nova-report/pom.xml",
             "templates/nova-example-plugin/pom.xml");

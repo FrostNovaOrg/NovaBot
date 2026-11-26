@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {MiniNode, bracedFrom} from './layout-dom.mjs';
-import {healthText, homeModel} from '../../../main/resources/config-ui/home-model.js';
+import {healthText, homeModel, requiredAccounts} from '../../../main/resources/config-ui/home-model.js';
 import {loginView, loginControlState} from '../../../main/resources/config-ui/login-model.js';
 const ui = new URL('../../../main/resources/config-ui/', import.meta.url);
 const read = name => readFileSync(new URL(name, ui), 'utf8');
@@ -95,6 +95,7 @@ if (mode === 'home') {
   let skip;
   const stepAccount = compile(src, ['function accountCard(', 'function stepAccount('], {
     el, heading() {}, titleOf: () => '', note: (kind, text) => {const n=el('p'); n.textContent=text; return n;},
+    requiredAccounts,
     seen: {login: {accounts: [{displayName:'直播平台', loggedIn:true, accountId:'12345'}]}},
     foot: (host, action) => {skip=action;}, chooseAnonymous() {}, schedulePoll() {},
   });
@@ -102,6 +103,19 @@ if (mode === 'home') {
   check(() => assert.match(account.textContent, /12345/));
   check(() => assert.equal(skip, null, '已有登录不应再催选择免登录'));
   check(() => assert.ok(account.querySelector('a'), '已登录后仍可换账号'));
+  // 用户故障：装了可选的发言账号却不登录它，初始设置的登录那一步就多出一张扫不完的卡，还催人选免登录
+  let extraSkip;
+  const withExtra = compile(src, ['function accountCard(', 'function stepAccount('], {
+    el, heading() {}, titleOf: () => '', note: (kind, text) => {const n=el('p'); n.textContent=text; return n;},
+    requiredAccounts,
+    seen: {login: {accounts: [
+      {id:'site-extra', displayName:'另一个账号', optional:true, onDemand:true, loggedIn:false},
+      {id:'site', displayName:'直播平台', loggedIn:true, accountId:'12345'}]}},
+    foot: (host, action) => {extraSkip=action;}, chooseAnonymous() {}, schedulePoll() {},
+  });
+  const extraBox = el('div'); withExtra(extraBox);
+  check(() => assert.ok(!extraBox.textContent.includes('另一个账号'), '可选账号不该摆进登录那一步'));
+  check(() => assert.equal(extraSkip, null, '可选账号没登录不该催人选免登录'));
   const plugin = readFileSync(new URL('../../../../../../plugins/nova-console/src/main/resources/config-ui-pages/setup-streamer.js', import.meta.url), 'utf8');
   // 用户故障：引导里点「再加一个」后底栏消失，加的主播存不下来。
   const users = [{platform:'site', uid:7, uname:'已有主播'}];

@@ -447,4 +447,56 @@ if (officialReds.length) {
   process.exit(1);
 }
 
-console.log('\n十二档全对，目标名单四例手填全拒，昵称两向对照过，phrase 三档过，阴性过，事件输出状态过，官方机器人六档过');
+// —— 同一平台两个账号、两张卡 ——
+// 抓的用户故障：装了发言账号之后，原来那张平台卡上显示的是另一个账号的登录态与掉登录提示；
+// 发言账号那张卡找不到自己的账号，写着「未获取到连接状态」；没登录它（本来就可以不登录）也亮红灯。
+const TWO_CARDS = [{id: 'demo', displayName: '某直播平台'}, {id: 'demo-extra', displayName: '另一个账号'}];
+const extraAccount = patch => Object.assign({platform: 'demo', id: 'demo-extra', displayName: '另一个账号',
+  optional: true, onDemand: true, loggedIn: false, accountId: null}, patch);
+const mainAccount = patch => Object.assign({platform: 'demo', id: 'demo', displayName: '某直播平台',
+  loggedIn: true, accountId: '12345678', credentialNote: '自动续期已开，凭据有效'}, patch);
+const extraProbe = level => Object.assign(probe('另一个账号登录', 'PLATFORM', level,
+  level === 'OK' ? '正常（uid 87654321）' : '凭据已失效，需要重新扫码', level === 'OK' ? '' : '请在本卡上重新扫码登录', true),
+  {card: 'demo-extra'});
+const twoReds = [];
+function twoCase(name, health, accounts, expect) {
+  const model = linksModel(Object.assign(status('in', 'ok'), {health}), {success: true, accounts}, TWO_CARDS, TOKENS_ONE);
+  const main = model.cards.find(card => card.key === 'p-demo');
+  const extra = model.cards.find(card => card.key === 'p-demo-extra');
+  const fails = [];
+  for (const [card, want, label] of [[main, expect.main, '平台卡'], [extra, expect.extra, '另一张卡']]) {
+    for (const [field, value] of Object.entries(want)) {
+      const got = card[field];
+      const ok = value instanceof RegExp ? value.test(String(got)) : got === value;
+      if (!ok) fails.push(label + ' ' + field + ' 得到 ' + JSON.stringify(got) + '，应为 ' + value);
+    }
+  }
+  if (cardAnchor(model, 'platform') !== 'p-demo') fails.push('首页平台站落点得到 ' + cardAnchor(model, 'platform'));
+  console.log([name, main.level + '/' + extra.level, fails.length ? '红' : '绿'].join('\t'));
+  if (fails.length) twoReds.push(name + '：' + fails.join('；'));
+}
+twoCase('另一个账号从没登录过',
+  [LOGIN_PROBE.in, BOT_PROBE.ok],
+  [extraAccount(), mainAccount()],
+  {main: {level: 'ok', caption: '已登录 · 账号 12345678'}, extra: {level: 'off', caption: /^未登录/}});
+twoCase('另一个账号等扫码',
+  [LOGIN_PROBE.in, BOT_PROBE.ok],
+  [extraAccount({qrCode: 'iVBORw0KGgo='}), mainAccount()],
+  {main: {level: 'ok'}, extra: {level: 'off', caption: /扫描/}});
+twoCase('另一个账号已登录',
+  [LOGIN_PROBE.in, BOT_PROBE.ok, extraProbe('OK')],
+  [extraAccount({loggedIn: true, accountId: '87654321'}), mainAccount()],
+  {main: {level: 'ok', caption: '已登录 · 账号 12345678'}, extra: {level: 'ok', caption: /87654321/}});
+twoCase('另一个账号失效，平台主账号照常',
+  [LOGIN_PROBE.in, BOT_PROBE.ok, extraProbe('DOWN')],
+  [extraAccount(), mainAccount()],
+  {main: {level: 'ok', caption: '已登录 · 账号 12345678'}, extra: {level: 'err', advice: '请在本卡上重新扫码登录'}});
+twoCase('平台主账号掉登录，提示不借另一个账号的探针',
+  [extraProbe('DOWN'), LOGIN_PROBE.out, BOT_PROBE.ok],
+  [extraAccount(), mainAccount({loggedIn: false, accountId: null, qrCode: 'iVBORw0KGgo=', credentialNote: null})],
+  {main: {level: 'err', note: LOGIN_PROBE.out.advice}, extra: {level: 'err'}});
+if (twoReds.length) {
+  twoReds.forEach(line => console.error(line));
+  process.exit(1);
+}
+console.log('\n十二档全对，目标名单四例手填全拒，昵称两向对照过，phrase 三档过，阴性过，事件输出状态过，官方机器人六档过，同平台两张卡五档过');

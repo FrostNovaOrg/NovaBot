@@ -142,6 +142,7 @@ class ConfigUiMemberPermissionsTest {
             POST setup/test-bot
             GET login
             POST login/logout
+            POST login/start
             POST test-message
             GET datasource
             POST datasource

@@ -9,6 +9,9 @@ cookies.json
 cookies.enc
 # 加密密钥。它与 cookies.json 合起来等同于账号密码，同样不能进仓库
 cookies.key
+# 直播间互动插件的发言账号凭据与密钥，与上面两个同样不能进仓库
+speaker-cookies.json
+speaker-cookies.key
 /assistant-key.enc
 /assistant-master.key
 /assistant-usage.json

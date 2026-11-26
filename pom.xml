@@ -42,6 +42,7 @@
         <module>plugins/nova-qqbot-adapter</module>
         <module>plugins/nova-outbox-adapter</module>
         <module>plugins/nova-bilibili</module>
+        <module>plugins/nova-bilibili-interact</module>
         <module>plugins/nova-console</module>
         <module>plugins/nova-report</module>
     </modules>

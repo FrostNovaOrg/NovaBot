@@ -175,3 +175,22 @@ if (phraseReds.length) {
   phraseReds.forEach(line => console.error('  ' + line));
   process.exit(1);
 }
+
+// —— 同一平台另有一个可选账号 ——
+// 抓的用户故障：可选账号没登录，走完初始设置后的小结里却写着「某某 未登录」，读的人以为还有一步没做完
+const extraLines = summaryLines([true, true, true, true], ['', '', '', ''], {
+  accounts: [
+    {platform: 'demo', id: 'demo-extra', displayName: '另一个账号', optional: true, loggedIn: false},
+    {platform: 'demo', id: 'demo', displayName: '某直播平台', loggedIn: true},
+  ],
+  streamers: 1, targets: 1,
+});
+const extraReds = [];
+if (extraLines[1] !== '某直播平台 已登录') {
+  extraReds.push('小结第二行得到 ' + JSON.stringify(extraLines[1]) + '，应只说平台主账号');
+}
+console.log('可选账号\t跑了 1 格\t红 ' + extraReds.length + ' 格\t' + (extraReds.length ? '红' : '绿'));
+if (extraReds.length) {
+  extraReds.forEach(line => console.error('  ' + line));
+  process.exit(1);
+}

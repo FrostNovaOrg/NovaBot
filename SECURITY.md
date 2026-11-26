@@ -134,11 +134,12 @@ novabot:
 ### 建议
 
 - 以独立的低权限用户运行，或放入容器
-- 定期检查 `cookies.json` 与 `cookies.key` 的权限仍为 `600`
+- 定期检查 `cookies.json` 与 `cookies.key` 的权限仍为 `600`；登录过发言账号的，`speaker-cookies.json` 与 `speaker-cookies.key` 也一样
 - 向他人求助时，最稳妥的做法是只发日志，不发整个工作目录。非发目录不可时，先删掉这些——工作目录里的：
   - `application.yml` 与它保存时留下的备份（`application.yml.yyyyMMdd-HHmmss.bak` 这类名字）：
     里面有控制台访问令牌、两步验证密钥、OneBot 与推送接口的令牌、邮件授权码这类凭据
   - `cookies.json`、`cookies.key` 与 `cookies.json.plain.bak`（明文凭据迁移为加密存储时留下的备份）
+  - `speaker-cookies.json`、`speaker-cookies.key`：直播间互动插件的发言账号凭据与密钥
   - `datasource.json`：写着推送到哪些群、哪些 QQ
 
   以及数据目录里的（没挪过数据目录的话，它与工作目录是同一个）：

@@ -27,6 +27,7 @@ ssh -L 7827:127.0.0.1:7827 用户名@服务器地址
 - `application.yml` 与它保存时留下的备份（`application.yml.yyyyMMdd-HHmmss.bak` 这类名字）：
   里面有控制台访问令牌、两步验证密钥、OneBot 与推送接口的令牌、邮件授权码这类凭据
 - `cookies.json`、`cookies.key` 与 `cookies.json.plain.bak`（明文凭据迁移为加密存储时留下的备份）
+- `speaker-cookies.json`、`speaker-cookies.key`：直播间互动插件的发言账号凭据与密钥（见[第 16 章](16-live-room-interact.md#凭据存在哪)）
 - `datasource.json`：写着推送到哪些群、哪些 QQ
 - `qqbot/`：里面有 QQ 官方机器人的密文、主密钥、群和成员的对照表与超级管理员名单
 

@@ -14,7 +14,7 @@
  * 平台叫什么由 /api/login 里那个显示名带进来。写死一个，没装它的人会看见一步他走不到的流程。
  */
 
-import {botSetupStatus, OFFICIAL_BOT_CARD, SETUP_STEPS, setupSteps} from './home-model.js';
+import {botSetupStatus, OFFICIAL_BOT_CARD, requiredAccounts, SETUP_STEPS, setupSteps} from './home-model.js';
 import * as home from './home-model.js';
 import {mailAlertConfigured} from './alert-model.js';
 
@@ -237,7 +237,8 @@ const row = (label, text, href, key) => ({label, text, href, key});
  */
 export function summaryLines(facts, skips, counts, steps, terms) {
   const it = counts || {};
-  const accounts = it.accounts || [];
+  // 可选账号不进小结：它不是初始设置要做的事，写一句「未登录」会让人以为还差一步
+  const accounts = requiredAccounts({accounts: it.accounts});
   const table = steps || SETUP_STEPS;
   const fact = key => {
     const i = table.findIndex(step => step.key === key);

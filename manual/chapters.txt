@@ -14,6 +14,7 @@
 13-upgrade-and-backup.md
 14-troubleshooting.md
 15-members.md
+16-live-room-interact.md
 appendix-a-measurements.md
 appendix-b-advanced.md
 appendix-c-security-and-resources.md

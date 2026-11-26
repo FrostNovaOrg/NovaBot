@@ -173,8 +173,33 @@ function segment(probes, fallback) {
  * @return {string} 站名
  */
 function platformName(login) {
-  const accounts = (login && login.accounts) || [];
+  const accounts = requiredAccounts(login);
   return accounts.length === 1 ? (accounts[0].displayName || '直播平台') : '直播平台';
+}
+
+/**
+ * 不是可选的那些账号
+ *
+ * 可选账号（例如另有一个只用来发言的号）不登录也不妨碍采集与推送：初始设置不把它当必做的一步，
+ * 首页链路上「直播平台」那一站也不按它算。算进去的话，一个本来就可以不登录的号会让那一步永远没做完，
+ * 它掉登录时首页那一站也会变红，看着像监听坏了。
+ * @param login /api/login 回包
+ * @return 账号清单
+ */
+export function requiredAccounts(login) {
+  return ((login && login.accounts) || []).filter(item => !item.optional);
+}
+
+/**
+ * 可选账号自己那张卡的标识
+ *
+ * 驱动这几张卡的探针不进首页链路那一段，理由同 {@link requiredAccounts}。
+ * @param login /api/login 回包
+ * @return {Set<string>} 卡片标识
+ */
+function optionalCards(login) {
+  return new Set(((login && login.accounts) || []).filter(item => item.optional)
+    .map(item => item.id || item.platform));
 }
 
 /**
@@ -202,7 +227,7 @@ function platformName(login) {
  * @return {boolean[]} 与步骤表等长，各步成立与否
  */
 export function setupSteps(status, login, sent, pages, pluginDone) {
-  const accounts = (login && login.accounts) || [];
+  const accounts = requiredAccounts(login);
   // 上锁：设了控制台口令（通行密钥跟着口令登录走，没有口令时它签出来的会话打不开任何门）
   const lock = !!status.locked;
   const bot = botSetupStatus(status).done;
@@ -526,7 +551,8 @@ export function homeModel(status, login, timeline, pages, pluginDone, terms) {
   const account = login || {};
   const words = terms || {};
 
-  const platform = probesIn(state, 'PLATFORM');
+  const extraCards = optionalCards(account);
+  const platform = probesIn(state, 'PLATFORM').filter(item => !(item.card && extraCards.has(item.card)));
   const self = probesIn(state, 'SYSTEM');
   const bot = probesIn(state, 'BOT');
   // 官方连接探针在凭据保存后启用，推送平台尚未登记时也应显示连接状态。

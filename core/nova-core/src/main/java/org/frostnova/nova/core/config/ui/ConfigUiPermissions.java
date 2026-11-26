@@ -110,6 +110,7 @@ public final class ConfigUiPermissions {
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/setup/test-bot");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/login");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/login/logout");
+        add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/login/start");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/test-message");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/datasource");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/datasource");
