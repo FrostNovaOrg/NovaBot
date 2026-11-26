@@ -72,6 +72,20 @@ class BilibiliPkOpponentServiceTest {
     }
 
     @Test
+    @DisplayName("粉丝数无法解析时，PK 播报仍能读到对手的名字")
+    void malformedFanCountPreservesNickname() throws Exception {
+        when(http.getJson(contains("/Master/info"), any())).thenReturn(JSONObject.of("code", 0, "data",
+                JSONObject.of("info", JSONObject.of("uname", "对手甲"), "follower_num", "?")));
+        when(http.getJson(contains("/guardTab/"), any())).thenReturn(JSONObject.of("code", 0, "data",
+                JSONObject.of("info", JSONObject.of("num", 5))));
+        when(http.getJson(contains("/rank/getOnlineGoldRank"), any())).thenReturn(JSONObject.of("code", 0, "data",
+                JSONObject.of("onlineNum", 12)));
+
+        var profile = service.lookup(71L, opponent).get(10, TimeUnit.SECONDS);
+        assertEquals(new BilibiliPkOpponentService.Profile("对手甲", null, 5, 12), profile);
+    }
+
+    @Test
     @DisplayName("同一场多方 PK 能分别读到每个对手；缺粉丝数或榜单总数时不会错填零")
     void differentOpponentsHaveIndependentProfiles() throws Exception {
         when(http.getJson(anyString(), any())).thenAnswer(call -> {

@@ -1059,6 +1059,21 @@ class BilibiliEventParserTest {
     }
 
     @Test
+    @DisplayName("天选只有开奖通知时也要恢复欢迎")
+    void lotteryAwardAlonePublishesEnd() {
+        var room = new BilibiliConnectorHarness(parser);
+        room.receiveBody("{\"cmd\":\"ANCHOR_LOT_START\",\"data\":{\"id\":41}}");
+        assertEquals(1, room.publishedEvents().size());
+        assertInstanceOf(BilibiliLotteryStartEvent.class, room.publishedEvents().get(0));
+
+        room.receiveBody("{\"cmd\":\"ANCHOR_LOT_AWARD\",\"data\":{\"id\":41}}");
+        var events = room.publishedEvents();
+        assertEquals(2, events.size());
+        var ended = assertInstanceOf(BilibiliLotteryEndEvent.class, events.get(1));
+        assertEquals(41L, ended.getLotteryId());
+    }
+
+    @Test
     @DisplayName("进场特效带有观众和大航海等级时，订阅者能收到补充信号")
     void guardEntryEffect() {
         String effect = """
