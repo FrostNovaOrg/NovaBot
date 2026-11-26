@@ -30,9 +30,9 @@ import java.util.List;
 @Configuration(proxyBeanMethods = false)
 public class NovaApiConfiguration {
     /**
-     * 与控制台安全过滤器同一档：安全响应头那道仍排在前面，
-     * 若开了 {@code server.forward-headers-strategy}，框架改写来源地址的那一步也照样在前面，
-     * 这里取到的来源与控制台取到的是同一个
+     * 与控制台安全过滤器同一档：安全响应头那道仍排在前面。
+     * 来访者由这道过滤器自己判（{@link NovaApiVisitor}），不靠 {@code server.forward-headers-strategy}；
+     * 若有人开了那一项，框架改写来源地址的那一步照样排在前面，这里看到的对端就是改写之后的那个
      */
     public static final int FILTER_ORDER = ConfigUiRegistrar.FILTER_ORDER;
 
@@ -81,8 +81,9 @@ public class NovaApiConfiguration {
             ObjectProvider<DataSourceServiceRegistry> platforms, ObjectProvider<StreamerDirectory> directory,
             ObjectProvider<AbstractDataSource> dataSource) {
         ConfigUiAccountStore accountStore = accounts.getIfAvailable(() -> new ConfigUiAccountStore(state));
-        NovaApiFilter filter = new NovaApiFilter(new ConsoleAllowList(properties.getConfigUi()), tokens, accountStore,
-                memberSignIn, registry, throttle,
+        NovaApiOpenGroups openGroups = new NovaApiOpenGroups(properties.getConfigUi()::getApiAnySourceGroups, registry);
+        NovaApiFilter filter = new NovaApiFilter(new ConsoleAllowList(properties.getConfigUi()), openGroups, tokens,
+                accountStore, memberSignIn, registry, throttle,
                 () -> {
                     DataSourceServiceRegistry registered = platforms.getIfAvailable();
                     return registered == null ? List.of() : registered.platforms();

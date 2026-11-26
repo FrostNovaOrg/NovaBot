@@ -26,6 +26,24 @@ public interface NovaApiProvider {
     String segment();
 
     /**
+     * 这组接口在控制台上的显示名，例如「外发箱」
+     * <p>
+     * 「访问令牌」页逐组列出、让管理员决定哪一组对任何来源地址开放时用。
+     * @return 显示名；不写时用段名
+     */
+    default String name() {
+        return segment();
+    }
+
+    /**
+     * 这组接口一句话的说明：谁会来调、调它做什么
+     * @return 说明，可为空串
+     */
+    default String description() {
+        return "";
+    }
+
+    /**
      * 自己的范围
      * @return 范围清单，可为空
      */

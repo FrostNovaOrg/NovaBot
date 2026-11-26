@@ -104,6 +104,8 @@ class CoreSettingsSaveTest {
             change("novabot.core.log.file", "debug", ch.qos.logback.classic.Level.DEBUG),
             // 保存的人从本机来：新名单要留着本机，否则按设计拒收
             change("novabot.core.config-ui.allow-ips", "127.0.0.1/32\n10.0.0.0/8", List.of("127.0.0.1/32", "10.0.0.0/8")),
+            // 多开了组：设置页先问一句，答应了才写（见 ASKS_FIRST）
+            change("novabot.core.config-ui.api-any-source-groups", "outbox\nreport", List.of("outbox", "report")),
             change("novabot.core.config-ui.auth.session-hours", "24", 24),
             change("novabot.core.config-ui.auth.idle-hours", "2", 2),
             change("novabot.core.config-ui.auth.max-failures", "3", 3),
@@ -111,6 +113,11 @@ class CoreSettingsSaveTest {
             change("novabot.core.paint.fonts", "Noto Serif CJK SC\n内置", List.of("Noto Serif CJK SC", "内置")),
             change("novabot.core.live.auto-save-live-data-interval", "60", 60),
             change("novabot.core.alert.retry-interval", "120", 120));
+
+    /**
+     * 存之前要先问一句的键：头一趟回问话、一项不写，答应之后才写
+     */
+    private static final java.util.Set<String> ASKS_FIRST = java.util.Set.of("novabot.core.config-ui.api-any-source-groups");
 
     @TempDir Path directory;
     private AnnotationConfigApplicationContext context;
@@ -152,7 +159,15 @@ class CoreSettingsSaveTest {
         Change change = TABLE.get(key);
         assertNotEquals(change.expected(), runtimeValue(new NovaCoreProperties(), key), "表上的新值应与默认值不同");
 
-        JSONObject saved = save(Map.of(key, change.saved()), 200);
+        if (ASKS_FIRST.contains(key)) {
+            String before = Files.readString(config);
+            JSONObject asked = save(Map.of(key, change.saved()), 200);
+            assertFalse(asked.getBooleanValue("success"), asked::toJSONString);
+            assertEquals(1, asked.getJSONArray("confirm").size(), asked::toJSONString);
+            assertEquals(before, Files.readString(config), "没答应之前一项都不写");
+            assertNotEquals(change.expected(), runtimeValue(properties, key), "没答应之前运行中的值不变");
+        }
+        JSONObject saved = save(Map.of(key, change.saved()), 200, ASKS_FIRST.contains(key));
 
         assertAll(
                 () -> assertTrue(saved.getBooleanValue("success"), saved::toJSONString),
@@ -214,6 +229,7 @@ class CoreSettingsSaveTest {
                 Arguments.of("novabot.core.log.file", "", 400),
                 Arguments.of("novabot.core.config-ui.allow-ips", "127.0.0.1/32\n10.0.0.300", 400),
                 Arguments.of("novabot.core.config-ui.allow-ips", "", 400),
+                Arguments.of("novabot.core.config-ui.api-any-source-groups", "outbox\nOut Box", 400),
                 Arguments.of("novabot.core.config-ui.auth.session-hours", "0", 400),
                 Arguments.of("novabot.core.config-ui.auth.idle-hours", "-1", 400),
                 Arguments.of("novabot.core.config-ui.auth.max-failures", "abc", 400),
@@ -334,7 +350,12 @@ class CoreSettingsSaveTest {
     }
 
     private JSONObject save(Map<String, String> changes, int status) throws Exception {
-        var response = mvc.perform(post("/config/api/values").requestAttr(ConfigUiAccess.ACCOUNT, ADMIN)
+        return save(changes, status, false);
+    }
+
+    private JSONObject save(Map<String, String> changes, int status, boolean confirmed) throws Exception {
+        var response = mvc.perform(post("/config/api/values" + (confirmed ? "?confirmed=true" : ""))
+                        .requestAttr(ConfigUiAccess.ACCOUNT, ADMIN)
                         .contentType(MediaType.APPLICATION_JSON).content(new JSONObject(changes).toJSONString()))
                 .andReturn().getResponse();
         JSONObject body = JSON.parseObject(response.getContentAsString(StandardCharsets.UTF_8));

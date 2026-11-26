@@ -486,6 +486,17 @@ public class NovaCoreProperties {
         private volatile List<String> allowIps = new ArrayList<>(List.of("127.0.0.1/32", "::1/128"));
 
         /**
+         * 对任何来源地址开放的程序接口组，每行一个组名（如 outbox）；默认为空，每组程序接口都只对「允许访问的来源 IP」里的地址开放。开放后仍须有效的访问令牌与范围。
+         */
+        // 只免去来源名单这一道：令牌、范围、仅管理员范围、无效令牌限速与路径检查一道不少。
+        // 统一接口每个请求现读；没登记的组名不起作用。建议在控制台「访问令牌」页逐组打开
+        @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
+        @ConfigLabel("程序接口 · 对任何地址开放的接口组")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("每行一个组名，如 outbox；默认不开放。开放后仍须有效的访问令牌。可在「访问令牌」页逐组打开。")
+        private volatile List<String> apiAnySourceGroups = new ArrayList<>();
+
+        /**
          * 配置文件备份保留份数，单位：份，默认 10，可填 1 到 100；保存配置时自动另留带时间的备份，超出份数删最旧的。改完立即生效。
          */
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)

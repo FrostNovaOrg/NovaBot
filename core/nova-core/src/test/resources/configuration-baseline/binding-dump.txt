@@ -36,6 +36,7 @@ novabot.core.config-ui.agreement.accepted-at=2026-01-02T03:04:05
 novabot.core.config-ui.agreement.accepted-by=password
 novabot.core.config-ui.agreement.accepted-version=71
 novabot.core.config-ui.allow-ips[0]=10.0.0.0/8
+novabot.core.config-ui.api-any-source-groups[0]=coverage-group
 novabot.core.config-ui.auth.idle-hours=62
 novabot.core.config-ui.auth.lockout-minutes=64
 novabot.core.config-ui.auth.max-failures=63

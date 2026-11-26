@@ -36,6 +36,9 @@ public final class ConfigUiPermissions {
         add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/api-tokens");
         add(entries, Access.EVERYONE, Subject.NONE, "POST /config/api/api-tokens");
         add(entries, Access.EVERYONE, Subject.NONE, "POST /config/api/api-tokens/{id}/revoke");
+        // 从别的机器访问：哪几组接口对任何地址开放、各该怎么连。管的是整个实例，只给管理员
+        add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/api-tokens/remote-access");
+        add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/api-tokens/remote-access");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/vocab");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/platforms");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/session-check");

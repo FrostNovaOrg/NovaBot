@@ -208,6 +208,11 @@ public class RuntimeConfigurationApplier {
                 defaults.getConfigUi().getAllowIps(), RuntimeConfigurationApplier::allowIps,
                 (p, v) -> p.getConfigUi().setAllowIps(v));
 
+        // ---- 程序接口对任何地址开放的接口组：统一接口每个请求现读（NovaApiOpenGroups） ----
+        checked(RuntimeConfigurationApplier.API_ANY_SOURCE_GROUPS, "程序接口 · 对任何地址开放的接口组",
+                List.<String>of(), RuntimeConfigurationApplier::apiGroups,
+                (p, v) -> p.getConfigUi().setApiAnySourceGroups(v));
+
         // ---- 登录：会话库与限流每次判断现读 ----
         checked("novabot.core.config-ui.auth.session-hours", "会话有效期",
                 defaults.getConfigUi().getAuth().getSessionHours(), RuntimeConfigurationApplier::positive,
@@ -399,6 +404,33 @@ public class RuntimeConfigurationApplier {
             }
         }
         return entries;
+    }
+
+    /**
+     * 对任何地址开放的接口组：每行一个组名，空行跳过，重复的只留一个；可以留空（一组也不开放）
+     * <p>
+     * 写法不对的整份不收并指出是哪一条：那样的名字永远对不上任何一组，存下去只会让人以为开了。
+     * 写法对、却没有这一组的照收——插件可能稍后才装上，也可能刚卸掉；运行时它不起作用，也不报错。
+     */
+    private static List<String> apiGroups(String value) {
+        List<String> groups = new ArrayList<>();
+        int line = 0;
+        for (String entry : value.split("\n", -1)) {
+            line++;
+            if (entry.isBlank()) {
+                continue;
+            }
+            // 与运行时判开没开同一套规整（NovaApiOpenGroups#normalize）。拒语只说第几行、不复述原文：
+            // 这句话会进回包，读不懂时也会进日志
+            String group = org.frostnova.nova.core.api.NovaApiOpenGroups.normalize(entry);
+            if (group == null) {
+                throw new IllegalArgumentException("第 " + line + " 行不是接口组名（小写字母开头，只含小写字母、数字与连字符，如 outbox）");
+            }
+            if (!groups.contains(group)) {
+                groups.add(group);
+            }
+        }
+        return List.copyOf(groups);
     }
 
     /**
@@ -893,6 +925,13 @@ public class RuntimeConfigurationApplier {
         if (changes == null || changes.isEmpty()) {
             return questions;
         }
+        String groups = changes.get(API_ANY_SOURCE_GROUPS);
+        if (groups != null) {
+            String question = openingQuestion(groups);
+            if (question != null) {
+                questions.put(API_ANY_SOURCE_GROUPS, question);
+            }
+        }
         for (Map.Entry<String, String> change : changes.entrySet()) {
             Function<String, String> confirmation = contributedConfirmations.get(change.getKey());
             if (confirmation == null || change.getValue() == null) {
@@ -907,9 +946,46 @@ public class RuntimeConfigurationApplier {
     }
 
     /**
+     * 新清单比此刻多开了哪几组：多开了就先问一句，与「访问令牌」页打开开关时那句话同一个意思
+     * <p>
+     * 只收紧（去掉组）不问。取值读不懂的不在这里，那是 {@link #validateValues} 的事。
+     * @param value 送上来的新清单
+     * @return 要问的那句话；不用问时为 null
+     */
+    private String openingQuestion(String value) {
+        List<String> next;
+        try {
+            next = apiGroups(value);
+        } catch (IllegalArgumentException unreadable) {
+            return null;
+        }
+        List<String> now = properties.getConfigUi().getApiAnySourceGroups();
+        List<String> added = next.stream().filter(group -> now == null || !now.contains(group)).toList();
+        if (added.isEmpty()) {
+            return null;
+        }
+        return "将对任何来源地址开放 " + String.join("、", added) + " 这" + (added.size() == 1 ? "" : " " + added.size() + " ")
+                + "组程序接口：" + OPENING_CONSEQUENCE;
+    }
+
+    /**
+     * 打开「对任何地址开放」时要让人读到的后果
+     * <p>
+     * 「访问令牌」页的确认框用的也是这一句，两处说的是同一件事。
+     */
+    public static final String OPENING_CONSEQUENCE = "任何能连到这台机器这个端口的人都能尝试调用这组接口，"
+            + "全靠访问令牌把关（令牌、范围与无效令牌限速照旧）。经公网访问请走加密连接（https），"
+            + "不要把端口直接放到公网，否则令牌会明文经过网络。";
+
+    /**
      * 控制台来源 IP 名单的配置项名
      */
     static final String ALLOW_IPS = "novabot.core.config-ui.allow-ips";
+
+    /**
+     * 对任何来源地址开放的程序接口组的配置项名
+     */
+    public static final String API_ANY_SOURCE_GROUPS = "novabot.core.config-ui.api-any-source-groups";
 
     /**
      * 新名单会不会把正在保存的这个人挡在门外
