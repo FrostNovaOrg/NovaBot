@@ -1,5 +1,6 @@
 package org.frostnova.nova.interact;
 
+import org.frostnova.nova.bilibili.service.BilibiliPkOpponentService;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.bilibili.service.BilibiliAccountService;
 import org.frostnova.nova.bilibili.service.BilibiliCredentialStore;
@@ -53,6 +54,7 @@ class InteractPluginWiringTest {
         AbstractDataSource source = mock(AbstractDataSource.class);
         TimelineWriter timeline = mock(TimelineWriter.class);
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.registerBean(BilibiliPkOpponentService.class, () -> mock(BilibiliPkOpponentService.class));
             context.registerBean(LiveDataService.class, () -> mock(LiveDataService.class));
             context.registerBean(NovaStateStore.class, () -> mock(NovaStateStore.class));
             context.registerBean(HttpUtil.class, () -> http);

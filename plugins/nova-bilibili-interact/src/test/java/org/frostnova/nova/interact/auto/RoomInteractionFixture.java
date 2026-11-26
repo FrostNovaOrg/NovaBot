@@ -5,6 +5,7 @@ import org.frostnova.nova.bilibili.event.live.BilibiliFollowEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliPaidGiftEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliShareEvent;
 import org.frostnova.nova.bilibili.service.BilibiliAccountService;
+import org.frostnova.nova.bilibili.service.BilibiliPkOpponentService;
 import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.datasource.AbstractDataSource;
@@ -49,6 +50,7 @@ abstract class RoomInteractionFixture {
     final InteractProperties properties = new InteractProperties();
     AnnotationConfigApplicationContext events;
     AutoDanmakuQueue queue;
+    final BilibiliPkOpponentService opponents = mock(BilibiliPkOpponentService.class);
     InteractStore store;
     NovaStateStore state;
     long broadcastStart = START.toEpochMilli();
@@ -81,7 +83,7 @@ abstract class RoomInteractionFixture {
         queue = new AutoDanmakuQueue(sender, live, store, () -> now);
         sender.rooms().forEach(queue::register);
         events = new AnnotationConfigApplicationContext();
-        events.registerBean(LiveInteractRuntime.class, () -> new LiveInteractRuntime(queue, store, sender));
+        events.registerBean(LiveInteractRuntime.class, () -> new LiveInteractRuntime(queue, store, sender, opponents));
         events.refresh();
     }
 

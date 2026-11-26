@@ -53,7 +53,8 @@ let state = {
 const defaultThanksTemplates = {gift: '感谢 {用户} 赠送的 {礼物}', membership: '感谢 {用户} 开通{等级}',
   superChat: '感谢 {用户} 的醒目留言', follow: '感谢 {用户} 的关注', share: '感谢 {用户} 的分享直播间'};
 const defaultWelcomeTemplates = {guardWelcome: '欢迎{等级} {用户} 进入直播间', listedWelcome: '欢迎 {用户} 进入直播间'};
-const blankSettings = {welcome: {minimumLevel: 'CAPTAIN', guardTemplate: '', listedTemplate: '', people: []},enabled: false, perMinute: 6, features: {}, plans: [], thanks: {
+const defaultPkTemplate = '本场PK对手：{对手}，粉丝 {粉丝}，大航海 {舰队}，高能 {高能}';
+const blankSettings = {keywordRules: [], pkTemplate: '', welcome: {minimumLevel: 'CAPTAIN', guardTemplate: '', listedTemplate: '', people: []},enabled: false, perMinute: 6, features: {}, plans: [], thanks: {
   giftWindowSeconds: 8, giftIncludeFree: false, giftMinYuan: 0, followWindowSeconds: 30, shareWindowSeconds: 30, templates: {},
 }};
 const settingsByRoom = {};
@@ -67,7 +68,7 @@ globalThis.__api = async (path, options) => {
   if (path === '/interact/danmaku/state') return state;
   if (path.startsWith('/interact/danmaku/settings?uid=')) {
     const uid = path.split('=').pop();
-    return {success: true, defaultThanksTemplates, defaultWelcomeTemplates, settings: structuredClone(settingsByRoom[uid] || blankSettings)};
+    return {success: true, defaultThanksTemplates, defaultWelcomeTemplates, defaultPkTemplate, settings: structuredClone(settingsByRoom[uid] || blankSettings)};
   }
   if (path === '/interact/danmaku/settings') {
     const {uid, settings} = JSON.parse(options.body);
@@ -78,7 +79,7 @@ globalThis.__api = async (path, options) => {
   if (path.startsWith('/interact/danmaku/history?')) {
     const params = new URLSearchParams(path.split('?')[1]);
     if (thanksHistory) {
-      const rows = Object.keys({...defaultThanksTemplates, ...defaultWelcomeTemplates}).map(feature => ({
+      const rows = Object.keys({...defaultThanksTemplates, ...defaultWelcomeTemplates, keywordReply: true, pkOpponent: true}).map(feature => ({
         time: 1795680000000, text: '示例记录', feature, outcome: 'SENT', reason: '已发出',
       }));
       return {success: true, rows, total: rows.length, pageSize: 20};
@@ -321,6 +322,45 @@ if (byId('li-person-add')) {
   byId('li-save').click();
   await flush();
   check('删掉的人不再留在名单里', !settingsByRoom['502'].welcome.people.length);
+}
+
+// 管理员无法调整匹配顺序，刷新后规则丢失，或者预览和记录分不清两种弹幕。
+check('关键词和 PK 开关默认关闭', ['keywordReply', 'pkOpponent'].every(k => byId('li-' + k) && !byId('li-' + k).checked));
+check('记录标明关键词回复和 PK 播报', ['关键词回复', 'PK 对手信息播报'].every(label => byId('li-history').textContent.includes(label)));
+if (byId('li-rule-add')) {
+  const rows = () => section.querySelectorAll('.li-rule');
+  const fill = (row, word, reply) => {
+    row.querySelector('.li-keywords').value = word;
+    const input = row.querySelector('.li-reply');
+    input.value = reply;
+    input.dispatchEvent({type: 'input'});
+  };
+  byId('li-keywordReply').checked = true;
+  byId('li-rule-add').click();
+  fill(rows()[0], '群号', '{用户}好');
+  check('回复旁显示实际文字和字数', rows()[0].querySelector('.li-reply-preview').textContent === '小明好'
+    && rows()[0].querySelector('.li-reply-count').textContent.includes('3 字'));
+  rows()[0].querySelector('.li-reply-add').click();
+  rows()[0].querySelectorAll('.li-reply')[1].value = '另一句';
+  byId('li-rule-add').click();
+  fill(rows()[1], '群', '{主播}的群');
+  rows()[1].querySelector('.li-rule-up').click();
+  rows()[0].querySelector('.li-rule-on').checked = false;
+  byId('li-pkOpponent').checked = true;
+  byId('li-pkOpponent-template').value = '{主播}遇到{对手}，粉丝 {粉丝}';
+  byId('li-pkOpponent-template').dispatchEvent({type: 'input'});
+  check('PK 预览使用示例数字和当前主播', byId('li-pkOpponent-preview').textContent.includes('另一位遇到')
+    && byId('li-pkOpponent-preview').textContent.includes('12.3万'));
+  byId('li-save').click();
+  await flush();
+  const savedRules = settingsByRoom['502'].keywordRules;
+  check('规则顺序、启停、多句回复与 PK 话术都保存', savedRules.length === 2 && !savedRules[0].enabled
+    && savedRules[0].keywords[0] === '群' && savedRules[1].replies.join('/') === '{用户}好/另一句'
+    && settingsByRoom['502'].pkTemplate.includes('{粉丝}') && settingsByRoom['502'].features.pkOpponent);
+  rows()[0].querySelector('.li-rule-remove').click();
+  byId('li-save').click();
+  await flush();
+  check('删除只影响当前主播的所选规则', settingsByRoom['502'].keywordRules.length === 1 && !settingsByRoom['501'].keywordRules.length);
 }
 
 if (failures.length) {

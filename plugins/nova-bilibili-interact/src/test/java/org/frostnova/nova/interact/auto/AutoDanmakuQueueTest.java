@@ -1,6 +1,7 @@
 package org.frostnova.nova.interact.auto;
 
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.bilibili.service.BilibiliPkOpponentService;
 import org.frostnova.nova.bilibili.event.live.BilibiliDanmuEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliEmojiEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOffEvent;
@@ -103,7 +104,7 @@ class AutoDanmakuQueueTest {
     private void restart() {
         store = new InteractStore(new NovaStateStore(core));
         queue = new AutoDanmakuQueue(sender, live, store, () -> now);
-        runtime = new LiveInteractRuntime(queue, store, sender);
+        runtime = new LiveInteractRuntime(queue, store, sender, mock(BilibiliPkOpponentService.class));
         sender.rooms().forEach(queue::register);
     }
 

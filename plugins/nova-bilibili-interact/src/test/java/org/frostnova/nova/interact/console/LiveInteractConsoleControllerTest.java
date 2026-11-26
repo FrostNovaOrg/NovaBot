@@ -2,6 +2,7 @@ package org.frostnova.nova.interact.console;
 
 import com.alibaba.fastjson2.JSONObject;
 
+import org.frostnova.nova.bilibili.service.BilibiliPkOpponentService;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.event.datasource.change.NovaDataSourceAddEvent;
 import org.frostnova.nova.core.model.PushUser;
@@ -65,7 +66,7 @@ class LiveInteractConsoleControllerTest {
         user.setPlatform("bilibili");
         user.setUid(501L);
         user.setRoomId(1001L);
-        new LiveInteractRuntime(queue, store, danmaku).streamerChanged(new NovaDataSourceAddEvent(user));
+        new LiveInteractRuntime(queue, store, danmaku, mock(BilibiliPkOpponentService.class)).streamerChanged(new NovaDataSourceAddEvent(user));
         mvc = MockMvcBuilders.standaloneSetup(new LiveInteractConsoleController(danmaku, new InteractProperties(),
                 store, queue)).build();
     }
@@ -245,5 +246,53 @@ class LiveInteractConsoleControllerTest {
         assertTrue(limit.getBooleanValue("fromPlatform"));
 
         mvc.perform(get("/config/api/interact/danmaku/limit").param("uid", "777")).andExpect(status().isBadRequest());
+    }
+    @Test
+    @DisplayName("错误规则覆盖已保存设置，或错误提示没说清要改哪一条")
+    void validatesRulesAndPreservesLastSavedSettings() throws Exception {
+        String route = "/config/api/interact/danmaku/settings";
+        var rule = JSONObject.of("keywords", List.of("😀".repeat(20)), "replies", List.of("{用户}好"));
+        var settings = JSONObject.of("keywordRules", List.of(rule), "pkTemplate", "{主播}对阵{对手}");
+        var payload = JSONObject.of("uid", "501", "settings", settings);
+        mvc.perform(post(route).contentType("application/json").content(payload.toJSONString())).andExpect(status().isOk());
+        var reply = body(mvc.perform(get(route).param("uid", "501")).andReturn());
+        assertTrue(reply.getString("defaultPkTemplate") != null && reply.getString("defaultPkTemplate").contains("{粉丝}"));
+        var saved = reply.getJSONObject("settings");
+        var savedRule = saved.getJSONArray("keywordRules").getJSONObject(0);
+        assertEquals(60, savedRule.getIntValue("cooldownSeconds"));
+        assertTrue(savedRule.getBooleanValue("enabled"));
+        assertFalse(savedRule.getBooleanValue("exact"));
+        assertFalse(savedRule.getBooleanValue("random"));
+        for (var bad : List.of(JSONObject.of("keywords", List.of()), JSONObject.of("keywords", List.of("　")),
+                JSONObject.of("keywords", List.of("😀".repeat(21))), JSONObject.of("keywords", 123),
+                JSONObject.of("keywords", java.util.Collections.nCopies(6, "词")),
+                JSONObject.of("replies", List.of()), JSONObject.of("replies", List.of("\uFEFF")),
+                JSONObject.of("replies", List.of("句".repeat(61))), JSONObject.of("replies", List.of("{对手}")),
+                JSONObject.of("replies", java.util.Collections.nCopies(6, "好")), JSONObject.of("exact", "false"),
+                JSONObject.of("cooldownSeconds", 5), JSONObject.of("cooldownSeconds", 3601))) {
+            var second = new JSONObject(rule);
+            second.putAll(bad);
+            settings.put("keywordRules", List.of(rule, second));
+            var error = body(mvc.perform(post(route).contentType("application/json").content(payload.toJSONString()))
+                    .andExpect(status().isBadRequest()).andReturn());
+            assertTrue(error.getString("message").contains("第 2 条"), error::toString);
+        }
+        settings.put("keywordRules", java.util.Collections.nCopies(31, rule));
+        var overflow = body(mvc.perform(post(route).contentType("application/json").content(payload.toJSONString()))
+                .andExpect(status().isBadRequest()).andReturn());
+        assertTrue(overflow.getString("message").contains("第 31 条"));
+        settings.put("keywordRules", List.of(rule));
+        settings.put("pkTemplate", "{用户}");
+        mvc.perform(post(route).contentType("application/json").content(payload.toJSONString())).andExpect(status().isBadRequest());
+        assertEquals(saved, body(mvc.perform(get(route).param("uid", "501")).andReturn()).getJSONObject("settings"));
+    }
+
+    @Test
+    @DisplayName("清空 PK 话术后保存被拒，无法恢复默认播报")
+    void clearingPkTemplateRestoresDefault() throws Exception {
+        String route = "/config/api/interact/danmaku/settings";
+        var result = body(mvc.perform(post(route).contentType("application/json")
+                .content("{\"uid\":\"501\",\"settings\":{\"pkTemplate\":null}}")).andExpect(status().isOk()).andReturn());
+        assertEquals("", result.getJSONObject("settings").getString("pkTemplate"));
     }
 }

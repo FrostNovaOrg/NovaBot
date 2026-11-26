@@ -18,10 +18,13 @@ import org.frostnova.nova.bilibili.event.live.BilibiliLiveOnEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliLotteryEndEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliLotteryStartEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliPaidGiftEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliPkBattleEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliRandomGiftEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliRedPocketEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliShareEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliSuperChatEvent;
+import org.frostnova.nova.bilibili.service.BilibiliPkOpponentService;
+import org.frostnova.nova.core.event.live.common.PkBattleEvent.Stage;
 import org.frostnova.nova.core.event.datasource.base.NovaDataSourceChangeEvent;
 import org.frostnova.nova.core.event.datasource.change.NovaDataSourceRemoveEvent;
 import org.frostnova.nova.core.event.live.base.NovaLiveGiftEvent;
@@ -46,13 +49,16 @@ public class LiveInteractRuntime {
     private final AutoDanmakuQueue queue;
     private final InteractStore store;
     private final LiveDanmakuService sender;
+    private final BilibiliPkOpponentService opponents;
     private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread thread = new Thread(r, "live-interact-send");
         thread.setDaemon(true);
         return thread;
     });
 
-    public LiveInteractRuntime(AutoDanmakuQueue queue, InteractStore store, LiveDanmakuService sender) {
+    public LiveInteractRuntime(AutoDanmakuQueue queue, InteractStore store, LiveDanmakuService sender,
+                               BilibiliPkOpponentService opponents) {
+        this.opponents = opponents;
         this.queue = queue;
         this.store = store;
         this.sender = sender;
@@ -113,6 +119,18 @@ public class LiveInteractRuntime {
     @EventListener({BilibiliDanmuEvent.class, BilibiliEmojiEvent.class})
     public void danmaku(NovaLiveMessageEvent event) {
         queue.viewer(event);
+        if (event instanceof BilibiliDanmuEvent text) queue.keyword(text);
+    }
+
+    @EventListener
+    public void pk(BilibiliPkBattleEvent event) {
+        if (event.getStage() != Stage.OPEN || event.getPkId() == null || event.getPkId() <= 0
+                || event.getOpponents() == null || event.getOpponents().isEmpty()) return;
+        var announce = queue.beginPk(event);
+        if (announce != null) {
+            opponents.lookup(event.getPkId(), event.getOpponents().get(0))
+                    .completeOnTimeout(null, 10, TimeUnit.SECONDS).thenAccept(announce);
+        }
     }
 
     @EventListener
