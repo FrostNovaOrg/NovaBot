@@ -68,6 +68,16 @@
             <version>1.0.0</version>
             <scope>test</scope>
         </dependency>
+        <!--
+            只在测试里用：插件自报清点与设置项说明要读到直播间互动插件的产物，
+            reactor 因此要把它排在本模块之前。只作测试依赖，不进插件产物。
+        -->
+        <dependency>
+            <groupId>org.frostnova.nova</groupId>
+            <artifactId>nova-bilibili-interact</artifactId>
+            <version>1.0.0</version>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.frostnova.nova</groupId>
             <artifactId>nova-onebot-adapter</artifactId>

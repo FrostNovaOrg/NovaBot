@@ -14,6 +14,7 @@
 ├── core/novacore/                                      核心：事件模型、事件输出协议、数据源接口
 ├── core/nova-core/                                  壳：应用宿主、控制台、配置、推送与命令框架
 ├── plugins/nova-bilibili/                           采集侧
+├── plugins/nova-bilibili-interact/                  直播间互动：发言账号（依赖 nova-bilibili，可不装）
 ├── plugins/nova-onebot-adapter/                     投递侧
 ├── plugins/nova-onebot-adapter-napcat-extension/    依赖 onebot-adapter
 ├── plugins/nova-qqbot-adapter/                      QQ 官方机器人凭据与接口
@@ -36,6 +37,7 @@ flowchart TB
   napcat_extension["plugins/nova-onebot-adapter-napcat-extension"]
   qqbot_adapter["plugins/nova-qqbot-adapter"]
   nova_bilibili["plugins/nova-bilibili"]
+  nova_interact["plugins/nova-bilibili-interact"]
   nova_console["plugins/nova-console"]
   nova_report["plugins/nova-report"]
   nova_core --> novacore
@@ -47,6 +49,9 @@ flowchart TB
   qqbot_adapter --> nova_core
   qqbot_adapter --> novacore
   nova_bilibili --> nova_core
+  nova_interact --> nova_core
+  nova_interact --> novacore
+  nova_interact --> nova_bilibili
   nova_console --> nova_core
   nova_console --> novacore
   nova_report --> nova_core

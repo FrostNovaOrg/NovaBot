@@ -58,23 +58,32 @@ const PLATFORM_PREFIX = 'p-';
  * @return 卡片视图模型
  */
 function platformCard(card, status, accounts) {
-  const account = accounts.find(item => item.platform === card.id) || null;
+  // 按账号标识配卡，不按平台名：同一个平台上可以有两个账号（例如另有一个只用来发言的），
+  // 按平台名取第一个的话，这张卡上显示的可能是另一张卡的那个号。老回包没有 id 时退回平台名
+  const account = accounts.find(item => (item.id || item.platform) === card.id) || null;
   const base = {key: PLATFORM_PREFIX + card.id, kind: card.botLink ? 'bot-plugin' : 'platform', id: card.id,
     title: card.displayName || card.id, show: true, level: 'off', caption: '', note: '', advice: ''};
   const claims = probesIn(status).filter(item => item.card === card.id);
   if (claims.length) {
     base.kind = claims.every(item => item.scope === 'BOT') ? 'bot-plugin' : 'platform';
-    return Object.assign(base, probeState(claims));
+    const state = probeState(claims);
+    // 账号已登录、探针也说正常时，卡头照账号的口径写「已登录 · 名 · UID」与还能用多久，
+    // 与平台主账号那张卡同一种写法；探针那句只在它有话要说（降级、失效）时才换上去
+    if (account && account.loggedIn && state.level === 'ok') {
+      return Object.assign(base, {level: 'ok', caption: accountCaption(account), note: expiryText(account)});
+    }
+    return Object.assign(base, state);
   }
 
   if (!account) {
     return Object.assign(base, {caption: card.botLink ? '尚未配置' : '未获取到连接状态'});
   }
 
-  // ⚠️ 探针不申报自己属于哪个平台，因此同时装两个直播平台时，这里可能取到另一个平台的探针，
-  //    那张卡上的状态说明就会张冠李戴。当下只有一个直播平台，尚不会发生；
-  //    真装第二个之前，探针得先带上平台标识，否则这一句不可信。
-  const probe = probesIn(status, 'PLATFORM').find(item => item.loginState) || {};
+  // 掉登录时那句「代价是什么」只取不驱动别的卡的登录态探针：驱动自己那张卡的探针（card 有值）
+  // 说的是另一个账号，借过来的话，平台主账号掉登录时卡上写的会是另一个号的事。
+  // ⚠️ 探针仍不申报自己属于哪个平台，同时装两个直播平台时这里可能取到另一个平台的探针；
+  //    当下只有一个直播平台，尚不会发生，真装第二个之前探针得先带上平台标识。
+  const probe = probesIn(status, 'PLATFORM').find(item => item.loginState && !item.card) || {};
 
   if (account.disabledReason) {
     // 匿名是配置选出来的，不是故障：判熄灯而不是判黄。判黄等于催人去修一件他自己关掉的事
@@ -92,6 +101,17 @@ function platformCard(card, status, accounts) {
       caption: accountCaption(account),
       note: expiryText(account),
       advice: '',
+    });
+  }
+
+  // 可选的账号、要有人点一下才开始扫码的账号：没登录是一种选择，不是故障，判熄灯不判红。
+  // 它平时不备二维码，「正在生成二维码，请稍候」那一句在这里永远等不到
+  if (account.optional || account.onDemand) {
+    return Object.assign(base, {
+      level: 'off',
+      caption: account.qrCode ? '未登录 · 请扫描下方二维码'
+        : (account.onDemand ? '未登录' : '未登录 · 正在生成二维码，请稍候'),
+      note: account.notice || '',
     });
   }
 

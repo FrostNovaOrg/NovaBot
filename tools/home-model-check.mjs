@@ -523,4 +523,34 @@ if (phraseReds.length) {
   phraseReds.forEach(line => console.error('  ' + line));
   process.exit(1);
 }
-console.log('跑了 ' + (CASES.length + tileChecks) + ' 格，全绿');
+// —— 同一平台另有一个可选账号（例如只用来发言的那个）——
+// 抓的用户故障：装了可选账号却没登录它，初始设置的登录那一步就一直算没做完、首页一直催；
+// 它的登录失效把首页「直播平台」那一站染红，看着像监听坏了；站名也从平台名退成了通名。
+const extraReds = [];
+let extraChecks = 0;
+function extraEq(actual, expected, what) {
+  extraChecks++;
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    extraReds.push(what + '：得到 ' + JSON.stringify(actual) + '，应为 ' + JSON.stringify(expected));
+  }
+}
+const EXTRA_ACCOUNT = {platform: 'bilibili', id: 'bilibili-extra', displayName: '另一个账号', optional: true,
+  onDemand: true, loggedIn: false, accountId: null};
+const withExtra = (first) => login({accounts: [EXTRA_ACCOUNT,
+  Object.assign({platform: 'bilibili', id: 'bilibili', displayName: '哔哩哔哩', loggedIn: true, accountId: '12345678'}, first)]});
+extraEq(setupSteps(status(), withExtra(), true)[2], true, '可选账号没登录：登录那一步仍算已定');
+extraEq(setupSteps(status(), withExtra({loggedIn: false}), true)[2], false, '平台主账号没登录：登录那一步照旧没定');
+extraEq(setupDone(status(), withExtra()), setupDone(status(), login()), '可选账号不改变完成步数');
+const extraProbe = Object.assign(probe('另一个账号登录', 'PLATFORM', 'DOWN', '凭据已失效', '请重新扫码', true),
+  {card: 'bilibili-extra'});
+const extraHome = homeModel(status({health: OK_PROBES().concat([extraProbe])}), withExtra(), timeline());
+extraEq(extraHome.chain.platform.level, 'ok', '可选账号失效：首页「直播平台」那一站不变色');
+extraEq(extraHome.chain.platform.station, '哔哩哔哩', '站名仍是平台主账号报的显示名');
+extraEq(extraHome.banner, null, '可选账号失效不出顶部横条');
+console.log('可选账号\t跑了 ' + extraChecks + ' 格\t红 ' + extraReds.length + ' 格\t' + (extraReds.length ? '红' : '绿'));
+if (extraReds.length) {
+  console.error('\n可选账号对不上 ' + extraReds.length + ' 处：');
+  extraReds.forEach(line => console.error('  ' + line));
+  process.exit(1);
+}
+console.log('跑了 ' + (CASES.length + tileChecks + extraChecks) + ' 格，全绿');

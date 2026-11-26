@@ -21,7 +21,7 @@
 import {ask} from './confirm.js';
 import {botFieldsHtml} from './bot-fields.js';
 import {$, api, el, esc, loadingHtml, markDirty, phrase, say} from './core.js';
-import {botSetupStatus} from './home-model.js';
+import {botSetupStatus, requiredAccounts} from './home-model.js';
 import {resolveTarget, targetOptions} from './links-model.js';
 import {registerBlockedReason, registerPasskey} from './passkeys.js';
 import {setAuthState} from './settings-auth.js';
@@ -886,7 +886,8 @@ function stepBot(host) {
 // ============ 第 3 步：登录直播平台 ============
 
 function stepAccount(host) {
-  const accounts = seen.login.accounts || [];
+  // 可选账号不在这一步：不登录它也不妨碍采集与推送，摆进来就成了一张不扫就走不完的卡
+  const accounts = requiredAccounts(seen.login);
   heading(host, titleOf('account'),
     '登录后才能使用动态推送与自动关注；直播推送不受影响，未登录时也照常发送。');
 

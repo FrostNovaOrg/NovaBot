@@ -27,6 +27,15 @@ import {store} from './store.js';
  * 因此本卡可见与否要按它判，而不是按本插件自己的标识。
  */
 const VISIBLE_TABS = ['bot', 'overview'];
+
+/**
+ * 本卡管的那个账号的标识
+ *
+ * 同一个平台上可以另有账号（例如只用来发言的那个），它们有自己的卡。/api/login 把所有账号都回来，
+ * 这里只认自己这一个：照单全画的话，另一个账号会以「正在生成二维码，请稍候」混进本卡，
+ * 而它平时不备二维码，这一句永远等不到，本卡还会为它每 3 秒刷一次。
+ */
+const OWN_ACCOUNT = 'bilibili';
 const logoutResults = new Map();
 const signingOut = new Set();
 let accountRequest = 0;
@@ -76,11 +85,13 @@ export function status(data) {
   box.innerHTML = rest.length ? healthRows(rest, '') : '';
 }
 
-function renderAccounts(accounts) {
+function renderAccounts(all) {
   const box = $('#accounts');
   if (!box) return;
 
-  const html = (accounts || []).map(a => {
+  // 老回包没有 id 时退回平台名，与控制台配卡的认法一致
+  const accounts = (all || []).filter(a => (a.id || a.platform) === OWN_ACCOUNT);
+  const html = accounts.map(a => {
     // 登录被配置关掉时（例如匿名模式），二维码永远不会来。卡头已经写明是匿名模式，
     // 这里就不再摆一个「尚未生成二维码，请稍候」——那个「稍候」是没有尽头的
     if (a.disabledReason) return '';
@@ -89,8 +100,8 @@ function renderAccounts(accounts) {
       ? '<img alt="登录二维码" src="data:image/png;base64,' + esc(a.qrCode) + '">'
       : (a.loggedIn ? '' : '<div class="qrwait">正在生成二维码，请稍候</div>');
     const button = a.loggedIn ? '<button type="button" class="danger"'
-      + (signingOut.has(a.platform) ? ' disabled' : '') + '>退出登录并重新扫码</button>' : '';
-    const action = '<div class="lc-actions" data-login-platform="' + esc(a.platform) + '">' + button + '</div>';
+      + (signingOut.has(a.id || a.platform) ? ' disabled' : '') + '>退出登录并重新扫码</button>' : '';
+    const action = '<div class="lc-actions" data-login-platform="' + esc(a.id || a.platform) + '">' + button + '</div>';
     const tip = a.loggedIn
       ? '<span>如需更换账号，或怀疑凭据已泄露，可退出登录：本机保存的凭据将被清除，并立即生成新的登录二维码。</span>'
       : '<span>请使用手机客户端扫描二维码，确认登录后本页将自动显示为已登录。</span>';
@@ -110,7 +121,7 @@ function renderAccounts(accounts) {
 
   // 等待扫码时轮询刷新，扫完页面自动变为已登录，不必手动刷新。
   // 人停在首页上时也要刷：登录态一变，那一页的链路灯与探针都得跟着变
-  const waiting = (accounts || []).some(a => !a.loggedIn && !a.disabledReason);
+  const waiting = accounts.some(a => !a.loggedIn && !a.disabledReason);
   clearTimeout(store.accountTimer);
   if (waiting && VISIBLE_TABS.includes(store.tab)) {
     store.accountTimer = setTimeout(() => {
@@ -147,7 +158,7 @@ async function logout(platform, button, actions) {
     const res = await api('/login/logout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ platform })
+      body: JSON.stringify({ platform, id: platform })
     });
     const message = res.message || (res.success ? '已退出登录' : '退出登录失败');
     showLinkResult(result, message, res.success ? 'ok' : 'err');

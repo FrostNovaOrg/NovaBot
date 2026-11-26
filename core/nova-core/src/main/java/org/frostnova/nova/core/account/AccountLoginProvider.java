@@ -20,6 +20,62 @@ public interface AccountLoginProvider {
     String platform();
 
     /**
+     * 这个账号的标识，缺省就是平台名
+     * <p>
+     * 同一个平台上不止一个账号时（例如另有一个只用来发言的账号），靠它把它们分开：
+     * 连接页上一张卡对一个标识，退出登录也按它找人。只按平台名找的话，
+     * 点一张卡上的「退出登录」，退掉的可能是另一张卡上的那个号。
+     * <p>
+     * 与连接卡的页标识取同一个值，界面才配得上对；同一套字符规则：小写字母开头，只有小写字母、数字与连字符。
+     * @return 账号标识
+     */
+    default String id() {
+        return platform();
+    }
+
+    /**
+     * 这个账号是不是可选的
+     * <p>
+     * 可选账号不登录也不妨碍本机采集与推送：初始设置里不把它当成必做的一步，
+     * 首页链路上那一站也不按它的登录态算。
+     * @return 可选时返回 true
+     */
+    default boolean optional() {
+        return false;
+    }
+
+    /**
+     * 是否要有人在界面上点一下才开始扫码
+     * <p>
+     * 缺省是 false：没登录时一直备着一张二维码，扫了就登上。返回 true 的账号平时不备码，
+     * 也就不为它向平台发请求；有人点了「扫码登录」（见 {@link #startLogin()}）才去取码。
+     * @return 按需扫码时返回 true
+     */
+    default boolean loginOnDemand() {
+        return false;
+    }
+
+    /**
+     * 开始一轮扫码登录，只对 {@link #loginOnDemand()} 为 true 的账号有意义
+     * <p>
+     * 立即返回，不等扫码结果：二维码随后出现在 {@link #pendingQrCodeContent()} 里。
+     * @return 说给使用者的一句话
+     */
+    default String startLogin() {
+        throw new UnsupportedOperationException("这个账号不支持在界面上发起扫码");
+    }
+
+    /**
+     * 最近一次登录没成的原因，或此刻要人知道的一件事，没有时为空
+     * <p>
+     * 例如扫出来的号被拒、二维码过期了没人扫。文本原样显示给使用者，写清楚接下来该做什么。
+     * @return 说明
+     */
+    default Optional<String> loginNotice() {
+        return Optional.empty();
+    }
+
+    /**
      * 展示名称，例如「哔哩哔哩」
      * @return 展示名称
      */

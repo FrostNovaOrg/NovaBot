@@ -274,7 +274,8 @@ sudo systemctl enable novabot@<上一版>
 程序、配置与数据都在同一个目录里，照这个顺序做：
 
 1. 停止服务
-2. 备份 `application.yml`、`datasource.json`、`cookies.json`、`cookies.key` 和已存在的 `qqbot/`
+2. 备份 `application.yml`、`datasource.json`、`cookies.json`、`cookies.key` 和已存在的 `qqbot/`；
+   登录过发言账号的，连同 `speaker-cookies.json`、`speaker-cookies.key` 一起备份
 3. 用新版本的产物整个换掉 `NovaBot.jar` 与 `lib/`
 4. `plugins-lib/` 里新包自带的 jar 按名字删旧放新，自己放的留下
 5. `plugins/` **不要整个替换**，只按名字换下列内置插件并删旧版
@@ -283,6 +284,7 @@ sudo systemctl enable novabot@<上一版>
    - `nova-onebot-adapter-napcat-extension-<版本>.jar`
    - `nova-qqbot-adapter-<版本>.jar`
    - `nova-bilibili-<版本>.jar`
+   - `nova-bilibili-interact-<版本>.jar`（不想装直播间互动的，见[第 16 章](16-live-room-interact.md#装与不装)）
    - `nova-console-<版本>.jar`
    - `nova-report-<版本>.jar`
 6. 保留原有的 `application.yml` 与 `datasource.json`

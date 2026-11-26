@@ -447,7 +447,14 @@ class ConfigurationConsistencyTest {
      * @return 合并后的分组表
      */
     private ConfigurationGroups groups() {
-        return ConfigurationGroups.of(List.of(new BilibiliConfigurationGroups(), oneBotContributor()));
+        List<ConfigurationGroupContributor> contributors = new ArrayList<>();
+        contributors.add(new BilibiliConfigurationGroups());
+        contributors.add(oneBotContributor());
+        // 直播间互动插件同样不在本模块的编译依赖里，它的两项归组也得并进来；
+        // 单独构建本模块、那个插件还没产物时，它的配置项也不在分母里，缺席即跳过
+        contributors.addAll(loadOptionalContributor(ConfigurationGroupContributor.class,
+                "org.frostnova.nova.interact.config.InteractConfigurationGroups"));
+        return ConfigurationGroups.of(contributors);
     }
 
     private ConfigurationGroupContributor oneBotContributor() {
@@ -1299,8 +1306,10 @@ class ConfigurationConsistencyTest {
             red.add("② " + t.getMessage());
         }
         try {
+            // 按「模块名-版本号」认：只认前缀的话，名字以本模块名开头的兄弟插件（nova-bilibili-interact）
+            // 会被认成本模块自己的 jar
             List<String> selfJars = names.stream()
-                    .filter(name -> name.startsWith(selfName + "-"))
+                    .filter(name -> name.matches(java.util.regex.Pattern.quote(selfName) + "-[0-9].*"))
                     .toList();
             assertTrue(selfJars.isEmpty(), "本模块 jar 不该摆进去: " + selfJars);
         } catch (Throwable t) {

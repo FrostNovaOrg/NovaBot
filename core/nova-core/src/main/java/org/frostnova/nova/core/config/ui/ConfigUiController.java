@@ -1759,6 +1759,11 @@ public class ConfigUiController {
         loginProviders.orderedStream().forEach(provider -> {
             JSONObject item = new JSONObject();
             item.put("platform", provider.platform());
+            // 同一个平台上可以有几个账号，界面按 id 把账号与连接卡配上对、按 id 退出登录
+            item.put("id", accountIdOf(provider));
+            item.put("optional", provider.optional());
+            item.put("onDemand", provider.loginOnDemand());
+            item.put("notice", provider.loginNotice().orElse(null));
             item.put("displayName", provider.displayName());
             item.put("loggedIn", provider.isLoggedIn());
             item.put("accountId", provider.accountId().orElse(null));
@@ -1783,36 +1788,93 @@ public class ConfigUiController {
 
     /**
      * 退出登录
-     * @param body 请求体，platform 字段为平台名
+     * <p>
+     * 按账号标识找人。请求里只有 platform 时（早先的页面脚本就是这么发的），把它当作标识：
+     * 平台主账号的标识缺省就是平台名，这样找到的仍是原来那一个，而不是同一平台上恰好排在前面的另一个账号。
+     * @param body 请求体，id 字段为账号标识；没有 id 时读 platform
      * @return 退出结果
      */
     @PostMapping("/api/login/logout")
     public JSONObject logout(@RequestBody JSONObject body) {
         JSONObject result = new JSONObject();
-        String platform = body.getString("platform");
+        String id = accountIdOf(body);
 
-        Optional<AccountLoginProvider> provider = loginProviders.orderedStream()
-                .filter(item -> item.platform().equals(platform))
-                .findFirst();
+        Optional<AccountLoginProvider> provider = loginProvider(id);
 
         if (provider.isEmpty()) {
             result.put("success", false);
-            result.put("message", "未找到平台 " + platform);
+            result.put("message", "未找到平台 " + id);
             return result;
         }
 
         try {
             provider.get().logout();
             result.put("success", true);
-            result.put("message", "已退出登录，请扫描新的二维码重新登录");
-            log.info("{} 退出了平台 {} 的登录", ConfigUiAccess.actor(), platform);
+            result.put("message", provider.get().loginOnDemand()
+                    ? "已退出登录，本机保存的凭据已清除"
+                    : "已退出登录，请扫描新的二维码重新登录");
+            log.info("{} 退出了平台 {} 的登录", ConfigUiAccess.actor(), id);
         } catch (Exception e) {
-            log.error("退出 {} 的登录失败", platform, e);
+            log.error("退出 {} 的登录失败", id, e);
             result.put("success", false);
             result.put("message", "退出登录失败: " + e.getMessage());
         }
 
         return result;
+    }
+
+    /**
+     * 开始一轮扫码登录
+     * <p>
+     * 只给按需扫码的账号用（见 {@link AccountLoginProvider#loginOnDemand()}）：它们平时不备二维码，
+     * 有人点了才去取。立即返回，二维码随后出现在 {@code /api/login} 里。
+     * @param body 请求体，id 字段为账号标识
+     * @return 结果
+     */
+    @PostMapping("/api/login/start")
+    public JSONObject startLogin(@RequestBody JSONObject body) {
+        JSONObject result = new JSONObject();
+        String id = accountIdOf(body);
+
+        Optional<AccountLoginProvider> provider = loginProvider(id);
+        if (provider.isEmpty() || !provider.get().loginOnDemand()) {
+            result.put("success", false);
+            result.put("message", provider.isEmpty() ? "未找到账号 " + id : "这个账号无需在此发起扫码");
+            return result;
+        }
+
+        try {
+            result.put("message", provider.get().startLogin());
+            result.put("success", true);
+            log.info("{} 发起了账号 {} 的扫码登录", ConfigUiAccess.actor(), id);
+        } catch (Exception e) {
+            log.error("发起 {} 的扫码登录失败", id, e);
+            result.put("success", false);
+            result.put("message", "发起扫码登录失败: " + e.getMessage());
+        }
+        return result;
+    }
+
+    private static String accountIdOf(JSONObject body) {
+        if (body == null) {
+            return "";
+        }
+        String id = body.getString("id");
+        return id == null || id.isBlank() ? String.valueOf(body.getString("platform")) : id;
+    }
+
+    private Optional<AccountLoginProvider> loginProvider(String id) {
+        return loginProviders.orderedStream()
+                .filter(item -> accountIdOf(item).equals(id))
+                .findFirst();
+    }
+
+    /**
+     * 账号标识；实现没给（返回空）时退回平台名，与接口的缺省一致
+     */
+    private static String accountIdOf(AccountLoginProvider provider) {
+        String id = provider.id();
+        return id == null || id.isBlank() ? String.valueOf(provider.platform()) : id;
     }
 
     /**

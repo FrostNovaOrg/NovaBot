@@ -22,15 +22,67 @@ import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 
 /**
  * 哔哩哔哩账号服务
  * <p>
  * 负责登录凭据的加载、扫码登录与凭据持久化。凭据默认加密存储，详见 {@link BilibiliCredentialStore}。
+ * <p>
+ * 容器里只有一个实例，管的是监听用的那个账号。别的插件要另用一个账号时，自己 new 一个，
+ * 配上自己的接口工具、自己的凭据存储与一份 {@link Profile}：扫码、复检、续期、存盘这一整套照搬，
+ * 两个实例之间不共享任何状态。
  */
 @Slf4j
 @NovaComponent
 public class BilibiliAccountService {
+    /**
+     * 账号用途上的几处差别
+     * <p>
+     * 扫码、复检、续期、存盘对每个哔哩哔哩账号都一样，不一样的只有这几处：日志里怎么称呼它、
+     * 凭据失效那一刻的告警说什么、一次扫码最多换几张二维码、扫出来的号要不要先过一道关。
+     * 监听账号用 {@link #LISTENER}，行为与这份口径出现之前一字不差。
+     * @param logPrefix 每条日志的前缀，监听账号为空串
+     * @param loggedOutWarning 凭据失效那一刻的告警
+     * @param qrCodeRounds 一次扫码流程最多换几张二维码，0 表示一直换到登录成功为止
+     * @param loginGate 扫码成功之后、凭据存盘之前对这个号的检查，入参是它的 uid（取不到时为 null）；
+     *                  返回非空即拒绝这次登录，内容是说给使用者的理由。为 null 表示不检查
+     */
+    public record Profile(String logPrefix, String loggedOutWarning, int qrCodeRounds,
+                          Function<Long, Optional<String>> loginGate) {
+        public Profile {
+            logPrefix = logPrefix == null ? "" : logPrefix;
+        }
+
+        /**
+         * 监听账号的口径
+         */
+        public static final Profile LISTENER = new Profile("",
+                "哔哩哔哩登录凭据已失效, 动态推送与自动关注将停止; 直播推送不依赖登录态, 不受影响。请重新扫码登录",
+                0, null);
+    }
+
+    /**
+     * 只用已保存的凭据登录的结果，见 {@link #restoreSaved()}
+     */
+    public enum SavedLogin {
+        /**
+         * 没有保存的凭据，什么都没做
+         */
+        NONE,
+        /**
+         * 凭据有效，已登录
+         */
+        LOGGED_IN,
+        /**
+         * 凭据暂时验不了（网络不通之类），已保留并按已登录继续
+         */
+        UNVERIFIED,
+        /**
+         * 服务端明确答复未登录：凭据已失效
+         */
+        EXPIRED
+    }
     /**
      * 匿名模式的如实说明
      * <p>
@@ -87,10 +139,33 @@ public class BilibiliAccountService {
     private final NovaBilibiliProperties.Account properties;
 
     /**
+     * 本实例的用途口径
+     */
+    private final Profile profile;
+
+    /**
+     * 日志前缀，取自 {@link #profile}
+     */
+    private final String prefix;
+
+    /**
      * 当前待扫描的二维码内容，供登录页面展示
      */
     @Getter
     private volatile String pendingQrCodeContent;
+
+    /**
+     * 最近一次扫码流程为什么没登上，给界面说明用；开始新一轮扫码、或登录成功时清空
+     * <p>
+     * 只有带次数上限或带检查的口径才会写它：监听账号的扫码一直换码到登录成功为止，用不上这一句。
+     */
+    @Getter
+    private volatile String loginNotice;
+
+    /**
+     * 是否有人要求中止正在进行的扫码，见 {@link #cancelQrCodeLogin()}
+     */
+    private volatile boolean qrCodeCancelled;
 
     /**
      * 是否已登录
@@ -121,9 +196,26 @@ public class BilibiliAccountService {
     @Autowired
     public BilibiliAccountService(BilibiliApiUtil api, BilibiliCredentialStore store,
                                   NovaBilibiliProperties properties) {
+        this(api, store, properties.getAccount(), Profile.LISTENER);
+    }
+
+    /**
+     * 另用一个账号时的构造
+     * <p>
+     * 接口工具与凭据存储都要是这个账号自己的：共用监听账号那一份的话，凭据、设备标识、
+     * 签名与风控冷却就成了两个账号共有的一份，一边出事另一边跟着出事。
+     * @param api 本账号自己的接口工具
+     * @param store 本账号自己的凭据存储
+     * @param account 本账号的账号配置（复检间隔、续期、扫码方式等）
+     * @param profile 本账号的用途口径
+     */
+    public BilibiliAccountService(BilibiliApiUtil api, BilibiliCredentialStore store,
+                                  NovaBilibiliProperties.Account account, Profile profile) {
         this.api = api;
         this.store = store;
-        this.properties = properties.getAccount();
+        this.properties = account;
+        this.profile = profile == null ? Profile.LISTENER : profile;
+        this.prefix = this.profile.logPrefix();
 
         // 基准取复检间隔：一切正常时两件事都按它走，与改动前的行为一致。
         // 复检间隔配成 0（关闭复检）时这里会退化成 1 秒，但那种配置下
@@ -209,11 +301,11 @@ public class BilibiliAccountService {
             this.loginUid = uid;
             if (!loggedIn) {
                 this.loggedIn = true;
-                log.info("哔哩哔哩登录态已恢复, uid: {}", uid);
+                log.info("{}哔哩哔哩登录态已恢复, uid: {}", prefix, uid);
             } else if (previousUid == null) {
                 // 凭据暂未确认的那条路上 loggedIn 已是 true，补上 uid 这一刻若无日志，
                 // 「已确认」在工程日志里就无声无息
-                log.info("登录凭据已确认, uid: {}", uid);
+                log.info("{}登录凭据已确认, uid: {}", prefix, uid);
             }
             return MaintenanceOutcome.OK;
         } catch (ResponseCodeException e) {
@@ -223,10 +315,10 @@ public class BilibiliAccountService {
                 return MaintenanceOutcome.OK;
             }
 
-            log.warn("登录态复检返回未预期的错误代码 {}, 暂维持原状态: {}", e.getCode(), e.getMessage());
+            log.warn("{}登录态复检返回未预期的错误代码 {}, 暂维持原状态: {}", prefix, e.getCode(), e.getMessage());
             return MaintenanceOutcome.FAILED;
         } catch (Exception e) {
-            log.debug("登录态复检失败, 疑为网络故障, 暂维持原状态: {}", e.getMessage());
+            log.debug("{}登录态复检失败, 疑为网络故障, 暂维持原状态: {}", prefix, e.getMessage());
             return MaintenanceOutcome.FAILED;
         }
     }
@@ -317,7 +409,7 @@ public class BilibiliAccountService {
                 Duration delay = backoff.failed(now);
                 // 连续失败次数与下次间隔一起写出来：只说「失败了」的日志，
                 // 看的人无法判断它是偶发抖动还是已经退到上限
-                log.warn("{}连续失败 {} 次, {} 秒后再试",
+                log.warn("{}{}连续失败 {} 次, {} 秒后再试", prefix,
                         what, backoff.getConsecutiveFailures(), delay.toSeconds());
             }
             case SKIPPED -> {
@@ -384,7 +476,7 @@ public class BilibiliAccountService {
         Cookies current = api.getCookies();
         if (!current.isRefreshable()) {
             // 旧版本保存的凭据里没有刷新口令，只能等下次扫码时补上，不必反复告警
-            log.debug("当前凭据缺少持久化刷新口令, 跳过 Cookie 续期");
+            log.debug("{}当前凭据缺少持久化刷新口令, 跳过 Cookie 续期", prefix);
             return MaintenanceOutcome.SKIPPED;
         }
 
@@ -398,7 +490,7 @@ public class BilibiliAccountService {
         try {
             hint = api.checkCookieRefresh();
         } catch (Exception e) {
-            log.debug("查询 Cookie 续期状态失败: {}", e.getMessage());
+            log.debug("{}查询 Cookie 续期状态失败: {}", prefix, e.getMessage());
             return MaintenanceOutcome.FAILED;
         }
 
@@ -406,7 +498,7 @@ public class BilibiliAccountService {
             return MaintenanceOutcome.OK;
         }
 
-        log.info("哔哩哔哩提示当前凭据需要续期, 开始续期");
+        log.info("{}哔哩哔哩提示当前凭据需要续期, 开始续期", prefix);
         refreshed = doRefresh(current, hint.timestamp());
         // 续期没做成是失败：这一步不可回退，做不成时旧凭据仍在手上，
         // 但下次不该立刻再试——真正续不动时反复调这条链路只是给风控送素材
@@ -428,14 +520,14 @@ public class BilibiliAccountService {
             return false;
         }
 
-        log.info("哔哩哔哩登录令牌即将到期, 开始续期");
+        log.info("{}哔哩哔哩登录令牌即将到期, 开始续期", prefix);
 
         Cookies refreshed;
         try {
             refreshed = api.refreshAppToken();
         } catch (Exception e) {
             // 走到这里旧凭据尚未被动过，仍然可用
-            log.warn("登录令牌续期失败, 继续使用原凭据: {}", e.getMessage());
+            log.warn("{}登录令牌续期失败, 继续使用原凭据: {}", prefix, e.getMessage());
             return false;
         }
 
@@ -446,7 +538,7 @@ public class BilibiliAccountService {
             }
         } catch (Exception e) {
             api.setCookies(current);
-            log.error("登录令牌续期后的新凭据验证失败, 已回退至原凭据: {}", e.getMessage());
+            log.error("{}登录令牌续期后的新凭据验证失败, 已回退至原凭据: {}", prefix, e.getMessage());
             return false;
         }
 
@@ -455,10 +547,10 @@ public class BilibiliAccountService {
             // 新令牌留在内存里接着用。但盘上仍是旧令牌，重启后要重新扫码。
             // 返回 false（本次续期未完成）而不当成失败去退避：内存里的新令牌尚未到期，
             // 下次检查自然跳过，不会形成紧循环；重启后 load 回旧令牌，到窗口自然会再续
-            log.error("登录令牌续期的新令牌存盘失败, 重启后可能要重新扫码");
+            log.error("{}登录令牌续期的新令牌存盘失败, 重启后可能要重新扫码", prefix);
             return false;
         }
-        log.info("登录令牌续期完成");
+        log.info("{}登录令牌续期完成", prefix);
         return true;
     }
 
@@ -478,7 +570,7 @@ public class BilibiliAccountService {
             refreshed = api.refreshCookies(refreshCsrf, oldRefreshToken);
         } catch (Exception e) {
             // 走到这里旧凭据尚未被动过，仍然可用
-            log.warn("Cookie 续期失败, 继续使用原凭据: {}", e.getMessage());
+            log.warn("{}Cookie 续期失败, 继续使用原凭据: {}", prefix, e.getMessage());
             return false;
         }
 
@@ -490,7 +582,7 @@ public class BilibiliAccountService {
         } catch (Exception e) {
             // 新凭据不可用，换回旧的。此时旧凭据尚未被作废，账号不会因此掉登录
             api.setCookies(current);
-            log.error("Cookie 续期后的新凭据验证失败, 已回退至原凭据: {}", e.getMessage());
+            log.error("{}Cookie 续期后的新凭据验证失败, 已回退至原凭据: {}", prefix, e.getMessage());
             return false;
         }
 
@@ -499,16 +591,16 @@ public class BilibiliAccountService {
             // 新凭据没存上盘。此刻不能作废旧凭据——盘上留的只有旧凭据，作废了它，重启后就掉登录。
             // 换回旧凭据继续用，内存与盘上一致，都是还有效的旧凭据；下次维护再试整个续期
             api.setCookies(current);
-            log.error("Cookie 续期的新凭据存盘失败, 未作废旧凭据, 已回退至原凭据继续使用");
+            log.error("{}Cookie 续期的新凭据存盘失败, 未作废旧凭据, 已回退至原凭据继续使用", prefix);
             return false;
         }
 
         try {
             api.confirmCookieRefresh(oldRefreshToken);
-            log.info("Cookie 续期完成");
+            log.info("{}Cookie 续期完成", prefix);
         } catch (Exception e) {
             // 新凭据已生效，只是旧凭据没能及时作废。如实说明而不是笼统报失败
-            log.warn("Cookie 续期已生效, 但作废旧凭据失败, 旧凭据将保持有效直至自然过期: {}", e.getMessage());
+            log.warn("{}Cookie 续期已生效, 但作废旧凭据失败, 旧凭据将保持有效直至自然过期: {}", prefix, e.getMessage());
         }
 
         return true;
@@ -524,7 +616,7 @@ public class BilibiliAccountService {
 
         this.loggedIn = false;
         this.loginUid = null;
-        log.warn("哔哩哔哩登录凭据已失效, 动态推送与自动关注将停止; 直播推送不依赖登录态, 不受影响。请重新扫码登录");
+        log.warn("{}{}", prefix, profile.loggedOutWarning());
     }
 
     /**
@@ -572,7 +664,7 @@ public class BilibiliAccountService {
                 if (uid != null) {
                     this.loginUid = uid;
                     this.loggedIn = true;
-                    log.info("已使用保存的登录凭据登录, uid: {}", uid);
+                    log.info("{}已使用保存的登录凭据登录, uid: {}", prefix, uid);
                     logCredentialCapability(api.getCookies());
                     return true;
                 }
@@ -584,7 +676,7 @@ public class BilibiliAccountService {
                     return proceedWithUnverifiedCredentials("接口返回未预期的错误代码 " + e.getCode());
                 }
 
-                log.warn("保存的登录凭据已失效, 需要重新扫码登录");
+                log.warn("{}保存的登录凭据已失效, 需要重新扫码登录", prefix);
                 store.clear();
                 return loginByQrCode();
             } catch (Exception e) {
@@ -595,11 +687,79 @@ public class BilibiliAccountService {
 
         // 扫码之前直播采集是不会启动的，而这一等可以是无限久。只想要直播数据的人
         // 不该被卡在这里却猜不到有别的路——把那条路当场说出来
-        log.info("尚无登录凭据。若只需要直播弹幕、礼物等数据而不需要动态推送, "
+        log.info("{}尚无登录凭据。若只需要直播弹幕、礼物等数据而不需要动态推送, "
                 + "可以把 novabot.bilibili.account.anonymous 设为 true 免登录启动, "
-                + "代价见该配置项的说明");
+                + "代价见该配置项的说明", prefix);
 
         return loginByQrCode();
+    }
+
+    /**
+     * 只用已保存的凭据登录，不扫码
+     * <p>
+     * 给「平时不登录也行」的账号用。与 {@link #login()} 有三处不同：
+     * <ol>
+     *   <li>没有保存的凭据时什么都不做，<b>一个请求都不发</b>——连设备标识与签名都不去取</li>
+     *   <li>不转扫码：要不要扫码由使用者在界面上决定</li>
+     *   <li>服务端明确答复未登录时不删凭据文件：文件留着，才答得出「这个号登录过、后来失效了」，
+     *       删不删由使用者退出登录时决定</li>
+     * </ol>
+     * 凭据只是暂时验不了时的口径与 {@link #login()} 相同：保留，按已登录继续。
+     * @return 这次的结果
+     */
+    public SavedLogin restoreSaved() {
+        Optional<Cookies> saved = store.load();
+        if (saved.isEmpty() || !saved.get().isComplete()) {
+            return SavedLogin.NONE;
+        }
+
+        api.init();
+        api.setCookies(saved.get());
+
+        try {
+            Long uid = api.fetchLoginUid();
+            if (uid != null) {
+                this.loginUid = uid;
+                this.loggedIn = true;
+                this.lastVerifiedAt = Instant.now();
+                log.info("{}已使用保存的登录凭据登录, uid: {}", prefix, uid);
+                logCredentialCapability(api.getCookies());
+                return SavedLogin.LOGGED_IN;
+            }
+            proceedWithUnverifiedCredentials("接口未返回账号身份");
+            return SavedLogin.UNVERIFIED;
+        } catch (ResponseCodeException e) {
+            if (e.getCode() != BilibiliApiUtil.CODE_NOT_LOGGED_IN) {
+                proceedWithUnverifiedCredentials("接口返回未预期的错误代码 " + e.getCode());
+                return SavedLogin.UNVERIFIED;
+            }
+            this.lastVerifiedAt = Instant.now();
+            log.warn("{}保存的登录凭据已失效, 需要重新扫码登录", prefix);
+            return SavedLogin.EXPIRED;
+        } catch (Exception e) {
+            proceedWithUnverifiedCredentials("接口调用失败(" + e.getClass().getSimpleName() + "): " + e.getMessage());
+            return SavedLogin.UNVERIFIED;
+        }
+    }
+
+    /**
+     * 中止正在进行的扫码
+     * <p>
+     * 下一次轮询（至多几秒后）就停，不再换新的二维码；没有扫码在进行时什么都不做，
+     * 不会把下一次扫码也一并作废。
+     */
+    public void cancelQrCodeLogin() {
+        if (loginInProgress.get()) {
+            qrCodeCancelled = true;
+        }
+    }
+
+    /**
+     * 是否有扫码流程正在进行
+     * @return 有流程在进行时返回 true
+     */
+    public boolean isQrCodeLoginInProgress() {
+        return loginInProgress.get();
     }
 
     /**
@@ -615,7 +775,7 @@ public class BilibiliAccountService {
      */
     private boolean proceedWithUnverifiedCredentials(String reason) {
         this.loggedIn = true;
-        log.warn("暂时无法验证保存的登录凭据（{}）, 已保留凭据并按已登录启动, 网络恢复后会自动确认", reason);
+        log.warn("{}暂时无法验证保存的登录凭据（{}）, 已保留凭据并按已登录启动, 网络恢复后会自动确认", prefix, reason);
         // 这次验证同样没问到答案，照旧在「获取登录账号失败」计一笔，口径与 getLoginUid 相同：
         // 只有明确未登录不记，而那一档走的是转扫码那条路，到不了这里
         api.recordLoginUidFailure("MY_INFO_API:unverified:" + reason);
@@ -635,20 +795,30 @@ public class BilibiliAccountService {
         if (isAnonymous()) {
             // 界面上的「退出登录」会顺手发起新一轮扫码，匿名模式下必须在这里挡住，
             // 否则点一下就凭空冒出个二维码，扫完还跟配置说的不是一回事
-            log.info("当前为匿名模式, 已忽略扫码登录请求; 要登录请先关闭 novabot.bilibili.account.anonymous");
+            log.info("{}当前为匿名模式, 已忽略扫码登录请求; 要登录请先关闭 novabot.bilibili.account.anonymous", prefix);
             return false;
         }
 
         if (!loginInProgress.compareAndSet(false, true)) {
-            log.debug("已有扫码登录流程正在进行, 忽略本次请求");
+            log.debug("{}已有扫码登录流程正在进行, 忽略本次请求", prefix);
             return loggedIn;
         }
 
+        qrCodeCancelled = false;
+        loginNotice = null;
         try {
             return doLoginByQrCode();
         } finally {
             loginInProgress.set(false);
         }
+    }
+
+    /**
+     * 这一轮扫码是否该就此结束：停机、被中止、或扫出来的号被拒
+     * @return 该结束时返回 true
+     */
+    private boolean qrCodeFlowEnded() {
+        return isStopping() || qrCodeCancelled || loginNotice != null;
     }
 
     /**
@@ -666,16 +836,33 @@ public class BilibiliAccountService {
     private boolean doLoginByQrCode() {
         boolean tvMode = isTvLoginMode();
         if (!tvMode) {
-            log.warn("扫码登录方式为 web, 服务端不会下发可用的刷新口令, 凭据到期后需重新扫码; "
-                    + "如需自动续期请将 novabot.bilibili.account.qr-code-login-mode 改回 tv");
+            log.warn("{}扫码登录方式为 web, 服务端不会下发可用的刷新口令, 凭据到期后需重新扫码; "
+                    + "如需自动续期请将 novabot.bilibili.account.qr-code-login-mode 改回 tv", prefix);
         }
 
+        int rounds = 0;
         while (!loggedIn && !isStopping()) {
+            // 带上限的口径换满了码就收手：二维码不再换新，也就不再向平台发请求，
+            // 要再登录得有人再点一次。监听账号的上限是 0，照旧一直换到登录成功为止
+            if (profile.qrCodeRounds() > 0 && rounds >= profile.qrCodeRounds()) {
+                this.pendingQrCodeContent = null;
+                this.loginNotice = "二维码已过期，未登录";
+                log.info("{}登录二维码已过期, 本次扫码登录结束", prefix);
+                return false;
+            }
+            rounds++;
+
             BilibiliApiUtil.QrCodeLogin qrCode;
             try {
                 qrCode = tvMode ? api.getTvQrCodeLoginInfo() : api.getQrCodeLoginInfo();
             } catch (Exception e) {
-                log.error("获取登录二维码失败, 将在 10 秒后重试: {}", e.getMessage());
+                if (profile.qrCodeRounds() > 0 && rounds >= profile.qrCodeRounds()) {
+                    this.pendingQrCodeContent = null;
+                    this.loginNotice = "没能取到登录二维码，请稍后再试";
+                    log.error("{}获取登录二维码失败, 本次扫码登录结束: {}", prefix, e.getMessage());
+                    return false;
+                }
+                log.error("{}获取登录二维码失败, 将在 10 秒后重试: {}", prefix, e.getMessage());
                 if (!sleep(Duration.ofSeconds(10))) {
                     return false;
                 }
@@ -684,7 +871,7 @@ public class BilibiliAccountService {
 
             this.pendingQrCodeContent = qrCode.url();
 
-            log.info("请使用哔哩哔哩客户端扫描以下二维码登录");
+            log.info("{}请使用哔哩哔哩客户端扫描以下二维码登录", prefix);
             QrCodeUtil.generateQrCodeAndPrint(qrCode.url(), QR_CODE_SIZE);
 
             if (pollUntilLoggedIn(qrCode.key(), tvMode)) {
@@ -695,7 +882,14 @@ public class BilibiliAccountService {
                 return false;
             }
 
-            log.info("登录二维码已过期, 正在重新获取");
+            if (qrCodeFlowEnded()) {
+                this.pendingQrCodeContent = null;
+                return false;
+            }
+
+            if (profile.qrCodeRounds() <= 0 || rounds < profile.qrCodeRounds()) {
+                log.info("{}登录二维码已过期, 正在重新获取", prefix);
+            }
         }
 
         return loggedIn;
@@ -714,24 +908,45 @@ public class BilibiliAccountService {
                 return false;
             }
 
+            if (qrCodeCancelled) {
+                log.info("{}扫码登录已中止", prefix);
+                return false;
+            }
+
             if (!(tvMode ? api.getTvQrCodeLoginStatus(key) : api.getQrCodeLoginStatus(key))) {
                 continue;
             }
 
             Cookies logged = api.getCookies();
+
+            // 带检查的口径先认人，再存盘：被拒的那一份凭据不落盘，内存里也不留
+            Long checkedUid = null;
+            if (profile.loginGate() != null) {
+                checkedUid = api.getLoginUid();
+                Optional<String> refusal = profile.loginGate().apply(checkedUid);
+                if (refusal != null && refusal.isPresent()) {
+                    api.setCookies(new Cookies());
+                    this.pendingQrCodeContent = null;
+                    this.loginNotice = refusal.get();
+                    log.warn("{}已拒绝这次扫码登录: {}", prefix, refusal.get());
+                    return false;
+                }
+            }
+
             if (!store.save(logged)) {
                 // 登录照常：凭据已在内存里，本次进程内一切可用。只是盘上没有，重启后要重新扫码
-                log.error("登录凭据存盘失败, 重启后要重新扫码");
+                log.error("{}登录凭据存盘失败, 重启后要重新扫码", prefix);
             }
             this.pendingQrCodeContent = null;
-            this.loginUid = api.getLoginUid();
+            this.loginUid = profile.loginGate() != null ? checkedUid : api.getLoginUid();
             this.loggedIn = true;
+            this.loginNotice = null;
 
             // 当场没拿到账号身份是常有的事，别把 null 印给使用者——那看着就像登录坏了
             if (loginUid == null) {
-                log.info("登录成功, 登录凭据暂未确认");
+                log.info("{}登录成功, 登录凭据暂未确认", prefix);
             } else {
-                log.info("登录成功, uid: {}", loginUid);
+                log.info("{}登录成功, uid: {}", prefix, loginUid);
             }
             logCredentialCapability(logged);
             return true;
@@ -755,12 +970,12 @@ public class BilibiliAccountService {
 
         if (cookies.isAppRefreshable()) {
             Long expiresAt = cookies.getAccessTokenExpiresAt();
-            log.info("已取得可自动续期的登录令牌{}", expiresAt == null ? ""
+            log.info("{}已取得可自动续期的登录令牌{}", prefix, expiresAt == null ? ""
                     : ", 有效期至 " + LocalDate.ofInstant(Instant.ofEpochMilli(expiresAt), ZoneId.systemDefault()));
         } else if (cookies.isRefreshable()) {
-            log.info("已取得网页端刷新口令, 续期将走网页端链路");
+            log.info("{}已取得网页端刷新口令, 续期将走网页端链路", prefix);
         } else {
-            log.warn("本次登录未取得任何刷新口令, 凭据到期后需要重新扫码");
+            log.warn("{}本次登录未取得任何刷新口令, 凭据到期后需要重新扫码", prefix);
         }
     }
 
@@ -772,8 +987,9 @@ public class BilibiliAccountService {
         api.setCookies(new Cookies());
         this.loggedIn = false;
         this.loginUid = null;
+        this.loginNotice = null;
 
-        log.info("已退出登录并清除本地凭据");
+        log.info("{}已退出登录并清除本地凭据", prefix);
     }
 
     /**

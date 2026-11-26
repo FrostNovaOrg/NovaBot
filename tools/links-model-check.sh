@@ -58,6 +58,12 @@ if [ -z "$QQBOT_MOD" ]; then
     exit 1
 fi
 echo "登记 绿 qqbot.js←$QQBOT_MOD"
+SPEAKER_MOD=$(printf '%s\n' "$REG_OUT" | awk -F'\t' '$2=="bilibili-speaker.js"{print $1; exit}')
+if [ -z "$SPEAKER_MOD" ]; then
+    echo "登记 红 bilibili-speaker.js 未登记" >&2
+    exit 1
+fi
+echo "登记 绿 bilibili-speaker.js←$SPEAKER_MOD"
 RED=0
 SYNTAX_RED=0
 
@@ -83,6 +89,10 @@ check_syntax() {
 # —— 语法 ——
 for f in "$UI"/links-model.js "$UI"/links.js "$UI"/tokens.js "$UI"/bot.js "$UI"/bot-fields.js "$UI"/link-feedback.js \
          "$PAGES"/bilibili.js; do
+    check_syntax "$f"
+done
+PAGES="$SPEAKER_MOD/src/main/resources/config-ui-pages"
+for f in "$PAGES"/bilibili-speaker.js; do
     check_syntax "$f"
 done
 PAGES="$QQBOT_MOD/src/main/resources/config-ui-pages"
