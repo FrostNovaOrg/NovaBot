@@ -1,6 +1,7 @@
 package org.frostnova.nova.interact.speaker;
 
 import com.alibaba.fastjson2.JSONObject;
+import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -45,6 +46,66 @@ public class BilibiliSpeakerService {
     }
 
     /**
+     * 发言账号用不了的那几种情形
+     */
+    public enum UnusableKind {
+        /**
+         * 从没登录过（或已退出登录）
+         */
+        NEVER_LOGGED_IN,
+
+        /**
+         * 整个停用了（凭据文件与监听账号的是同一个）
+         */
+        DISABLED,
+
+        /**
+         * 与监听账号成了同一个号
+         */
+        SAME_AS_LISTENER,
+
+        /**
+         * 登录过，凭据已失效
+         */
+        EXPIRED,
+
+        /**
+         * 登着，但凭据暂未确认
+         */
+        UNVERIFIED
+    }
+
+    /**
+     * 发言账号此刻为什么用不了
+     * @param kind 哪一种情形
+     * @param reason 说给使用者的理由，与 {@link #unavailableReason()} 同一句
+     */
+    public record Unusable(UnusableKind kind, String reason) {
+    }
+
+    /**
+     * 发言账号此刻为什么用不了，分清是哪一种：前三种是「没设好」，后两种是「登录态不行」
+     * @return 用不了的情形，能用时为空
+     */
+    public Optional<Unusable> unusable() {
+        Optional<String> reason = speaker.unusableReason();
+        if (reason.isEmpty()) {
+            return Optional.empty();
+        }
+        UnusableKind kind;
+        if (speaker.disabledReason().isPresent()) {
+            kind = UnusableKind.DISABLED;
+        } else if (!speaker.isLoggedIn()) {
+            kind = speaker.hasCredentials() ? UnusableKind.EXPIRED : UnusableKind.NEVER_LOGGED_IN;
+        } else if (speaker.uid() == null) {
+            kind = UnusableKind.UNVERIFIED;
+        } else {
+            kind = UnusableKind.SAME_AS_LISTENER;
+        }
+        return Optional.of(new Unusable(kind, reason.get()));
+    }
+
+    /**
      * 发言账号的 uid
      * @return uid，用不了时为空
      */
@@ -80,6 +141,21 @@ public class BilibiliSpeakerService {
         body.put("csrf", csrf);
         body.put("csrf_token", csrf);
         return speaker.api().requestBilibiliApi(url, "POST", speaker.api().getBilibiliHeaders(), body);
+    }
+
+    /**
+     * 以发言账号的登录态发一次表单 POST：只发一次，回包整份交回
+     * <p>
+     * 给发出去就收不回的写接口用（往直播间发弹幕）。网络异常与业务码都不重发；
+     * 跨站校验口令由发言账号自己的接口工具填，调用方拿不到它的值。见 {@link BilibiliApiUtil#postFormOnce}。
+     * @param url 接口地址
+     * @param form 表单参数，可为 null
+     * @return 完整回包
+     * @throws IllegalStateException 发言账号用不了时，一个请求都不发
+     */
+    public JSONObject postOnce(String url, Map<String, Object> form) {
+        requireAvailable();
+        return speaker.api().postFormOnce(url, form);
     }
 
     private void requireAvailable() {

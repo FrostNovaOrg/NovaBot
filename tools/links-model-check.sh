@@ -92,7 +92,8 @@ for f in "$UI"/links-model.js "$UI"/links.js "$UI"/tokens.js "$UI"/bot.js "$UI"/
     check_syntax "$f"
 done
 PAGES="$SPEAKER_MOD/src/main/resources/config-ui-pages"
-for f in "$PAGES"/bilibili-speaker.js; do
+# 同一个插件的「直播间互动」页没有自己的尺，就近在这里过语法
+for f in "$PAGES"/bilibili-speaker.js "$PAGES"/live-interact.js; do
     check_syntax "$f"
 done
 PAGES="$QQBOT_MOD/src/main/resources/config-ui-pages"

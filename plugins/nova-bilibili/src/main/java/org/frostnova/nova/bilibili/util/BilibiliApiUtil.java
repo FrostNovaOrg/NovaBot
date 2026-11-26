@@ -589,6 +589,64 @@ public class BilibiliApiUtil {
     }
 
     /**
+     * 以本账号的登录态发一次表单 POST：只发一次，回包整份交回
+     * <p>
+     * 给「发出去就收不回」的写接口用，例如往直播间发一条弹幕。与
+     * {@link #requestBilibiliApi(String, String, Map, Map)} 有三处不同：
+     * <ul>
+     *   <li><b>只发一次。</b>网络异常与业务码都不重发：请求可能已经到了对端，再发一次就是两条；</li>
+     *   <li><b>回包整份交回，业务码不抛。</b>有的写接口 code 为 0 也没办成（原因写在 message 里），
+     *       只给 data 的话调用方看不到这一句；</li>
+     *   <li><b>跨站校验口令由这里填。</b>{@code csrf} 与 {@code csrf_token} 取本账号自己的凭据，
+     *       调用方不必、也拿不到它的值。</li>
+     * </ul>
+     * 风控冷却与本账号的其他请求共用同一份：这个接口正在冷却就直接拒，不出网；
+     * 被风控码或 HTTP 412 拦下时照常进冷却，冷却的起步与上限也一样。
+     * @param url 接口地址
+     * @param form 表单参数，可为 null
+     * @return 完整回包
+     * @throws RiskCooldownException 这个接口正在冷却，或这一次被 HTTP 412 拦下进了冷却：请求没有办成
+     * @throws NetworkException 网络异常或回包读不出来：请求可能已经到了对端，结果不明
+     */
+    public JSONObject postFormOnce(String url, Map<String, Object> form) {
+        String path = shortUrl(url);
+        boolean probing = acquireSendPermit(path, clock.get());
+        try {
+            Map<String, Object> body = form == null ? new LinkedHashMap<>() : new LinkedHashMap<>(form);
+            String csrf = cookies == null || cookies.getBiliJct() == null ? "" : cookies.getBiliJct();
+            body.put("csrf", csrf);
+            body.put("csrf_token", csrf);
+
+            JSONObject response;
+            try {
+                response = doRequest(url, "POST", getBilibiliHeaders(), body);
+            } catch (HttpBlockedException e) {
+                block(path, "HTTP " + e.status, clock.get());
+                throw coolingException(path, clock.get());
+            }
+            if (response == null) {
+                throw new NetworkException("请求 " + path + " 没有收到回包内容");
+            }
+
+            recordChallenge(response);
+            Integer code = response.getInteger("code");
+            if (code != null && code != 0) {
+                recordBusinessCode(url, code, response.getString("message"));
+                if (BLOCKED_CODES.contains(code)) {
+                    block(path, Integer.toString(code), clock.get());
+                }
+            } else {
+                noteProbeSuccess(path, clock.get());
+            }
+            return response;
+        } finally {
+            if (probing) {
+                releaseProbe(path);
+            }
+        }
+    }
+
+    /**
      * 因风控重算签名
      * <p>
      * 两道闸：密钥太新不重算（重算也是同一份），已有线程在重算则不重复发起。

@@ -72,6 +72,26 @@ public enum TimelineEventType {
     LIVE_OFF("下播", TimelineCategory.LIVE),
 
     /**
+     * 往主播的直播间发了一条弹幕，平台回了「已发出」
+     * <p>
+     * 归「直播」：说的是那个直播间里发生的事。弹幕三类分开记，与推送那三类同一个道理——
+     * 「发出了」「没发出」「不知道发没发出」的下一步各不相同。
+     */
+    DANMAKU_SENT("弹幕已发出", TimelineCategory.LIVE),
+
+    /**
+     * 弹幕没发出：没有可用的账号、文字不合要求、发得太快、被屏蔽词拦下、平台风控或别的错误
+     * <p>
+     * 原因的分类与平台给的代码进补充键值。
+     */
+    DANMAKU_NOT_SENT("弹幕没发出", TimelineCategory.LIVE),
+
+    /**
+     * 弹幕发出不明：请求已交出去、没等到回包，可能已经出现在直播间里，没有重发
+     */
+    DANMAKU_UNCERTAIN("弹幕发出不明", TimelineCategory.LIVE),
+
+    /**
      * 某项健康状况发生变化，含恢复正常
      * <p>
      * 暂归「连接」：现有的几项健康状况问的都是「与那一头通着没有」。

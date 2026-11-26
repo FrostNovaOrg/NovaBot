@@ -174,6 +174,11 @@ class BilibiliSpeakerAccountTest {
         verify(api).setCookies(argThat(cookies -> cookies.getSessData() == null));
         assertEquals(Optional.of(BilibiliSpeakerAccount.SAME_AS_LISTENER), speaker.notice());
         assertTrue(speaker.notice().get().contains("监听"), "理由里得说清楚是监听账号");
+        // 想用同一个号发弹幕的人，被拒之后得知道去哪儿改：指到「直播间互动」页上的那个选项
+        assertTrue(speaker.notice().get().contains("直播间互动")
+                        && speaker.notice().get().contains("发弹幕用哪个账号")
+                        && speaker.notice().get().contains("和监听直播间用的同一个账号"),
+                "拒绝的文案没有指路到「发弹幕用哪个账号」那个选项: " + speaker.notice().get());
         assertTrue(speaker.pendingQrCodeContent().isEmpty(), "被拒之后不该再摆着那张码");
         assertFalse(new BilibiliSpeakerLoginHealthProbe(speaker).active(), "被拒的那次不算登录过");
     }

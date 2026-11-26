@@ -489,6 +489,9 @@ class ConfigurationConsistencyTest {
         contributors.add(new BilibiliRuntimeAppliers());
         contributors.addAll(loadOptionalContributor(RuntimeConfigurationApplierContributor.class,
                 "org.frostnova.nova.adapter.onebot.config.OneBotRuntimeAppliers"));
+        // 直播间互动插件的弹幕三项：与它的配置项同进同出，插件没产物时两边都不在分母里
+        contributors.addAll(loadOptionalContributor(RuntimeConfigurationApplierContributor.class,
+                "org.frostnova.nova.interact.config.InteractRuntimeAppliers"));
         return contributors;
     }
 
