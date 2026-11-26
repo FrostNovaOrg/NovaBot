@@ -76,6 +76,35 @@ class QqAlertChannelTest {
     }
 
     @Test
+    @DisplayName("告警投递时切换收件人，消息落进无人取件的外发会话")
+    void changingTheRecipientCannotSendAnExcludedAlertToTheOutbox() {
+        var properties = properties(PushTargetType.GROUP.getCode(), 12345L);
+        var sender = mock(NovaMessageSender.class);
+        var senders = mock(NovaSenderService.class);
+        when(senders.getSender("qq-onebot")).thenAnswer(invocation -> {
+            properties.getAlert().setPlatform("outbox");
+            return Optional.of(new Sender());
+        });
+        var connections = new OneBotConnectionState();
+        markOnline(connections);
+        var channel = new QqAlertChannel(properties, sender, senders, connections);
+        var results = new ArrayList<AlertChannel.SendResult>();
+
+        assertFalse(channel.routesTo("outbox"));
+        channel.sendReporting("外发箱取件告警", "待发通知等待过久", "outbox", results::add);
+        var captured = ArgumentCaptor.forClass(Message.class);
+        verify(sender).sendAlert(captured.capture());
+        assertEquals("qq-onebot", captured.getValue().getPlatform());
+
+        assertTrue(channel.routesTo("outbox"));
+        channel.sendReporting("外发箱取件告警", "取件已恢复", "outbox", results::add);
+        assertEquals(1, results.size());
+        assertEquals(AlertChannel.SendResult.Status.BLOCKED, results.get(0).status());
+        verify(senders, never()).getSender("outbox");
+        verifyNoMoreInteractions(sender);
+    }
+
+    @Test
     @DisplayName("配置完整且类型合法时应判定为可用")
     void shouldBeAvailableWithValidConfiguration() {
         OneBotAdapterPluginProperties properties = properties(PushTargetType.FRIEND.getCode(), 10000L);

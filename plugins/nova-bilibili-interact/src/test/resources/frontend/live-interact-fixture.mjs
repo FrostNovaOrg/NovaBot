@@ -50,9 +50,15 @@ let state = {
   rooms: [{uid: '501', name: '示例主播', roomId: '1001'}, {uid: '502', name: '另一位', roomId: '1002'}],
   minInterval: 3, pauseMinutes: 5, defaultLimit: 20,
 };
-const blankSettings = {enabled: false, perMinute: 6, features: {}, plans: []};
+const defaultThanksTemplates = {gift: '感谢 {用户} 赠送的 {礼物}', membership: '感谢 {用户} 开通{等级}',
+  superChat: '感谢 {用户} 的醒目留言', follow: '感谢 {用户} 的关注', share: '感谢 {用户} 的分享直播间'};
+const defaultWelcomeTemplates = {guardWelcome: '欢迎{等级} {用户} 进入直播间', listedWelcome: '欢迎 {用户} 进入直播间'};
+const blankSettings = {welcome: {minimumLevel: 'CAPTAIN', guardTemplate: '', listedTemplate: '', people: []},enabled: false, perMinute: 6, features: {}, plans: [], thanks: {
+  giftWindowSeconds: 8, giftIncludeFree: false, giftMinYuan: 0, followWindowSeconds: 30, shareWindowSeconds: 30, templates: {},
+}};
 const settingsByRoom = {};
 const calls = [];
+let thanksHistory = false;
 let release = null;
 let sendReply = {success: true, sent: true, message: '已发出：「你好」'};
 let valuesReplies = [];
@@ -61,7 +67,7 @@ globalThis.__api = async (path, options) => {
   if (path === '/interact/danmaku/state') return state;
   if (path.startsWith('/interact/danmaku/settings?uid=')) {
     const uid = path.split('=').pop();
-    return {success: true, settings: structuredClone(settingsByRoom[uid] || blankSettings)};
+    return {success: true, defaultThanksTemplates, defaultWelcomeTemplates, settings: structuredClone(settingsByRoom[uid] || blankSettings)};
   }
   if (path === '/interact/danmaku/settings') {
     const {uid, settings} = JSON.parse(options.body);
@@ -71,6 +77,12 @@ globalThis.__api = async (path, options) => {
   }
   if (path.startsWith('/interact/danmaku/history?')) {
     const params = new URLSearchParams(path.split('?')[1]);
+    if (thanksHistory) {
+      const rows = Object.keys({...defaultThanksTemplates, ...defaultWelcomeTemplates}).map(feature => ({
+        time: 1795680000000, text: '示例记录', feature, outcome: 'SENT', reason: '已发出',
+      }));
+      return {success: true, rows, total: rows.length, pageSize: 20};
+    }
     const filtered = params.get('outcome') === 'DROPPED';
     const text = filtered ? '迟到的弹幕' : params.get('page') === '2' ? '上一页的试发' : '第一条';
     return {success: true, rows: [{time: 1795680000000, text, feature: filtered ? 'timed' : 'test',
@@ -239,6 +251,77 @@ byId('li-outcome').value = 'DROPPED';
 byId('li-outcome').dispatchEvent({type: 'change'});
 await flush();
 check('筛选后回第一页并显示原因', byId('li-page').textContent.includes('1 / 1') && byId('li-history').textContent.includes('排队已满'));
+
+// 切换主播后预览用了试发房间的上限，或改了话术和免费礼物开关却没有保存。
+const thanksKeys = Object.keys(defaultThanksTemplates);
+check('五种答谢都有独立开关且默认关闭', thanksKeys.every(key => byId('li-' + key) && !byId('li-' + key).checked));
+if (byId('li-gift')) {
+  byId('li-enabled').checked = true;
+  byId('li-enabled').dispatchEvent({type: 'change'});
+  byId('li-room').value = '501';
+  byId('li-room').dispatchEvent({type: 'change'});
+  await flush();
+  check('预览显示当前设置房间的上限和默认话术', byId('li-gift-preview').textContent.includes('小花花x3')
+    && byId('li-gift-count').textContent.includes('30 字'));
+  byId('li-gift').checked = true;
+  byId('li-giftIncludeFree').checked = true;
+  byId('li-giftWindowSeconds').value = '5';
+  byId('li-follow-template').value = '谢谢{礼物}';
+  byId('li-follow-template').dispatchEvent({type: 'input'});
+  check('无效占位符不会被预览成能发送的话术', byId('li-follow-count').textContent.includes('不能使用')
+    && byId('li-follow-count').textContent.includes('{礼物}'));
+  byId('li-follow-template').value = '';
+  byId('li-follow-template').dispatchEvent({type: 'input'});
+  byId('li-gift-template').value = '😀'.repeat(31) + '{用户}';
+  byId('li-gift-template').dispatchEvent({type: 'input'});
+  check('修改话术立即按字符数显示拆条', byId('li-gift-count').textContent.includes('33 字')
+    && byId('li-gift-count').textContent.includes('2 条') && byId('li-gift-preview').textContent.endsWith('小明'));
+  byId('li-save').click();
+  await flush();
+  check('子选项、话术和开关只存到所选主播', settingsByRoom['502']?.features.gift
+    && settingsByRoom['502'].thanks.giftIncludeFree && settingsByRoom['502'].thanks.giftWindowSeconds === 5
+    && settingsByRoom['502'].thanks.templates.gift.endsWith('{用户}') && !settingsByRoom['501'].features.gift);
+}
+
+// 管理员在记录里分不清是哪一种答谢。
+thanksHistory = true;
+byId('li-outcome').value = '';
+byId('li-reload').click();
+await flush();
+check('五种答谢记录各有中文功能名', ['礼物答谢', '上舰答谢', '醒目留言答谢', '关注答谢', '分享答谢']
+  .every(label => byId('li-history').textContent.includes(label)));
+
+// 管理员配好了欢迎却发给另一房间，或长 UID 在浏览器里被舍入。
+check('三种新功能各有开关且默认关闭', ['guardWelcome', 'listedWelcome', 'pauseActivities']
+  .every(key => byId('li-' + key) && !byId('li-' + key).checked));
+check('免登录的识别限制写在欢迎设置里', section.textContent.includes('监听账号') && section.textContent.includes('可能不起作用'));
+check('两种欢迎记录各有中文名', ['欢迎大航海进房', '欢迎指定的人进房']
+  .every(label => byId('li-history').textContent.includes(label)));
+if (byId('li-person-add')) {
+  byId('li-person-add').click();
+  const person = () => section.querySelector('.li-person');
+  person().querySelector('.li-uid').value = '9007199254740993';
+  person().querySelector('.li-alias').value = '小红';
+  person().querySelector('.li-person-template').value = '欢迎{用户}';
+  byId('li-minimumLevel').value = 'COMMANDER';
+  byId('li-listedWelcome').checked = true;
+  byId('li-pauseActivities').checked = true;
+  byId('li-guardWelcome-template').value = '{主播}欢迎{等级}{用户}';
+  byId('li-guardWelcome-template').dispatchEvent({type: 'input'});
+  check('欢迎预览使用所选房间的名字和字数上限', byId('li-guardWelcome-preview').textContent.includes('另一位欢迎')
+    && byId('li-guardWelcome-count').textContent.includes('30 字'));
+  byId('li-save').click();
+  await flush();
+  const room = settingsByRoom['502'];
+  check('完整名单和子选项随所选房间保存', room.welcome.people[0]?.uid === '9007199254740993'
+    && room.welcome.people[0]?.alias === '小红' && room.welcome.people[0]?.template === '欢迎{用户}'
+    && room.welcome.minimumLevel === 'COMMANDER' && room.features.listedWelcome && room.features.pauseActivities
+    && !settingsByRoom['501'].features.listedWelcome);
+  person().querySelector('.li-person-remove').click();
+  byId('li-save').click();
+  await flush();
+  check('删掉的人不再留在名单里', !settingsByRoom['502'].welcome.people.length);
+}
 
 if (failures.length) {
   console.error('跑了 ' + checks + ' 格，红 ' + failures.length + ' 格');

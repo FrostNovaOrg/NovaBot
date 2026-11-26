@@ -75,21 +75,21 @@ public class HealthAlertMonitor {
      * 评估单个探针，必要时告警
      */
     private void evaluate(HealthProbe probe) {
+        long activation = probe.activationVersion();
         if (!probe.active()) {
             lastStates.forEach((key, state) -> {
-                if (state.probe == probe && lastStates.remove(key, state)) {
-                    state.stopped = true;
-                    clearFailureConvergence(key);
-                    alertService.resolve(key + ":恢复");
-                    alertService.discardProbeAlerts(state, memberKey(key, ""));
-                }
+                if (state.probe == probe) discardState(key, state);
             });
             return;
         }
 
         String key = probe.name();
-        HealthStatus status = probe.check();
-        ProbeState state = lastStates.computeIfAbsent(key, ignored -> new ProbeState(probe));
+        HealthStatus status = probe.checkForAlert();
+        ProbeState oldState = lastStates.get(key);
+        if (oldState != null && oldState.activation != activation) discardState(key, oldState);
+        ProbeState state = lastStates.computeIfAbsent(key, ignored -> new ProbeState(probe, activation));
+        if (!state.getAsBoolean()) return;
+        String excludedPlatform = probe.excludedAlertPlatform();
         HealthStatus.Level previous = state.level;
         Set<String> previousMembers = state.members;
         state.level = status.level();
@@ -101,7 +101,7 @@ public class HealthAlertMonitor {
                 // 收敛记录按级别各留一份，恢复时得全部清掉：漏掉哪一份，
                 // 恢复后再变回那个级别就会被旧记录压掉，错过第二次告警
                 clearFailureConvergence(key);
-                alertService.alert(key + ":恢复", "NovaBot 状态恢复：" + key, status.summary(), state);
+                alertService.alert(key + ":恢复", "NovaBot 状态恢复：" + key, status.summary(), state, excludedPlatform);
                 record(probe, status, previous);
             }
             return;
@@ -120,7 +120,7 @@ public class HealthAlertMonitor {
                 alertService.alertMembers(added, subject,
                         names -> content(memberSummary(names)
                                 + (status.memberCondition().isBlank() ? "" : "\n" + status.memberCondition()),
-                                status.advice()), state);
+                                status.advice()), state, excludedPlatform);
                 String summary = memberSummary(added.values());
                 log.warn("{} - {}", subject, summary);
                 record(probe, new HealthStatus(status.level(), summary, status.advice()), previous);
@@ -136,13 +136,22 @@ public class HealthAlertMonitor {
         String subject = "NovaBot 异常告警：" + key;
         String content = content(status.summary(), status.advice());
 
-        alertService.alert(alertKey(key, status.level()), subject, content, state);
+        alertService.alert(alertKey(key, status.level()), subject, content, state, excludedPlatform);
         if (!status.members().isEmpty()) {
             alertService.rememberMembers(status.members().keySet().stream()
                     .map(id -> memberKey(key, id)).toList());
         }
         log.warn("{} - {}", subject, status.summary());
         record(probe, status, previous);
+    }
+
+    private void discardState(String key, ProbeState state) {
+        if (lastStates.remove(key, state)) {
+            state.stopped = true;
+            clearFailureConvergence(key);
+            alertService.resolve(key + ":恢复");
+            alertService.discardProbeAlerts(state, memberKey(key, ""));
+        }
     }
 
     private void clearFailureConvergence(String key) {
@@ -155,18 +164,20 @@ public class HealthAlertMonitor {
 
     private static final class ProbeState implements BooleanSupplier {
         private final HealthProbe probe;
+        private final long activation;
         private HealthStatus.Level level;
         private Set<String> members = Set.of();
         private volatile boolean stopped;
 
-        private ProbeState(HealthProbe probe) {
+        private ProbeState(HealthProbe probe, long activation) {
             this.probe = probe;
+            this.activation = activation;
         }
 
         @Override
         public boolean getAsBoolean() {
             try {
-                return !stopped && probe.active();
+                return !stopped && probe.active() && probe.activationVersion() == activation;
             } catch (Exception e) {
                 return false;
             }

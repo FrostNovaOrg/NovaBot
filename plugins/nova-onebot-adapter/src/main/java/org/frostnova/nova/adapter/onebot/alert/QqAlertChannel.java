@@ -105,6 +105,11 @@ public class QqAlertChannel implements AlertChannel {
                 && (properties.channelDisabled() || messageSender.platformBlock(properties.getAlert().getPlatform(), occurredAt) != null);
     }
 
+    @Override
+    public boolean routesTo(String platform) {
+        return platform.equals(properties.getAlert().getPlatform());
+    }
+
     private boolean disabled() {
         return properties.channelDisabled() && properties.routesQqAlerts();
     }
@@ -112,7 +117,8 @@ public class QqAlertChannel implements AlertChannel {
     @Override
     public void send(String subject, String content) {
         if (disabled()) throw new AlertBlockedException(OneBotAdapterPluginProperties.NapCat.DISABLED_REASON);
-        String cannotSend = validateCanSend();
+        String platform = properties.getAlert().getPlatform();
+        String cannotSend = validateCanSend(platform);
         if (cannotSend != null) {
             throw new IllegalStateException(cannotSend);
         }
@@ -121,7 +127,7 @@ public class QqAlertChannel implements AlertChannel {
         // 入队走 sendAlert：静音时段照发——静音挡的是打扰，告警正是要叫人的那一条；
         // 全局开关关着时那边会抛出，让告警服务如实说「没发出去、为什么」并算作
         // 这一次的最终失败——不进重投队列，开关打开后也不补发
-        messagesOf(subject, content).forEach(messageSender::sendAlert);
+        messagesOf(platform, subject, content).forEach(messageSender::sendAlert);
     }
 
     /**
@@ -133,17 +139,27 @@ public class QqAlertChannel implements AlertChannel {
      */
     @Override
     public void sendReporting(String subject, String content, Consumer<SendResult> callback) {
+        sendReporting(subject, content, null, callback);
+    }
+
+    @Override
+    public void sendReporting(String subject, String content, String excludedPlatform, Consumer<SendResult> callback) {
+        String platform = properties.getAlert().getPlatform();
+        if (excludedPlatform != null && excludedPlatform.equals(platform)) {
+            callback.accept(SendResult.blocked("这条告警不能发往该推送平台"));
+            return;
+        }
         if (disabled()) {
             callback.accept(SendResult.blocked(OneBotAdapterPluginProperties.NapCat.DISABLED_REASON));
             return;
         }
-        String cannotSend = validateCanSend();
+        String cannotSend = validateCanSend(platform);
         if (cannotSend != null) {
             callback.accept(SendResult.failed(cannotSend));
             return;
         }
 
-        List<Message> messages = messagesOf(subject, content);
+        List<Message> messages = messagesOf(platform, subject, content);
         if (messages.isEmpty()) {
             callback.accept(SendResult.sent());
             return;
@@ -221,10 +237,7 @@ public class QqAlertChannel implements AlertChannel {
      * 先把原因说出来：否则「发一条测试」会说已经发出，日志页也会记成已报出。
      * @return 送不出去时给使用者看的原因；送得出去时为空
      */
-    private String validateCanSend() {
-        OneBotAdapterPluginProperties.Alert alert = properties.getAlert();
-        String platform = alert.getPlatform();
-
+    private String validateCanSend(String platform) {
         if (senderService.getSender(platform).isEmpty()) {
             return "没有找到推送平台「" + platform
                     + "」。请先到「连接」页添加这个机器人，再到「设置 → 告警」里把「发给谁」重新选一次。";
@@ -232,10 +245,10 @@ public class QqAlertChannel implements AlertChannel {
         return whyThisRobotCannotSend(platform);
     }
 
-    private List<Message> messagesOf(String subject, String content) {
+    private List<Message> messagesOf(String platform, String subject, String content) {
         OneBotAdapterPluginProperties.Alert alert = properties.getAlert();
         return Message.create(
-                alert.getPlatform(),
+                platform,
                 PushTargetType.of(alert.getType()),
                 alert.getNum(),
                 MessagePlaceholders.escapeExternalText(subject) + "\n" + MessagePlaceholders.escapeExternalText(content));

@@ -26,10 +26,11 @@ let pendingChoice = null;
 let sending = false;
 let selected = '';
 const limits = {};
-let limitAsked = '';
+const limitRequests = new Map();
 let settingsUid = '';
 let historyUid = '';
 let draft = null;
+let defaultTemplates = {};
 let settingsRequest = 0;
 let historyRequest = 0;
 let page = 1;
@@ -37,6 +38,20 @@ let settingsEdited = false;
 let savingSettings = false;
 const unknownSendResult = '没有收到 NovaBot 的发送结果，不确定有没有发出。请去发送记录或直播间确认。';
 const outcomes = {SENT: '已发出', NOT_SENT: '没发出', UNCERTAIN: '不确定', DROPPED: '已跳过'};
+const thanksKinds = {
+  gift: {label: '礼物答谢', extra: '{礼物}', window: 'giftWindowSeconds', min: 3, max: 60},
+  membership: {label: '上舰答谢', extra: '{等级}'},
+  superChat: {label: '醒目留言答谢'},
+  follow: {label: '关注答谢', extra: '{人数}', window: 'followWindowSeconds', min: 10, max: 120},
+  share: {label: '分享答谢', extra: '{人数}', window: 'shareWindowSeconds', min: 10, max: 120},
+};
+
+const welcomeKinds = {
+  guardWelcome: {label: '欢迎大航海进房', extra: '{等级}', template: 'guardTemplate'},
+  listedWelcome: {label: '欢迎指定的人进房', template: 'listedTemplate'},
+};
+const templateKinds = {...thanksKinds, ...welcomeKinds};
+const blankText = text => /^[\p{White_Space}\x1C-\x1F\uFEFF]*$/u.test(text);
 
 const part = id => root && root.querySelector('#' + id);
 
@@ -59,6 +74,18 @@ export function render(section) {
       .li-fields:disabled {opacity:.55}
       .li-plan {padding:12px;border:1px solid var(--line);border-radius:var(--r-ctl)}
       .li-plan legend {padding:0 5px;font-weight:600}
+      .li-thanks {min-width:0;margin:0;padding:12px;border:1px solid var(--line);border-radius:var(--r-ctl)}
+      .li-thanks legend {padding:0 5px;font-weight:600}
+      .li-thanks .li-row {margin-bottom:10px}
+      .li-thanks .li-row input[type=number] {max-width:10rem}
+      .li-template {display:grid;grid-template-columns:1fr 1fr;align-items:start;gap:8px 16px}
+      .li-template > * {min-width:0}
+      .li-people {display:grid;gap:12px;margin-block:12px}
+      .li-person {min-width:0;margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:var(--r-ctl)}
+      .li-person .li-row > label {flex:1 1 10rem}
+      .li-person button {margin-top:8px}
+      .li-example {border-inline-start:2px solid var(--line);padding-inline-start:10px}
+      .li-example p {white-space:pre-wrap}
       .li-row {display:flex;align-items:end;flex-wrap:wrap;gap:10px 16px}
       .li-row > label {min-width:0}
       .li-form label.li-check {display:flex;align-items:center;gap:8px}
@@ -96,6 +123,7 @@ export function render(section) {
       @media(max-width:680px) {
         .li-card {padding:12px}
         .li-actions button {width:100%}
+        .li-template {grid-template-columns:1fr}
       }
     </style>
     <div class="li-wrap">
@@ -131,6 +159,13 @@ export function render(section) {
               <label class="li-check"><input id="li-timed" type="checkbox">定时弹幕</label>
               <div class="li-fields" id="li-plans"></div>
               <div><button type="button" id="li-add">添加计划</button></div>
+              <div class="li-fields" id="li-thanks"></div>
+              <p class="hint">监听账号没登录时，平台可能遮住观众身份，两项进房欢迎都可能不起作用。</p>
+              <div class="li-fields" id="li-welcomes"></div>
+              <fieldset class="li-thanks"><legend><label class="li-check">
+                <input id="li-pauseActivities" type="checkbox">天选、红包期间暂停自动弹幕</label></legend>
+                <p class="hint">本房天选期间或红包开启后 60 秒内跳过自动弹幕，活动重叠时等到全部结束，试发照常。</p>
+              </fieldset>
             </fieldset>
             <div class="li-actions"><button type="button" class="primary" id="li-save">保存设置</button></div>
           </fieldset>
@@ -211,6 +246,7 @@ function draw() {
     + '　|　自动发弹幕：' + (active.join('、') || '全部关闭');
   const uid = fillRooms('li-settings-room', settingsUid);
   if (uid !== settingsUid || (!settingsEdited && !savingSettings)) readSettings(uid);
+  else drawPreviews();
   const removed = (state.historyRooms || []).filter(past => !rooms.some(room => room.uid === past.uid))
     .map(past => ({...past, name: past.name + ' · 已移除'}));
   const history = fillRooms('li-history-room', historyUid, [...rooms, ...removed]);
@@ -297,18 +333,21 @@ function drawCount() {
 }
 
 async function askLimit(uid) {
-  if (limitAsked === uid) return;
-  limitAsked = uid;
+  if (limitRequests.has(uid)) return;
+  const token = {};
+  limitRequests.set(uid, token);
+  let known;
   try {
     const res = await api('/interact/danmaku/limit?uid=' + encodeURIComponent(uid));
-    if (res && res.success) limits[uid] = {limit: res.limit, fromPlatform: !!res.fromPlatform};
-    else limits[uid] = {limit: state.defaultLimit || 20, fromPlatform: false};
+    if (res?.success) known = {limit: res.limit, fromPlatform: !!res.fromPlatform};
   } catch (e) {
-    limits[uid] = {limit: state.defaultLimit || 20, fromPlatform: false};
-  } finally {
-    if (limitAsked === uid) limitAsked = '';
+    // 使用状态接口提供的默认字数。
   }
+  if (limitRequests.get(uid) !== token) return;
+  limitRequests.delete(uid);
+  limits[uid] = known || {limit: state.defaultLimit || 20, fromPlatform: false};
   if (uid === selected) drawCount();
+  if (uid === settingsUid) drawPreviews();
 }
 
 function showResult(id, text, tone) {
@@ -387,6 +426,7 @@ async function choose(value) {
     saving = false;
     pendingChoice = null;
     Object.keys(limits).forEach(uid => delete limits[uid]);
+    limitRequests.clear();
     await load();
   }
 }
@@ -464,6 +504,8 @@ async function readSettings(uid) {
   draft = null;
   part('li-editor').disabled = true;
   part('li-plans').innerHTML = '';
+  part('li-thanks').innerHTML = '';
+  part('li-welcomes').innerHTML = '';
   showResult('li-settings-result', uid ? '正在读取设置…' : '请先添加一位主播。');
   if (!uid) return;
   try {
@@ -471,10 +513,13 @@ async function readSettings(uid) {
     if (mine !== settingsRequest) return;
     if (!res?.success) throw new Error(res?.message || '读取失败');
     draft = res.settings;
+    defaultTemplates = {...res.defaultThanksTemplates, ...res.defaultWelcomeTemplates};
+    part('li-pauseActivities').checked = !!draft.features.pauseActivities;
     part('li-enabled').checked = draft.enabled;
     part('li-per-minute').value = draft.perMinute;
     part('li-timed').checked = !!draft.features.timed;
     drawPlans();
+    drawFeatures();
     enableFields();
     part('li-editor').disabled = false;
     showResult('li-settings-result', '');
@@ -509,10 +554,168 @@ function drawPlans() {
   part('li-add').disabled = draft.plans.length >= 10;
 }
 
+function templateEditor(key, kind) {
+  return `<div class="li-template">
+    <label>话术<input id="li-${key}-template" type="text" autocomplete="off">
+      <small class="li-count">可用 {用户} {主播}${kind.extra ? ' ' + kind.extra : ''}</small></label>
+    <div class="li-example"><small class="li-count">预览</small>
+      <p id="li-${key}-preview"></p><small class="li-count" id="li-${key}-count"></small></div></div>`;
+}
+
+function featureCard(key, kind, options = '', after = '') {
+  return `<fieldset class="li-thanks">
+    <legend><label class="li-check"><input id="li-${key}" type="checkbox">${kind.label}</label></legend>
+    ${options}${templateEditor(key, kind)}${after}</fieldset>`;
+}
+
+function drawFeatures() {
+  part('li-thanks').innerHTML = Object.entries(thanksKinds).map(([key, kind]) => {
+    const windowField = kind.window ? `<label>合并窗口（${kind.min}–${kind.max} 秒）
+      <input id="li-${kind.window}" type="number" min="${kind.min}" max="${kind.max}"></label>` : '';
+    const giftFields = key === 'gift' ? `<label>最低合计金额（元）
+      <input id="li-giftMinYuan" type="number" min="0" step="any"></label>
+      <label class="li-check"><input id="li-giftIncludeFree" type="checkbox">答谢免费礼物</label>` : '';
+    return featureCard(key, kind, windowField ? '<div class="li-row">' + windowField + giftFields + '</div>' : '');
+  }).join('');
+
+  const minimum = `<div class="li-row"><label>从哪一级起欢迎<select id="li-minimumLevel">
+    <option value="CAPTAIN">舰长及以上</option><option value="COMMANDER">提督及以上</option>
+    <option value="GOVERNOR">只欢迎总督</option></select></label></div>`;
+  const people = `<div class="li-people" id="li-people"></div>
+    <button type="button" id="li-person-add" class="ghost">添加观众</button> <small class="li-count">最多 50 人</small>`;
+  part('li-welcomes').innerHTML = featureCard('guardWelcome', welcomeKinds.guardWelcome, minimum)
+    + featureCard('listedWelcome', welcomeKinds.listedWelcome, '', people);
+  part('li-minimumLevel').value = draft.welcome.minimumLevel;
+  part('li-minimumLevel').addEventListener('change', () => drawPreview('guardWelcome'));
+  part('li-person-add').addEventListener('click', () => {
+    if (draft.welcome.people.length >= 50) return;
+    collectPeople();
+    draft.welcome.people.push({uid: '', alias: '', template: ''});
+    drawPeople();
+    markDirty();
+  });
+  for (const [key, kind] of Object.entries(templateKinds)) {
+    part('li-' + key).checked = !!draft.features[key];
+    const template = part('li-' + key + '-template');
+    template.placeholder = defaultTemplates[key];
+    template.value = (kind.template ? draft.welcome[kind.template] : draft.thanks.templates[key]) || '';
+    template.addEventListener('input', () => {
+      drawPreview(key);
+      if (key === 'listedWelcome') drawPeoplePreviews();
+    });
+    if (kind.window) part('li-' + kind.window).value = draft.thanks[kind.window];
+  }
+  part('li-giftMinYuan').value = draft.thanks.giftMinYuan;
+  part('li-giftIncludeFree').checked = draft.thanks.giftIncludeFree;
+  drawPeople();
+  drawPreviews();
+}
+
+function drawPeople() {
+  const box = part('li-people');
+  box.innerHTML = draft.welcome.people.map((_, i) => `<fieldset class="li-person"><legend>第 ${i + 1} 行</legend>
+    <div class="li-row"><label>UID<input class="li-uid" type="text" inputmode="numeric" autocomplete="off"></label>
+      <label>称呼（选填）<input class="li-alias" type="text" placeholder="使用平台名字"></label></div>
+    <div class="li-template"><label>单独话术（选填）<input class="li-person-template" placeholder="沿用上方话术"></label>
+      <div class="li-example"><small class="li-count">预览</small>
+        <p class="li-person-preview"></p><small class="li-count li-person-count"></small></div></div>
+    <button type="button" class="li-person-remove ghost">删除观众</button></fieldset>`).join('');
+  box.querySelectorAll('.li-person').forEach((row, i) => {
+    const person = draft.welcome.people[i];
+    row.querySelector('.li-uid').value = person.uid;
+    row.querySelector('.li-alias').value = person.alias;
+    row.querySelector('.li-person-template').value = person.template;
+    row.addEventListener('input', () => drawPersonPreview(row));
+    row.querySelector('.li-person-remove').addEventListener('click', () => {
+      collectPeople();
+      draft.welcome.people.splice(i, 1);
+      drawPeople();
+      markDirty();
+    });
+    drawPersonPreview(row);
+  });
+  part('li-person-add').disabled = draft.welcome.people.length >= 50;
+}
+
+function collectPeople() {
+  draft.welcome.people = Array.from(part('li-people').querySelectorAll('.li-person'), row => ({
+    uid: row.querySelector('.li-uid').value,
+    alias: row.querySelector('.li-alias').value,
+    template: row.querySelector('.li-person-template').value,
+  }));
+}
+
+function drawPreviews() {
+  if (!draft) return;
+  for (const key of Object.keys(templateKinds)) drawPreview(key);
+  drawPeoplePreviews();
+  if (!limits[settingsUid]) askLimit(settingsUid);
+}
+
+function drawPeoplePreviews() {
+  part('li-people').querySelectorAll('.li-person').forEach(drawPersonPreview);
+}
+
+function drawPersonPreview(row) {
+  const alias = row.querySelector('.li-alias').value;
+  const chars = [...alias];
+  const viewer = blankText(alias) ? '小明' : chars.length > 10 ? chars.slice(0, 10).join('') + '…' : alias;
+  const override = row.querySelector('.li-person-template').value;
+  showPreview('listedWelcome', blankText(override) ? part('li-listedWelcome-template').value : override, viewer,
+    row.querySelector('.li-person-preview'), row.querySelector('.li-person-count'));
+}
+
+function drawPreview(key) {
+  const viewer = key === 'follow' || key === 'share' ? '小明、小红等 3 人' : '小明';
+  showPreview(key, part('li-' + key + '-template').value, viewer, part('li-' + key + '-preview'), part('li-' + key + '-count'));
+}
+
+function showPreview(key, override, viewer, output, counter) {
+  const template = blankText(override) ? defaultTemplates[key] : override;
+  const ranks = {CAPTAIN: '舰长', COMMANDER: '提督', GOVERNOR: '总督'};
+  const fields = {'用户': viewer, '主播': state.rooms.find(room => room.uid === settingsUid)?.name || '',
+    '礼物': '小花花x3', '等级': key === 'guardWelcome' ? ranks[part('li-minimumLevel').value] : '舰长', '人数': '3'};
+  let invalid = '';
+  const preview = template.replace(/\{([^{}]*)}/g, (token, field) => {
+    if (field === '用户' || field === '主播' || token === templateKinds[key].extra) return fields[field];
+    invalid = token;
+    return token;
+  });
+  output.textContent = preview;
+  counter.classList.toggle('over', !!invalid);
+  if (invalid) {
+    counter.textContent = templateKinds[key].label + '不能使用占位符 ' + invalid;
+    return;
+  }
+  const count = lengthOf(preview);
+  const known = limits[settingsUid];
+  let detail = '正在查房间字数上限…';
+  if (known) {
+    const parts = Math.ceil(count / known.limit);
+    const split = parts <= 1 ? '一条发完' : parts > 3 ? '拆成 3 条，末尾省略' : '拆成 ' + parts + ' 条';
+    detail = '每条最多 ' + known.limit + ' 字' + (known.fromPlatform ? '' : '（估算）') + ' · ' + split;
+  }
+  counter.textContent = count + ' 字 · ' + detail;
+}
+
 function collectDraft() {
   draft.enabled = !!part('li-enabled').checked;
   draft.perMinute = Number(part('li-per-minute').value);
-  draft.features = {...draft.features, timed: !!part('li-timed').checked};
+  draft.features.timed = !!part('li-timed').checked;
+  for (const [key, kind] of Object.entries(thanksKinds)) {
+    draft.features[key] = !!part('li-' + key).checked;
+    draft.thanks.templates[key] = part('li-' + key + '-template').value;
+    if (kind.window) draft.thanks[kind.window] = Number(part('li-' + kind.window).value);
+  }
+  for (const [key, kind] of Object.entries(welcomeKinds)) {
+    draft.features[key] = !!part('li-' + key).checked;
+    draft.welcome[kind.template] = part('li-' + key + '-template').value;
+  }
+  draft.welcome.minimumLevel = part('li-minimumLevel').value;
+  draft.features.pauseActivities = !!part('li-pauseActivities').checked;
+  collectPeople();
+  draft.thanks.giftMinYuan = Number(part('li-giftMinYuan').value);
+  draft.thanks.giftIncludeFree = !!part('li-giftIncludeFree').checked;
   part('li-plans').querySelectorAll('.li-plan').forEach((row, i) => {
     Object.assign(draft.plans[i], {
       enabled: !!row.querySelector('.li-plan-on').checked,
@@ -564,7 +767,7 @@ async function readHistory() {
     const pages = Math.max(1, Math.ceil(res.total / res.pageSize));
     if (page > pages) { page = pages; return readHistory(); }
     box.innerHTML = res.rows.map(r => '<article class="li-record"><small>'
-      + esc(new Date(r.time).toLocaleString()) + ' · ' + esc(r.feature === 'test' ? '试发' : r.feature === 'timed' ? '定时弹幕' : r.feature)
+      + esc(new Date(r.time).toLocaleString()) + ' · ' + esc(r.feature === 'test' ? '试发' : r.feature === 'timed' ? '定时弹幕' : templateKinds[r.feature]?.label || r.feature)
       + '</small><p>' + esc(r.text) + '</p><small>' + esc(outcomes[r.outcome]) + (r.reason && r.reason !== outcomes[r.outcome]
         ? ' · ' + esc(r.reason) : '') + '</small></article>').join('') || '没有符合条件的记录。';
     part('li-page').textContent = '第 ' + page + ' / ' + pages + ' 页 · 共 ' + res.total + ' 条';

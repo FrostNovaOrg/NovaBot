@@ -36,6 +36,7 @@ class OutboxRecordControllerTest {
     private final ConfigUiOperationStore audit = mock(ConfigUiOperationStore.class);
     private Instant now = Instant.parse("2026-01-12T10:00:00Z");
     @TempDir Path directory;
+    private final OutboxSettings settings = new OutboxSettings();
     private OutboxService service;
     private long conversation;
     private MockMvc mvc;
@@ -47,7 +48,7 @@ class OutboxRecordControllerTest {
         when(clock.getZone()).thenReturn(ZoneOffset.UTC);
         when(clock.instant()).thenAnswer(call -> now);
         when(clock.millis()).thenAnswer(call -> now.toEpochMilli());
-        service = new OutboxService(database, new OutboxSettings(), clock, event -> {});
+        service = new OutboxService(database, settings, clock, event -> {});
         var controller = new OutboxRecordController(service);
         var platforms = mock(DataSourceServiceRegistry.class);
         when(platforms.platforms()).thenReturn(List.of("live", "other"));
@@ -100,6 +101,23 @@ class OutboxRecordControllerTest {
         assertArrayEquals(expected.getContentAsByteArray(), actual.getContentAsByteArray());
         assertEquals(expected.getContentType(), actual.getContentType());
         read("records/" + mine + "/images/0", member).andExpect(status().isNotFound());
+    }
+
+    @Test @DisplayName("外发概况把其他主播的取件告警显示给成员")
+    void membersKeepTheirExistingSummaryScope() throws Exception {
+        settings.setPickupAlertEnabled(true);
+        put(other, "别人的通知");
+        service.listForDevice(PENDING, 0, 1, other::equals);
+        String lastPickupAt = now.toString();
+        now = now.plus(Duration.ofMinutes(5));
+        read("summary", admin).andExpect(status().isOk())
+                .andExpect(jsonPath("$.counts.PENDING").value(1))
+                .andExpect(jsonPath("$.lastPickupAt").value(lastPickupAt))
+                .andExpect(jsonPath("$.pickupAlert").value(true));
+        read("summary", member).andExpect(status().isOk())
+                .andExpect(jsonPath("$.counts.PENDING").value(0))
+                .andExpect(jsonPath("$.lastPickupAt").doesNotHaveJsonPath())
+                .andExpect(jsonPath("$.pickupAlert").doesNotHaveJsonPath());
     }
 
     @Test @DisplayName("跨天的异常结果漏计、已经超过一天的还在概况里，或成员数到了别人的异常")

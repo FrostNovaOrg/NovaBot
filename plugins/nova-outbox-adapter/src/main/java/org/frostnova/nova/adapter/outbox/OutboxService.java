@@ -6,6 +6,7 @@ import org.frostnova.nova.adapter.outbox.OutboxRecord.Segment;
 import org.frostnova.nova.adapter.outbox.OutboxRecord.SegmentType;
 import org.frostnova.nova.adapter.outbox.OutboxRecord.Status;
 import org.frostnova.nova.adapter.outbox.OutboxRecord.Streamer;
+import org.frostnova.nova.core.health.HealthStatus;
 import org.frostnova.nova.core.model.Message.PushKind;
 import org.frostnova.nova.core.model.MessagePlaceholders;
 import org.frostnova.nova.core.timeline.TimelineEvent;
@@ -23,9 +24,11 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -40,11 +43,21 @@ import static org.frostnova.nova.adapter.outbox.OutboxRecord.Status.*;
 public class OutboxService {
     static final String NO_LOCAL_IMAGE = "这段没有本地图片";
     private static final Pattern NEXT = Pattern.compile(Pattern.quote(MessagePlaceholders.NEXT));
+    private static final DateTimeFormatter PICKUP_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss XXX");
+    private static final HealthStatus NO_OVERDUE_PICKUP = HealthStatus.ok("当前没有等待过久的待发通知");
+    private static final String PICKUP_ADVICE = "请检查取件设备和取件程序，在控制台「外发箱」页查看通知状态。";
     private final OutboxDatabase database;
     private final OutboxSettings settings;
     private final Clock clock;
     private final TimelineWriter timeline;
     private boolean needsImageCleanup = true;
+    private Pickup lastPickup;
+    private volatile PickupHealth pickupHealth = new PickupHealth(-1, null, NO_OVERDUE_PICKUP);
+
+    private record Pickup(Instant at) {}
+    private record PickupIssue(Pickup pickupAtDetection, String lastBacklog) {}
+    private record PickupHealth(long activation, PickupIssue issue, HealthStatus status) {}
+    record ConsoleSummary(Map<Status, Long> counts, Instant lastPickupAt, boolean pickupAlert) {}
 
     OutboxService(OutboxDatabase database, OutboxSettings settings, Clock clock, TimelineWriter timeline) {
         this.database = database;
@@ -124,6 +137,12 @@ public class OutboxService {
         return page(status, afterId, limit, visible, false);
     }
 
+    synchronized List<OutboxRecord> listForDevice(Status status, long afterId, int limit, Predicate<Streamer> visible) {
+        var rows = list(status, afterId, limit, visible);
+        if (status == PENDING) lastPickup = new Pickup(clock.instant());
+        return rows;
+    }
+
     /** 编号倒序，beforeId 为上一页末条编号，首页用 0。 */
     public synchronized List<OutboxRecord> newest(Status status, long beforeId, int limit, Predicate<Streamer> visible) {
         return page(status, beforeId, limit, visible, true);
@@ -154,11 +173,15 @@ public class OutboxService {
 
     /** 当前待发、发送中，以及最近一天进入异常结果的可见记录。聚合时无需读正文。 */
     synchronized Map<Status, Long> summary(Predicate<Streamer> visible) {
+        return summary(visible, false).counts();
+    }
+
+    synchronized ConsoleSummary summary(Predicate<Streamer> visible, boolean includePickup) {
         Instant now = clock.instant();
         advance(now);
-        return database.transaction(db -> {
-            var counts = new EnumMap<Status, Long>(Status.class);
-            for (var status : List.of(PENDING, SENDING, FAILED, UNKNOWN, EXPIRED)) counts.put(status, 0L);
+        var counts = database.transaction(db -> {
+            var result = new EnumMap<Status, Long>(Status.class);
+            for (var status : List.of(PENDING, SENDING, FAILED, UNKNOWN, EXPIRED)) result.put(status, 0L);
             try (var sql = prepare(db, """
                     SELECT status, streamer_platform, streamer_uid, streamer_name, count(*) AS total FROM records
                     WHERE status IN ('PENDING','SENDING') OR (status IN ('FAILED','UNKNOWN','EXPIRED') AND
@@ -169,11 +192,75 @@ public class OutboxService {
                  var rows = sql.executeQuery()) {
                 while (rows.next()) {
                     if (visible.test(streamer(rows))) {
-                        counts.merge(Status.valueOf(rows.getString("status")), rows.getLong("total"), Long::sum);
+                        result.merge(Status.valueOf(rows.getString("status")), rows.getLong("total"), Long::sum);
                     }
                 }
             }
-            return counts;
+            return result;
+        });
+        if (!includePickup) return new ConsoleSummary(counts, null, false);
+        boolean alert = refreshPickupHealth(now).level() != HealthStatus.Level.OK;
+        return new ConsoleSummary(counts, lastPickup == null ? null : lastPickup.at(), alert);
+    }
+
+    HealthStatus pickupHealth() {
+        var last = pickupHealth;
+        return settings.isPickupAlertEnabled() && settings.pickupAlertActivation() == last.activation()
+                ? last.status() : NO_OVERDUE_PICKUP;
+    }
+
+    synchronized HealthStatus refreshPickupHealth() {
+        return refreshPickupHealth(clock.instant());
+    }
+
+    private HealthStatus refreshPickupHealth(Instant now) {
+        var alert = settings.pickupAlert();
+        if (!alert.enabled()) return NO_OVERDUE_PICKUP;
+        String backlog = overdueBacklog(now, alert.minutes());
+        var previous = pickupHealth;
+        PickupIssue issue = previous.activation() == alert.activation() ? previous.issue() : null;
+
+        String pickup = lastPickup == null ? "启动后还没有来取过"
+                : "最近一次取件：" + PICKUP_TIME.format(lastPickup.at().atZone(clock.getZone()));
+        HealthStatus status;
+        if (backlog != null) {
+            issue = new PickupIssue(issue == null ? lastPickup : issue.pickupAtDetection(), backlog);
+            status = HealthStatus.degraded(backlog + "。" + pickup + "。", PICKUP_ADVICE);
+        } else if (issue != null && issue.pickupAtDetection() == lastPickup) {
+            status = HealthStatus.degraded("当前没有等待过久的待发通知，尚未确认取件恢复。上次检查时"
+                    + issue.lastBacklog() + "。" + pickup + "。", PICKUP_ADVICE);
+        } else {
+            issue = null;
+            status = HealthStatus.ok("当前没有等待过久的待发通知。" + pickup + "。可在控制台「外发箱」页查看。");
+        }
+        pickupHealth = new PickupHealth(alert.activation(), issue, status);
+        return pickupHealth();
+    }
+
+    /** 只读仍可取件的待发记录，按会话聚合，不读取通知内容。 */
+    private String overdueBacklog(Instant now, int minutes) {
+        return database.transaction(db -> {
+            long count = 0;
+            long oldest = Long.MAX_VALUE;
+            var names = new LinkedHashSet<String>();
+            try (var sql = prepare(db, """
+                    SELECT c.name, COUNT(*) AS total, MIN(COALESCE(r.requeued_at,r.created_at)) AS oldest
+                    FROM records r JOIN conversations c ON r.conversation_id=c.id
+                    WHERE r.status='PENDING' AND c.enabled=1
+                        AND COALESCE(r.requeued_at,r.created_at)<=? AND r.expires_at>? AND r.created_at>?
+                    GROUP BY c.id ORDER BY c.id
+                    """, now.minus(Duration.ofMinutes(minutes)).toEpochMilli(), now.toEpochMilli(),
+                    now.minus(settings.getRetention()).toEpochMilli());
+                 var rows = sql.executeQuery()) {
+                while (rows.next()) {
+                    count += rows.getLong("total");
+                    oldest = Math.min(oldest, rows.getLong("oldest"));
+                    names.add(rows.getString("name"));
+                }
+            }
+            if (count == 0) return null;
+            long waited = Duration.between(Instant.ofEpochMilli(oldest), now).toMinutes();
+            return "有 " + count + " 条待发通知等待过久，最早一条已等 " + waited + " 分钟，外发会话：" + String.join("、", names);
         });
     }
 
@@ -219,6 +306,17 @@ public class OutboxService {
 
     public synchronized OutboxRecord claim(long id, String claimant) {
         return claim(id, claimant, streamer -> true);
+    }
+
+    synchronized OutboxRecord claimForDevice(long id, String claimant, Predicate<Streamer> visible) {
+        try {
+            var record = claim(id, claimant, visible);
+            lastPickup = new Pickup(clock.instant());
+            return record;
+        } catch (StatusConflict conflict) {
+            lastPickup = new Pickup(clock.instant());
+            throw conflict;
+        }
     }
 
     synchronized OutboxRecord claim(long id, String claimant, Predicate<Streamer> visible) {
@@ -271,8 +369,9 @@ public class OutboxService {
             var record = require(db, id);
             expect(record, FAILED, UNKNOWN, EXPIRED);
             update(db, """
-                    UPDATE records SET status='PENDING', expires_at=?, claimant=NULL, claimed_at=NULL, note=NULL, result_at=NULL WHERE id=?
-                    """, now.plus(settings.ttl(record.kind())).toEpochMilli(), id);
+                    UPDATE records SET status='PENDING', expires_at=?, requeued_at=?,
+                        claimant=NULL, claimed_at=NULL, note=NULL, result_at=NULL WHERE id=?
+                    """, now.plus(settings.ttl(record.kind())).toEpochMilli(), clock.millis(), id);
             return require(db, id);
         });
     }
@@ -333,7 +432,12 @@ public class OutboxService {
     /** 启动后立即执行，此后定时处理无人访问的记录。读取和状态操作也会核对截止时刻。 */
     @Scheduled(fixedDelay = 60_000)
     public synchronized void maintain() {
-        advance(clock.instant());
+        Instant now = clock.instant();
+        advance(now);
+        // 启动时可能已有待发积压，先看一遍，以免它在首次告警检查前过期。
+        if (settings.isPickupAlertEnabled() && pickupHealth.activation() != settings.pickupAlertActivation()) {
+            refreshPickupHealth(now);
+        }
         if (needsImageCleanup) {
             database.transaction(db -> {
                 var kept = new HashSet<String>();

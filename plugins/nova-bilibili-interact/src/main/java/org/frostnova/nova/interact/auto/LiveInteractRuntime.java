@@ -3,13 +3,30 @@ package org.frostnova.nova.interact.auto;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
+import org.frostnova.nova.bilibili.enums.RoomGuardLevel;
+import org.frostnova.nova.bilibili.event.live.BilibiliCaptainEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliCommanderEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliDanmuEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliEmojiEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliEnterRoomEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliFollowEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliFreeGiftEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliGovernorEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliGuardEntryEffectEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOffEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliLiveOnEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliLotteryEndEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliLotteryStartEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliPaidGiftEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliRandomGiftEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliRedPocketEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliShareEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliSuperChatEvent;
 import org.frostnova.nova.core.event.datasource.base.NovaDataSourceChangeEvent;
 import org.frostnova.nova.core.event.datasource.change.NovaDataSourceRemoveEvent;
+import org.frostnova.nova.core.event.live.base.NovaLiveGiftEvent;
 import org.frostnova.nova.core.event.live.base.NovaLiveMessageEvent;
+import org.frostnova.nova.core.event.live.common.MembershipEvent;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.interact.danmaku.LiveDanmakuService;
@@ -96,5 +113,57 @@ public class LiveInteractRuntime {
     @EventListener({BilibiliDanmuEvent.class, BilibiliEmojiEvent.class})
     public void danmaku(NovaLiveMessageEvent event) {
         queue.viewer(event);
+    }
+
+    @EventListener
+    public void enter(BilibiliEnterRoomEvent event) {
+        var viewer = event.getSender();
+        if (viewer != null) queue.welcome(event, viewer.getUid(), viewer.getUname(), event.getRoomGuardLevel());
+    }
+
+    @EventListener
+    public void entryEffect(BilibiliGuardEntryEffectEvent event) {
+        RoomGuardLevel level = RoomGuardLevel.fromLevel((long) event.getGuardType().getCode());
+        queue.welcome(event, event.getUid(), null, level);
+    }
+
+    @EventListener
+    public void lotteryStart(BilibiliLotteryStartEvent event) {
+        queue.activity(event, (activities, start) -> activities.lotteryStarted(event.getLotteryId(), start, event.getExpectedEnd()));
+    }
+
+    @EventListener
+    public void lotteryEnd(BilibiliLotteryEndEvent event) {
+        queue.activity(event, (activities, time) -> activities.lotteryEnded(event.getLotteryId()));
+    }
+
+    @EventListener
+    public void redPocket(BilibiliRedPocketEvent event) {
+        queue.activity(event, RoomActivities::redPocketStarted);
+    }
+
+    @EventListener({BilibiliPaidGiftEvent.class, BilibiliRandomGiftEvent.class, BilibiliFreeGiftEvent.class})
+    public void gift(NovaLiveGiftEvent event) {
+        queue.thank(ThanksKind.GIFT, event, event.getSender());
+    }
+
+    @EventListener({BilibiliCaptainEvent.class, BilibiliCommanderEvent.class, BilibiliGovernorEvent.class})
+    public void membership(MembershipEvent event) {
+        queue.thank(ThanksKind.MEMBERSHIP, event, event.getSender());
+    }
+
+    @EventListener
+    public void superChat(BilibiliSuperChatEvent event) {
+        queue.thank(ThanksKind.SUPER_CHAT, event, event.getSender());
+    }
+
+    @EventListener
+    public void follow(BilibiliFollowEvent event) {
+        queue.thank(ThanksKind.FOLLOW, event, event.getSender());
+    }
+
+    @EventListener
+    public void share(BilibiliShareEvent event) {
+        queue.thank(ThanksKind.SHARE, event, event.getSender());
     }
 }

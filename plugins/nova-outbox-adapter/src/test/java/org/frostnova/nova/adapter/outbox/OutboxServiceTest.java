@@ -273,6 +273,7 @@ class OutboxServiceTest {
         new OutboxDatabase(root).transaction(db -> {
             try (var sql = db.createStatement()) {
                 sql.execute("ALTER TABLE records DROP COLUMN result_at");
+                sql.execute("ALTER TABLE records DROP COLUMN requeued_at");
                 sql.execute("PRAGMA user_version=0");
             }
             return null;
