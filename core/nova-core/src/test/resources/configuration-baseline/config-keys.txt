@@ -4,7 +4,7 @@ novabot.assistant.api-format|java.lang.String|chat|模型接口收发请求的�
 novabot.assistant.base-url|java.lang.String|https://api.deepseek.com|模型接口的基础地址，NovaBot 会按接口格式补上请求路径。
 novabot.assistant.difficulty-model|java.lang.String||留空时用回答的模型。填写后仍使用同一个接口地址和密钥。判断难度这一小问按回答模型的单价记账。
 novabot.assistant.enabled|java.lang.Boolean|false|是否启用智能助手，默认关闭；启用还需要模型密钥和当前版本的配置者确认。
-novabot.assistant.excluded-uids|java.util.List<java.lang.Long>|<null>|拒绝名单中的观众编号；这些观众的原话、代号与占比不会发送给模型。
+novabot.assistant.excluded-uids|java.util.List<java.lang.Long>|[]|拒绝名单中的观众编号；这些观众的原话、代号与占比不会发送给模型。
 novabot.assistant.hard-thinking|java.lang.String|high|默认高。难题取这一档和「思考强度」中较高的一档。
 novabot.assistant.hard-timeout-seconds|java.lang.Integer|180|难题整问的限时，默认 180 秒。普通问题限时 55 秒。
 novabot.assistant.max-tool-calls|java.lang.Integer|6|一问最多执行的只读查数次数。
@@ -27,13 +27,13 @@ novabot.core.alert.webhook-headers|java.util.Map<java.lang.String,java.lang.Stri
 novabot.core.alert.webhook-method|java.lang.String|POST|Webhook 请求方式：POST 或 GET。POST 提交 JSON，GET 把标题与内容拼进查询串，适配 Bark 这类服务。
 novabot.core.alert.webhook-title-field|java.lang.String|title|Webhook JSON 里承载标题的字段名；各服务不统一（Server 酱用 title/desp），所以可配。
 novabot.core.alert.webhook-url|java.lang.String||Webhook 告警地址，留空不启用。它不依赖机器人链路——机器人掉线时恰恰需要它；适配 Bark、Server 酱、钉钉、飞书、Telegram。改完立即生效，不必重启。
-novabot.core.command.admins|java.util.List<java.lang.Long>|<null>|超级管理员账号，跨群生效。「禁用命令」这类操作只对管理员开放；群主与群管理员天生有权限，这里填的是额外名单。
+novabot.core.command.admins|java.util.List<java.lang.Long>|[]|超级管理员账号，跨群生效。「禁用命令」这类操作只对管理员开放；群主与群管理员天生有权限，这里填的是额外名单。
 novabot.core.config-ui.agreement.accepted-actor-record|java.lang.String||确认人与同意记录的对应信息，由程序保存。
 novabot.core.config-ui.agreement.accepted-actor|java.lang.String||同意协议的管理员显示名，留空表示旧记录未保存确认人；不参与协议有效性判断。
 novabot.core.config-ui.agreement.accepted-at|java.lang.String||同意协议的时间，ISO 格式，留空表示尚未同意；只作凭据，不参与任何判断。
 novabot.core.config-ui.agreement.accepted-by|java.lang.String||同意是从哪条通道点下的：password 是输过密码后同意，operator-token 是凭启动令牌进来后同意。留空表示说不出是谁点的，下次登录会再确认一次。
 novabot.core.config-ui.agreement.accepted-version|java.lang.Integer|0|已同意的协议版本号，0 表示尚未同意；协议改版后旧记录失效，会要求重新确认。
-novabot.core.config-ui.allow-ips|java.util.List<java.lang.String>|<null>|允许访问配置界面的来源 IP 白名单，支持精确 IP 与 CIDR 网段；默认仅放行本机回环地址。
+novabot.core.config-ui.allow-ips|java.util.List<java.lang.String>|[127.0.0.1/32, ::1/128]|允许访问配置界面的来源 IP 白名单，支持精确 IP 与 CIDR 网段；默认仅放行本机回环地址。
 novabot.core.config-ui.auth.idle-hours|java.lang.Integer|12|登录会话的闲置超时，单位：小时，多久没操作自动退出。
 novabot.core.config-ui.auth.lockout-minutes|java.lang.Integer|15|首次锁定的时长，单位：分钟，反复触发逐次翻倍。
 novabot.core.config-ui.auth.max-failures|java.lang.Integer|5|连续登录失败多少次后锁定该来源 IP，单位：次。
@@ -56,7 +56,7 @@ novabot.core.config-ui.update.enabled|java.lang.Boolean|true|是否检查新版�
 novabot.core.config-ui.update.source|java.lang.String|https://api.github.com/repos/FrostNovaOrg/NovaBot/releases/latest|新版信息的来源地址，默认指向发布仓的 latest release 接口；自建镜像时改这里。取不到时静默跳过，不变成控制台故障。
 novabot.core.datasource.json-auto-reload|java.lang.Boolean|true|JSON 文件发生变化时是否自动重载，仅使用 JSON 数据源时生效。
 novabot.core.datasource.json-path|java.lang.String|datasource.json|推送配置（JSON 文件）的路径；控制台读写的也是这个文件。
-novabot.core.event-stream.allowed-origins|java.util.List<java.lang.String>|<null>|浏览器页面来源列表。填写完整的 http 或 https 来源（协议、主机及可选端口），不带路径；默认空表。未携带 Origin 的本机程序照常连接。
+novabot.core.event-stream.allowed-origins|java.util.List<java.lang.String>|[]|浏览器页面来源列表。填写完整的 http 或 https 来源（协议、主机及可选端口），不带路径；默认空表。未携带 Origin 的本机程序照常连接。
 novabot.core.event-stream.buffer-size|java.lang.Integer|2000|断线回补的缓冲条数，单位：条，全部房间共用。房间多或热闹就调大，否则重连时会补不上；每条约数 KB，调大前先掂量内存。
 novabot.core.event-stream.enabled|java.lang.Boolean|false|是否启用事件输出。默认关闭；启用后只接受本机连接，流里有观众的昵称与消费金额，别暴露到公网。
 novabot.core.event-stream.handshake-timeout-ms|java.lang.Integer|10000|握手开始后等待连接建立的时间，单位：毫秒，默认 10000 毫秒。 正整数，修改后重启；零或负数使用默认值，填写文字、空值或超出整数范围的数时程序无法启动，日志会指出该键。
@@ -89,7 +89,7 @@ novabot.core.network.connect-timeout|java.lang.Integer|10|网络请求连接超�
 novabot.core.network.read-timeout|java.lang.Integer|60|网络请求读取超时时间，单位：秒。
 novabot.core.paint.auto-expand-height|java.lang.Integer|5000|画布不够用时一次扩展的高度，单位：像素；设得过大占内存，设得过小会频繁扩展拖慢速度。
 novabot.core.paint.extra-copyrights|java.util.List<org.frostnova.nova.core.model.TextWithStyle>|<null>|绘图底部附加的自定义版权信息。
-novabot.core.paint.fonts|java.util.List<java.lang.String>|<null>|绘图字体列表，每行一个：系统里的字体名，或以 .ttf 结尾的字体文件路径；靠前的优先。
+novabot.core.paint.fonts|java.util.List<java.lang.String>|[]|绘图字体列表，每行一个：系统里的字体名，或以 .ttf 结尾的字体文件路径；靠前的优先。
 novabot.core.push.at-all-daily-limit|java.lang.Integer|10|机器人账号每日最多 @全体成员 的次数，单位：次，0 或负数不限制，额度由该账号推送的全部会话共享。超额时平台会静默忽略——消息照发但 @ 不生效，所以这里先记账，超额改发普通消息。
 novabot.core.push.at-all-session-daily-limit|java.lang.Integer|20|单个群每日最多 @全体成员 的次数，单位：次，0 或负数不限制；与账号那份额度是两个维度，通常先撞到的是账号额度。
 novabot.core.push.enabled|java.lang.Boolean|true|全局推送开关。关闭后所有推送都会被丢弃，用于调试或临时静音。改完立即生效，不必重启。

@@ -64,6 +64,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
@@ -1208,8 +1209,24 @@ public class ConfigUiController {
      * @param body 待保存的键值
      * @return 保存结果，含改动项数、其中需重启的项数与它们的键名；键名不认得时回 400
      */
+    public ResponseEntity<JSONObject> save(Map<String, String> body) {
+        return save(body, false);
+    }
+
+    /**
+     * 保存配置值到 application.yml，见 {@link #save(Map)}
+     * <p>
+     * 有的取值能收，但存下去的后果使用者多半没想到（新的推送来源名单把本机挡在外面），
+     * 插件为它申报了「存之前先问一句」（{@link RuntimeConfigurationApplierContributor#saveConfirmations()}）。
+     * 没带 {@code confirmed=true} 时这一批一项都不写，回包里 {@code confirm} 一栏列出要问的话；
+     * 界面问过、使用者点了确定，再带着它原样送一次。
+     * @param body 待保存的键值
+     * @param confirmed 使用者已经答应了那几句问话
+     * @return 保存结果；要先问时 success 为 false、带 {@code confirm}，配置文件不动
+     */
     @PostMapping("/api/values")
-    public synchronized ResponseEntity<JSONObject> save(@RequestBody Map<String, String> body) {
+    public synchronized ResponseEntity<JSONObject> save(@RequestBody Map<String, String> body,
+            @RequestParam(name = "confirmed", defaultValue = "false") boolean confirmed) {
         JSONObject result = new JSONObject();
 
         // 界面拿到的机密项是占位值，原样送回来的就是没改过的。不剔除的话，
@@ -1296,6 +1313,24 @@ public class ConfigUiController {
             // 「本批未保存」说的是这一整批的下场，各条只说各条自己的毛病，整批只说一次
             result.put("message", String.join("；", outOfRange) + "；本批未保存");
             return ResponseEntity.badRequest().body(result);
+        }
+
+        // 写错的已在上面整批拒了；剩下的能收，但有几项存之前要先问一句。没问过就一项都不写
+        Map<String, String> questions = confirmed ? Map.of() : runtimeApplier.confirmationsFor(toValidate);
+        if (!questions.isEmpty()) {
+            Map<String, String> labels = labelResolver.getLabels();
+            JSONArray confirm = new JSONArray();
+            questions.forEach((key, question) -> {
+                JSONObject item = new JSONObject();
+                item.put("name", key);
+                item.put("title", labels.getOrDefault(key, key));
+                item.put("body", question);
+                confirm.add(item);
+            });
+            result.put("success", false);
+            result.put("confirm", confirm);
+            result.put("message", "未保存：有改动需要先确认");
+            return ResponseEntity.ok(result);
         }
 
         // 文件里写的与写回内存的是同一个值：内存里去掉了首尾空白、文件里却留着的话，

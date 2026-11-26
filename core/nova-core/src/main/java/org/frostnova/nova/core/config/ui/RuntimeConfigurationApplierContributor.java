@@ -62,4 +62,18 @@ public interface RuntimeConfigurationApplierContributor {
     default Map<String, Function<String, String>> valueValidators() {
         return Map.of();
     }
+
+    /**
+     * 存之前要先问一句的取值：配置项名 → 看这个值要不要问
+     * <p>
+     * 回 null 表示不用问，直接存；回一句话表示要问，这句话原样弹给保存的人，点了确定才写，
+     * 点了取消什么都不写。只拿已过了 {@link #valueValidators()} 的值来问：写错的值照旧整批拒绝，
+     * 不走这一问。同一条键被两方申报时，核心在合并时抛 {@link IllegalStateException}。
+     * <p>
+     * 默认空表，表示本插件的项都不用问。
+     * @return 键到「要不要问、问什么」，登记顺序
+     */
+    default Map<String, Function<String, String>> saveConfirmations() {
+        return Map.of();
+    }
 }
