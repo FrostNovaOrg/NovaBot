@@ -9,6 +9,24 @@ on:
 permissions:
   contents: read
 
+env:
+  # 两个任务的 Maven 下载都用同一套重试配置。遇到 429 或 5xx 时最多重试 5 次，
+  # 优先按 Retry-After 等待，缺少该响应头时依次等 5、10、15、20、25 秒。
+  # Resolver 按具体状态码匹配，逐个列出 5xx，续行保持整串为一个参数。
+  MAVEN_OPTS: "-Daether.connector.http.retryHandler.count=5
+    -Daether.connector.http.retryHandler.interval=5000
+    -Daether.connector.http.retryHandler.serviceUnavailable=429,\
+    500,501,502,503,504,505,506,507,508,509,\
+    510,511,512,513,514,515,516,517,518,519,\
+    520,521,522,523,524,525,526,527,528,529,\
+    530,531,532,533,534,535,536,537,538,539,\
+    540,541,542,543,544,545,546,547,548,549,\
+    550,551,552,553,554,555,556,557,558,559,\
+    560,561,562,563,564,565,566,567,568,569,\
+    570,571,572,573,574,575,576,577,578,579,\
+    580,581,582,583,584,585,586,587,588,589,\
+    590,591,592,593,594,595,596,597,598,599"
+
 jobs:
   build:
     name: 构建与测试
@@ -24,7 +42,16 @@ jobs:
         with:
           java-version: '17'
           distribution: temurin
-          cache: maven
+
+      # pom 摘要变动时，先取同系统、同架构下最近的存档，构建只补缺的依赖。
+      # 构建成功后按新摘要存档。沿用已有的键格式和绝对路径，切换后也能取到旧存档。
+      - name: 缓存 Maven 依赖
+        uses: actions/cache@v5
+        with:
+          path: /home/runner/.m2/repository
+          key: setup-java-${{ runner.os }}-x64-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            setup-java-${{ runner.os }}-x64-maven-
 
       # 控制台前端是不经构建的 ES module，node 是它唯一的可执行环境。设置页那四组判定
       # 与登录页那八格显隐矩阵都由 JUnit 拉起 node 跑夹具，PATH 上没有它这两格就红
@@ -85,11 +112,9 @@ jobs:
     #     退出，哪怕 CI 稍后转绿。别的步骤真卡住时，27 分钟也让这个 job 先于它出
     #     结论（构建 job 的上限另见文件开头那段）。
     timeout-minutes: 27
-    # 漏洞库是一套随漏洞数据增长的 SQL 库，放在 runner 的用户主目录下、仓库之外。
-    # 插件说明里查不到 dataDirectory 的默认值：不显式指定，库就落在插件的隐式位置，
-    # 没法给它配专用缓存——setup-java 那条 maven 缓存的键跟着 pom 摘要走，pom 一改
-    # 就换键，混在里面的漏洞库跟着重置；放进 checkout 出来的树里则会混进汇总步
-    # find . 的报告搜索。路径只在这一处定义，下面的缓存步与扫描命令都引用它
+    # 漏洞库单独按日期存档，更新进度就不受 Maven 依赖缓存换键影响。
+    # 路径放在检出目录外，避免混进汇总步 find . 的报告搜索。
+    # 路径只在这一处定义，下面的缓存步与扫描命令都引用它。
     env:
       DC_DATA_DIR: /home/runner/dependency-check-data
     steps:
@@ -100,25 +125,10 @@ jobs:
         with:
           java-version: '17'
           distribution: temurin
-          # 这里不开 cache: maven：它取完总要在 job 收尾存一份，而本 job 与
-          # 构建 job 同用一个键——缓存键存下就不可覆盖，先收尾的把键占死，
-          # 另一份的新增内容永远存不进去。本 job 只取不存，见下面单独的取回步
-      # Maven 依赖缓存只取不存：两个 job 此前都开 setup-java 的 cache: maven
-      # （同键取＋存），谁后收尾谁存不进（日志报 Unable to reserve cache）。
-      # 先收尾的常是本 job——它 -DskipTests，件集是构建 job 的子集，缓存里
-      # 从此少了测试期才用的件，构建 job 只能每回重下。改成只有构建 job 存：
-      # 本 job 用 cache/restore 只取。取回要与存方逐字对上，三处都照 setup-java
-      # v6 的存法写（源码 src/cache.ts）：
-      # https://raw.githubusercontent.com/actions/setup-java/v6/src/cache.ts
-      # 路径：setup-java 存的是 join(os.homedir(), '.m2', 'repository') 在
-      #   GitHub 托管 Ubuntu 运行器上的展开值。路径字串原样参与缓存版本的
-      #   计算（@actions/cache 的 getCacheVersion），写成 ~/ 或别的拼法就算
-      #   另一个版本，主键与前缀键都取不回，所以这里写死绝对路径
-      # arch 段：setup-java 取的是 Node 的 process.arch，小写 x64；GitHub
-      #   表达式 runner.arch 给大写 X64，不是同一串。照存方写死 x64
-      # 摘要段：与 setup-java 对 maven 的口径同为全部 pom.xml 的散列
-      # 两级 restore-keys 前缀留着兜底：精确键没命中（比如 pom 刚改过）时先
-      # 取最近一份；兜底前缀同样带上 arch 段，免得兜底也差一截取空
+
+      # 缓存键存下就不能覆盖。只有跑测试的构建任务存档，避免跳过测试的扫描先占键，
+      # 导致后续构建反复下载测试依赖。取回的键和回退前缀要与构建任务一致。
+      # 路径字串也参与缓存版本计算，两处都用同一个绝对路径才能取回同一份。
       - name: 取回 Maven 依赖缓存
         uses: actions/cache/restore@v5
         with:
@@ -126,7 +136,6 @@ jobs:
           key: setup-java-${{ runner.os }}-x64-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             setup-java-${{ runner.os }}-x64-maven-
-            setup-java-
 
       - name: 安装构建插件
         run: mvn -B -f build-tools/nova-plugin-processor/pom.xml install -DskipTests
