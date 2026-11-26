@@ -28,6 +28,7 @@ import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -376,19 +377,22 @@ public class LiveSessionArchive {
         // 读失败的这一次不记下来：文件的修改时刻与大小都没变，记下空结果的话，
         // 直到下一场归档写进来之前都答不上来
         FileState state = new FileState(path, attributes.lastModifiedTime(), attributes.size());
-        Map<StreamerId, NameAt> latest = new HashMap<>();
+        Map<StreamerId, NameCandidate> latest = new HashMap<>();
         JSONReader.Context context = JSONFactory.createReadContext();
         try (Stream<String> lines = JsonlFiles.lines(path)) {
+            long lineNumber = 0;
             for (String line : (Iterable<String>) lines::iterator) {
-                LiveSession session = parse(withoutUserIds(line, context), state);
+                lineNumber++;
+                LiveSession session = parseNameRow(line, state, context);
                 if (session == null || session.startTime() < 0 || session.startTime() == Long.MAX_VALUE) {
                     continue;
                 }
                 var id = new StreamerId(session.platform(), session.uid());
-                NameAt previous = latest.get(id);
-                // 原来按开播时刻稳定排序后覆盖昵称；并列时仍以文件中靠后的场次为准。
-                if (previous == null || session.startTime() >= previous.startTime()) {
-                    latest.put(id, new NameAt(session.startTime(), session.uname()));
+                NameCandidate candidate = latest.get(id);
+                if (candidate == null) {
+                    latest.put(id, new NameCandidate(session, lineNumber));
+                } else {
+                    candidate.include(session, lineNumber);
                 }
             }
         } catch (NoSuchFileException e) {
@@ -399,9 +403,26 @@ public class LiveSessionArchive {
         }
 
         Map<StreamerId, String> names = new HashMap<>();
-        latest.forEach((id, name) -> names.put(id, name.uname()));
+        // 保留按开播时刻稳定排序后各主播首次写入 HashMap 的顺序。
+        latest.entrySet().stream()
+                .sorted(Map.Entry.comparingByValue(Comparator
+                        .comparingLong((NameCandidate name) -> name.firstStartTime)
+                        .thenComparingLong(name -> name.firstLine)))
+                .forEachOrdered(entry -> names.put(entry.getKey(), entry.getValue().uname));
         latestNames = new LatestNames(path, attributes.lastModifiedTime(), attributes.size(), names);
         return names;
+    }
+
+    private LiveSession parseNameRow(String line, FileState state, JSONReader.Context context) {
+        String compact = withoutUserIds(line, context);
+        if (compact != line) {
+            try {
+                return parse(JSON.parseObject(compact), true);
+            } catch (RuntimeException ignored) {
+                // 省去名单后读不通时，由原行的解析结果决定是否跳过。
+            }
+        }
+        return parse(line, state);
     }
 
     /**
@@ -410,7 +431,8 @@ public class LiveSessionArchive {
      */
     private static String withoutUserIds(String line, JSONReader.Context context) {
         // 引用可能指向名单里的数据，这类行须交给原解析器完整处理。
-        if (!line.contains("\"userSets\"") || line.contains("\"$") || line.contains("\\u0024") || line.contains("\\x24")) {
+        if (!line.contains("\"userSets\"") || line.contains("\"$") || line.contains("'$")
+                || line.contains("\\u0024") || line.contains("\\x24")) {
             return line;
         }
         StringBuilder compact = new StringBuilder();
@@ -644,7 +666,31 @@ public class LiveSessionArchive {
 
     private record StreamerId(String platform, Long uid) { }
 
-    private record NameAt(long startTime, String uname) { }
+    private static final class NameCandidate {
+        private long startTime;
+        private String uname;
+        private long firstStartTime;
+        private long firstLine;
+
+        private NameCandidate(LiveSession session, long lineNumber) {
+            startTime = firstStartTime = session.startTime();
+            uname = session.uname();
+            firstLine = lineNumber;
+        }
+
+        private void include(LiveSession session, long lineNumber) {
+            long start = session.startTime();
+            if (start < firstStartTime) {
+                firstStartTime = start;
+                firstLine = lineNumber;
+            }
+            // 开播时刻并列时取归档中靠后的场次。
+            if (start >= startTime) {
+                startTime = start;
+                uname = session.uname();
+            }
+        }
+    }
 
     private record LatestNames(Path path, FileTime modified, long size, Map<StreamerId, String> names) {
         boolean matches(Path current, BasicFileAttributes attributes) {

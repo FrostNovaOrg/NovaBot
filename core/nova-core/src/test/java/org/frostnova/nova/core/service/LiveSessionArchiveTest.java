@@ -39,7 +39,9 @@ import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.when;
 
 /**
  * 直播场次归档测试
@@ -160,6 +162,37 @@ class LiveSessionArchiveTest {
     }
 
     @Test
+    @DisplayName("首页补昵称时逐场选名，避免历史场次多时整份归档同时留在内存")
+    void selectsNameBeforeReadingNextSession() throws Exception {
+        Path file = dir.resolve("sessions.jsonl");
+        String first = JSONObject.of("platform", "bilibili", "uid", STREAMER_UID, "startTime", 1000,
+                "uname", "上一场的昵称").toJSONString();
+        String second = JSONObject.of("platform", "bilibili", "uid", STREAMER_UID, "startTime", 2000,
+                "uname", "最新场次的昵称").toJSONString();
+        Files.writeString(file, first + "\n" + second + "\n");
+        var selected = new AtomicInteger();
+
+        try (var files = mockStatic(JsonlFiles.class);
+             var sessions = mockConstruction(LiveSession.class, (session, call) -> {
+                 when(session.platform()).thenReturn("bilibili");
+                 when(session.uid()).thenReturn(STREAMER_UID);
+                 when(session.startTime()).thenReturn((Long) call.arguments().get(4));
+                 when(session.uname()).thenAnswer(invocation -> {
+                     selected.incrementAndGet();
+                     return (String) call.arguments().get(2);
+                 });
+             })) {
+            files.when(() -> JsonlFiles.lines(file)).thenReturn(Stream.of(first, second).peek(line -> {
+                if (line.equals(second)) {
+                    assertEquals(1, selected.get(), "读取下一场前应已选取上一场的昵称");
+                }
+            }));
+
+            assertEquals(Optional.of("最新场次的昵称"), archive.latestUname("bilibili", STREAMER_UID));
+        }
+    }
+
+    @Test
     @DisplayName("归档后应能原样读回，含指标与人数")
     void appendThenRead() {
         archive.append(session(1_000_000L, 3600));
@@ -217,15 +250,18 @@ class LiveSessionArchiveTest {
 
     @Test
     @DisplayName("结果应按开播时间升序，与写入顺序无关")
-    void resultsAreSortedByStartTime() {
-        archive.append(session(3_000_000L, 300));
-        archive.append(session(1_000_000L, 100));
-        archive.append(session(2_000_000L, 200));
+    void resultsAreSortedByStartTime() throws Exception {
+        Files.writeString(dir.resolve("sessions.jsonl"), """
+                {"platform":"bilibili","uid":33,"startTime":3000000}
+                {"platform":"bilibili","uid":17,"startTime":2000000}
+                {"platform":"bilibili","uid":1,"startTime":1000000}
+                """);
 
         List<LiveSession> found = archive.find(0, Long.MAX_VALUE);
 
         assertEquals(List.of(1_000_000L, 2_000_000L, 3_000_000L),
                 found.stream().map(LiveSession::startTime).toList());
+        assertEquals(List.of(1L, 17L, 33L), archive.streamerUids("bilibili"));
     }
 
     @Test

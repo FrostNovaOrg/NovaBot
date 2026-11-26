@@ -184,6 +184,21 @@ class StreamerNameFallbackTest {
     }
 
     @Test
+    @DisplayName("归档用单引号引用名单项时，首页仍显示最新场次的昵称")
+    void singleQuotedReferenceKeepsLatestName() throws IOException {
+        when(dataSource.getAllUsers()).thenReturn(List.of(user(1L, "")));
+        archive(1L, "上一场的昵称", 1000);
+        Files.writeString(dir.resolve("sessions.jsonl"), """
+                {"platform":"bilibili","uid":1,"uname":"最新场次的昵称","startTime":2000,"userSets":{"visitors":[123]},"metrics":{"watched":{'$ref':'$.userSets.visitors[0]'}}}
+                """, StandardCharsets.UTF_8, StandardOpenOption.APPEND);
+
+        JSONObject status = controller().status();
+
+        assertEquals("最新场次的昵称", liveUser(status).getString("uname"));
+        assertEquals("最新场次的昵称", statusUser(status).getString("uname"));
+    }
+
+    @Test
     @DisplayName("内存有昵称：两处照旧显示内存的，不被归档里的旧名盖掉")
     void loadedNameWinsOverArchive() throws IOException {
         when(dataSource.getAllUsers()).thenReturn(List.of(user(1L, "查回来的昵称")));
