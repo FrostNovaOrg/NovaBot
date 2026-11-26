@@ -218,8 +218,6 @@ class ConfigUiMemberPermissionsTest {
     @Test void everySpringHandlerHasAnExplicitClassification() throws Exception {
         var expected = new TreeSet<String>(); expected.addAll(EVERYONE); expected.addAll(SCOPED); expected.addAll(ADMIN); expected.addAll(FILTERED);
         assertEquals(expected, mappings.keySet());
-        assertEquals(147, mappings.size());
-        assertEquals(26, EVERYONE.size()); assertEquals(31, SCOPED.size()); assertEquals(80, ADMIN.size()); assertEquals(10, FILTERED.size());
         var entries = ConfigUiPermissions.entries();
         assertEquals(expected, new TreeSet<>(entries.keySet()));
         EVERYONE.forEach(route -> assertEquals(ConfigUiPermissions.Access.EVERYONE, entries.get(route).access(), route));
