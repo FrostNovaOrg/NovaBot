@@ -39,14 +39,18 @@ import java.util.function.Supplier;
  *
  * <h2>依次做的事</h2>
  * <ol>
- *   <li>路径写法：带分号、反斜杠、编码过的斜杠、{@code .}／{@code ..} 段的一律 400，与控制台同一组判据；</li>
+ *   <li>路径写法：带分号、反斜杠、编码过的斜杠、{@code .}／{@code ..} 段的一律 400，与控制台同一组判据；
+ *       各段解码之后再查一遍，是 {@code .}、{@code ..}，或含斜杠、反斜杠、控制字符的，也是 400；</li>
  *   <li>来源地址：控制台「允许访问的来源 IP」名单，取来源与判名单都调控制台那两段代码，名单每个请求现读；</li>
  *   <li>令牌：<b>只认</b> {@code Authorization: Bearer <令牌>}。会话 Cookie、地址栏 {@code ?token=} 一概不看——
  *       Cookie 是浏览器自动附上的，认它就把这个前缀变成跨站伪造的靶子；地址栏里的东西会进代理日志与浏览器历史；</li>
- *   <li>令牌状态与账号状态：吊销、过期、账号停用或删除都是 401；账号<b>每个请求现取</b>，
- *       管理员改了成员名下的主播，下一个请求就按新名单；</li>
+ *   <li>令牌状态与账号状态：吊销、过期、账号停用或删除都是 401；成员此刻登不进控制台（{@link NovaApiMemberSignIn}）
+ *       也是 401，开回来后下一个请求恢复。账号<b>每个请求现取</b>，
+ *       管理员改了成员名下的主播、改了角色，下一个请求就按新的算；</li>
  *   <li>无效令牌按来源限速（{@link NovaApiThrottle}），超了回 429；</li>
- *   <li>找接口、核范围，交给处理器，把结果包成 {@code {"ok":true,"data":...}}。</li>
+ *   <li>找接口、核范围（{@link NovaApiScope#adminOnly() 仅管理员}的范围再按账号此刻的角色核一次），
+ *       交给处理器，把结果包成 {@code {"ok":true,"data":...}}。处理器出任何问题（含 {@link Error}、
+ *       返回值转不成回包）都回固定文字的 500，细节只进服务端日志。</li>
  * </ol>
  *
  * <h2>不做的事</h2>
@@ -62,6 +66,9 @@ public class NovaApiFilter extends OncePerRequestFilter {
 
     private static final String BEARER = "Bearer ";
 
+    /** 账号此刻不能用令牌时的那句话：停用、删除、成员此刻登不进控制台，回包一个样 */
+    static final String ACCOUNT_REFUSED = "令牌所属的账号已停用、已删除，或此刻登录不了控制台";
+
     private final Supplier<IpMatcher> allowList;
 
     private final NovaApiTokenStore tokens;
@@ -76,12 +83,15 @@ public class NovaApiFilter extends OncePerRequestFilter {
 
     private final NovaApiMe me;
 
+    private final NovaApiMemberSignIn memberSignIn;
+
     public NovaApiFilter(Supplier<IpMatcher> allowList, NovaApiTokenStore tokens, ConfigUiAccountStore accounts,
-                         NovaApiRegistry registry, NovaApiThrottle throttle, Supplier<List<String>> platforms,
-                         Supplier<List<NovaApiStreamer>> roster) {
+                         NovaApiMemberSignIn memberSignIn, NovaApiRegistry registry, NovaApiThrottle throttle,
+                         Supplier<List<String>> platforms, Supplier<List<NovaApiStreamer>> roster) {
         this.allowList = allowList;
         this.tokens = tokens;
         this.accounts = accounts;
+        this.memberSignIn = memberSignIn;
         this.registry = registry;
         this.throttle = throttle;
         this.platforms = platforms;
@@ -93,7 +103,8 @@ public class NovaApiFilter extends OncePerRequestFilter {
                                     @NonNull FilterChain chain) throws IOException {
         String raw = request.getRequestURI().toLowerCase(Locale.ROOT);
         if (raw.contains(";") || raw.contains("\\") || raw.contains("%2f") || raw.contains("%5c") || raw.contains("//")
-                || Arrays.stream(raw.split("/", -1)).anyMatch(part -> part.equals(".") || part.equals(".."))) {
+                || Arrays.stream(raw.split("/", -1)).anyMatch(part -> part.equals(".") || part.equals(".."))
+                || !decodedSegmentsAreClean(request.getRequestURI())) {
             error(response, 400, NovaApiErrors.BAD_REQUEST, "请求路径不正确");
             return;
         }
@@ -121,10 +132,10 @@ public class NovaApiFilter extends OncePerRequestFilter {
         } else if (matched.get().expired(now)) {
             refusal = "访问令牌已过期，请在控制台重新签发";
         } else {
-            account = accounts.find(matched.get().accountId())
-                    .filter(found -> found.status() == ConfigUiAccount.Status.ENABLED).orElse(null);
+            account = accounts.find(matched.get().accountId()).filter(this::usable).orElse(null);
             if (account == null) {
-                refusal = "令牌所属的账号已停用或已删除";
+                // 停用、删除与「成员此刻登不进控制台」同一句话：都是这个账号此刻不能用令牌
+                refusal = ACCOUNT_REFUSED;
             }
         }
         if (refusal != null) {
@@ -149,8 +160,44 @@ public class NovaApiFilter extends OncePerRequestFilter {
 
         NovaApiToken token = matched.get();
         tokens.used(token);
-        NovaApiCaller caller = new NovaApiCaller(account, token, platforms.get());
+        NovaApiCaller caller = new NovaApiCaller(account, token, platforms.get(), registry::adminOnly);
         dispatch(request, response, caller);
+    }
+
+    /**
+     * 令牌所属的账号此刻能不能用令牌
+     * <p>
+     * 启用着；是成员的，还得此刻登得进控制台（{@link NovaApiMemberSignIn}，每个请求现问）。
+     * 角色按此刻的算。管理员的令牌不看成员登录开关——经单点登录进来的管理员也一样。
+     */
+    private boolean usable(ConfigUiAccount account) {
+        return account.status() == ConfigUiAccount.Status.ENABLED
+                && (account.role() == ConfigUiAccount.Role.ADMIN || memberSignIn.open());
+    }
+
+    /**
+     * 路径各段解码之后再查一遍
+     * <p>
+     * 字面的 {@code .}、{@code ..} 前面已经拦下；编码过的（{@code %2e%2e}）要解码之后才看得出来，
+     * 放过去就会作为一段路径变量交到处理器手里。解码出斜杠、反斜杠、控制字符的段同样不收：
+     * 它们在处理器拼文件名、拼日志时都是隐患。百分号写法本身不对的也算路径写错。
+     * @param uri 原样的请求路径
+     * @return 每一段都干净时为 true
+     */
+    static boolean decodedSegmentsAreClean(String uri) {
+        for (String part : uri.split("/", -1)) {
+            String value;
+            try {
+                value = UriUtils.decode(part, StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException malformed) {
+                return false;
+            }
+            if (value.equals(".") || value.equals("..") || value.indexOf('/') >= 0 || value.indexOf('\\') >= 0
+                    || value.chars().anyMatch(Character::isISOControl)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void dispatch(HttpServletRequest request, HttpServletResponse response, NovaApiCaller caller)
@@ -184,10 +231,17 @@ public class NovaApiFilter extends OncePerRequestFilter {
                 return;
             }
             NovaApiRoute route = found.route();
-            if (!caller.hasScope(route.scope())) {
-                String name = registry.scope(route.scope()).map(NovaApiScope::name).orElse(route.scope());
+            Optional<NovaApiScope> scope = registry.scope(route.scope());
+            String name = scope.map(NovaApiScope::name).orElse(route.scope());
+            if (!caller.scopes().contains(route.scope())) {
                 error(response, 403, NovaApiErrors.INSUFFICIENT_SCOPE,
                         "这个令牌没有勾选「" + name + "」（" + route.scope() + "）范围");
+                return;
+            }
+            // 签发时只有管理员勾得了；这里按账号此刻的角色再核一次，降成成员之后以前签的令牌就用不了它
+            if (scope.map(NovaApiScope::adminOnly).orElse(false) && !caller.admin()) {
+                error(response, 403, NovaApiErrors.FORBIDDEN,
+                        "「" + name + "」（" + route.scope() + "）范围只有管理员能用，这把令牌所属的账号此刻不是管理员");
                 return;
             }
             handler = route.handler();
@@ -201,15 +255,29 @@ public class NovaApiFilter extends OncePerRequestFilter {
         } catch (NovaApiException refused) {
             error(response, refused.status(), refused.code(), refused.getMessage());
             return;
-        } catch (Exception failure) {
+        } catch (Throwable failure) {
+            // Error 也在这里收：交给容器的话，回包会变成一页带堆栈的 HTML，格式与细节都失控
             log.error("统一接口 {} 处理出错", label, failure);
-            error(response, 500, NovaApiErrors.INTERNAL_ERROR, "处理这个请求时出错了，详情见服务端日志");
+            internalError(response);
             return;
         }
         JSONObject body = new JSONObject();
         body.put("ok", true);
         body.put("data", data == null ? new JSONObject() : data);
-        write(response, 200, body);
+        String text;
+        try {
+            text = JSON.toJSONString(body, JSONWriter.Feature.WriteNulls);
+        } catch (Throwable unserializable) {
+            // 先转成文字再写：转到一半出错时响应里还什么都没有，回得了统一格式
+            log.error("统一接口 {} 的返回值转不成回包", label, unserializable);
+            internalError(response);
+            return;
+        }
+        write(response, 200, text);
+    }
+
+    private static void internalError(HttpServletResponse response) throws IOException {
+        error(response, 500, NovaApiErrors.INTERNAL_ERROR, "处理这个请求时出错了，详情见服务端日志");
     }
 
     /**
@@ -264,11 +332,15 @@ public class NovaApiFilter extends OncePerRequestFilter {
     }
 
     private static void write(HttpServletResponse response, int status, JSONObject body) throws IOException {
+        write(response, status, JSON.toJSONString(body, JSONWriter.Feature.WriteNulls));
+    }
+
+    private static void write(HttpServletResponse response, int status, String text) throws IOException {
         response.setStatus(status);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         // 安全响应头那道已经按 /nova 前缀写过，这里再写一遍：这个前缀的响应里可能有账号与主播名单
         response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
-        response.getWriter().write(JSON.toJSONString(body, JSONWriter.Feature.WriteNulls));
+        response.getWriter().write(text);
     }
 }

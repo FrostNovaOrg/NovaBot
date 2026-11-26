@@ -119,7 +119,7 @@ const location = {_hash: mode === 'nav' ? '#/settings' : '#/home', reload() {},
 };
 const window = {innerWidth: mode === 'single-narrow' ? 390 : 1280, location, addEventListener: (name, fn) => { (events[name] ||= []).push(fn); }, scrollTo() {}};
 const own = {uid: 71001, platform: 'bilibili', uname: 'Owner A', enabled: true, targets: 3};
-let assigned = single || mode === 'unchanged-admin-one' ? [{...own, status: mode === 'single-disabled' ? 'DISABLED' : 'OFFLINE', face: 'https://external.example/avatar.jpg'}]
+let assigned = single || mode === 'outbox-nav' || mode === 'unchanged-admin-one' ? [{...own, status: mode === 'single-disabled' ? 'DISABLED' : 'OFFLINE', face: 'https://external.example/avatar.jpg'}]
   : mode === 'unchanged-multiple' ? [own, {...own, uid: 71002}] : [];
 let eventText = '自家屏蔽词事件';
 let needsAttention = mode !== 'single-no-attention';
@@ -134,6 +134,7 @@ const adminStatus = {...memberStatus, version: '1.2.3', runtime: {heapUsedMb: 12
 const requests = [], errors = [];
 const auth = {authenticated: true, enabled: true, accountId: 'member-a', role, email: 'member@example.com'};
 const pages = [{id: 'push', displayName: '推送', script: 'push.js', slot: 'top'}, {id: 'streamers', displayName: '主播', script: 'streamers.js', slot: 'top'}, {id: 'today', displayName: '今日', script: 'today.js', slot: 'home_card'}, {id: 'advanced', displayName: '高级插件', script: 'advanced.js', slot: 'settings'}];
+if (mode === 'outbox-nav') pages.push({id: 'outbox', displayName: '外发箱', script: 'outbox.js', slot: 'top'});
 let pending = 0;
 const fetch = async (url, options = {}) => {
   pending++; requests.push([options.method || 'GET', String(url)]);
@@ -146,7 +147,7 @@ const fetch = async (url, options = {}) => {
   const timeline = needsAttention ? [problem, {...problem, at: problem.at - 1},
     {...problem, type: 'PUSH_FAILED', text: '另一条失败', level: 'error'}] : [];
   const body = path === '/auth/state' ? auth : path === '/status' ? (role === 'MEMBER' ? memberStatus : adminStatus)
-    : path === '/pages' ? {pages, accessiblePages: ['home', 'push', 'streamers']}
+    : path === '/pages' ? {pages, accessiblePages: ['home', ...pages.filter(page => page.slot === 'top').map(page => page.id)]}
     : path.startsWith('/timeline') ? {events: path.includes('problems=true') ? timeline : [...timeline,
       {at: Date.now(), type: 'LIVE_START', level: 'info', text: '开始直播'}]}
     : single && path === '/streamers/bilibili/71001' ? ownDetail
@@ -171,7 +172,7 @@ const stubs = {
   'settings.js': ['copyConfigPath','discard','filterSettings','focusGroup','renderConfigPath','renderGeneral','save','stopWatchingGroups','toggleKeyNames'],
   'setup.js': ['notePlatformsArrived','openSetup','stopSetupPolling'],
   'tokens.js': ['clearIssuedToken','loadTokens'],
-  'push.js': ['render','refresh'], 'advanced.js': ['render','refresh'],
+  'outbox.js': ['render','refresh'], 'push.js': ['render','refresh'], 'advanced.js': ['render','refresh'],
 };
 const modules = new Map();
 const imports = [];
@@ -572,6 +573,12 @@ if (single) {
     assert.match($('#sd-body').textContent, /暂无归档/);
   });
 }
+if (mode === 'outbox-nav') await check('只管一位主播的成员在导航找不到外发箱', async () => {
+  const link = $('#nav').querySelector('[data-page="outbox"]');
+  assert.ok(visible(link), '外发箱入口应可见');
+  await go(link.href);
+  assert.ok(visible($('#page-outbox')));
+});
 if (unchanged) await check('照旧：' + mode, async () => {
   assert.equal(location.hash, '#/home');
   const links = $('#nav').querySelectorAll('a').filter(visible).map(a => a.dataset.page);

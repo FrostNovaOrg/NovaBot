@@ -3,6 +3,7 @@ package org.frostnova.nova.core.config.ui;
 import com.alibaba.fastjson2.JSONObject;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.frostnova.nova.core.api.NovaApiTokenStore;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccountStore;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
@@ -26,12 +27,15 @@ public class ConfigUiAccountController {
     private final ConfigUiAuthService auth;
     private final OidcClient oidc;
     private final DataSourceServiceRegistry registry;
+    private final NovaApiTokenStore tokens;
 
-    public ConfigUiAccountController(ConfigUiAccountStore accounts, ConfigUiAuthService auth, OidcClient oidc, DataSourceServiceRegistry registry) {
+    public ConfigUiAccountController(ConfigUiAccountStore accounts, ConfigUiAuthService auth, OidcClient oidc,
+                                     DataSourceServiceRegistry registry, NovaApiTokenStore tokens) {
         this.accounts = accounts;
         this.auth = auth;
         this.oidc = oidc;
         this.registry = registry;
+        this.tokens = tokens;
     }
 
     @GetMapping
@@ -53,14 +57,23 @@ public class ConfigUiAccountController {
         }
     }
 
+    /**
+     * 停用账号
+     * <p>
+     * 会话当场注销，名下的访问令牌一并吊销：账号多半是因为出了事才停用的，
+     * 吊销不可恢复，重新启用之后令牌要重签，不会让泄露出去的那几把跟着复活。
+     */
     @PostMapping("/{id}/disable")
     public JSONObject disable(@PathVariable String id, HttpServletRequest request) {
         var actor = ConfigUiAccess.admin(request);
         synchronized (accounts) {
             var target = accounts.status(id, ConfigUiAccount.Status.DISABLED);
             auth.logoutAccount(id);
-            log.info("配置界面账号停用: {} → {}", actor.actor(), target.actor());
-            return account(target);
+            int revoked = revokeTokens(id);
+            log.info("配置界面账号停用: {} → {}, 一并吊销了 {} 把访问令牌", actor.actor(), target.actor(), revoked);
+            JSONObject result = account(target);
+            result.put("revokedTokens", revoked);
+            return result;
         }
     }
 
@@ -99,9 +112,19 @@ public class ConfigUiAccountController {
             var target = accounts.require(id);
             accounts.delete(id);
             auth.logoutAccount(id);
-            log.info("配置界面账号删除: {} → {}", actor.actor(), target.actor());
-            return success();
+            int revoked = revokeTokens(id);
+            log.info("配置界面账号删除: {} → {}, 一并吊销了 {} 把访问令牌", actor.actor(), target.actor(), revoked);
+            JSONObject result = success();
+            result.put("revokedTokens", revoked);
+            return result;
         }
+    }
+
+    /** 吊销账号名下的全部访问令牌；操作记录里只记几把，不记令牌本身 */
+    private int revokeTokens(String id) {
+        int revoked = tokens.revokeAccount(id);
+        ConfigUiOperationAdvice.revokedTokens(revoked);
+        return revoked;
     }
 
     @DeleteMapping("/local/binding")

@@ -74,7 +74,9 @@ function applySingleStreamerView() {
   push.href = '#/push/' + one.uid;
   push.innerHTML = navIcon(pages.find(page => page.meta.id === 'push').meta);
   push.append('推送设置');
-  nav.replaceChildren(data, push);
+  const otherPages = [...nav.querySelectorAll('a')].filter(link =>
+    link !== data && link !== push && topPageIds.has(link.dataset.page) && accessiblePages.has(link.dataset.page));
+  nav.replaceChildren(data, push, ...otherPages);
 
   const name = one.uname || String(one.uid);
   $('.brand-name').textContent = name;
@@ -506,6 +508,7 @@ export async function load(how) {
     store.handlerList = h.handlers || [];
     store.senderList = st.senders || [];
     store.senderAdapters = st.senderAdapters || {};
+    store.senderDisplayNames = st.senderDisplayNames || {};
     // 某一位取回来的东西有问题时那句话由它自己说，这里只记一位「别替它清状态栏」：
     // 末尾那句 say('') 会把状态栏清空，不记的话那条提示刚显示就被自己抹掉
     const quiet = await sources;

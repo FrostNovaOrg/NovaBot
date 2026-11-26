@@ -46,6 +46,7 @@ public class LiveReportDeliveryService {
                 .filter(body -> !body.isBlank())
                 .orElseThrow(() -> new IllegalStateException("直播报告生成失败"));
         var message = Message.create(channel.getPlatform(), channel.getType(), channel.getNum(), content).get(0);
+        message.setPushOrigin(new Message.PushOrigin(Message.PushKind.LIVE_REPORT, platform, uid, detail.uname()));
         message.setChannel(channel);
         return sender.sendNow(message);
     }

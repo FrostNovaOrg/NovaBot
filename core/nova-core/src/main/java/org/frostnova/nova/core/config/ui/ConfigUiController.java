@@ -1808,9 +1808,14 @@ public class ConfigUiController {
         }
 
         try {
-            provider.get().logout();
+            AccountLoginProvider account = provider.get();
+            // 按需扫码的账号被配置停用时，退出什么都不做：如实说没清，不说「已清除」
+            Optional<String> disabled = account.loginOnDemand() ? account.disabledReason() : Optional.empty();
+            account.logout();
             result.put("success", true);
-            result.put("message", provider.get().loginOnDemand()
+            result.put("message", disabled.isPresent()
+                    ? "这个账号已停用，没有清除任何东西：" + disabled.get()
+                    : account.loginOnDemand()
                     ? "已退出登录，本机保存的凭据已清除"
                     : "已退出登录，请扫描新的二维码重新登录");
             log.info("{} 退出了平台 {} 的登录", ConfigUiAccess.actor(), id);
@@ -2481,7 +2486,7 @@ public class ConfigUiController {
         result.put("restartPending", runtimeApplier.getPendingRestart());
         // 供界面填充「发送测试消息」的推送平台下拉框，避免让使用者手打平台名
         result.put("senders", senderService.getSenderNames().stream().sorted().toList());
-        includeSenderAdapters(result);
+        includeSenderMetadata(result);
         // 这台控制台上没上锁。取自签发会话的那一处，界面不另按配置项自己判一遍——
         // 「有没有口令」与「口令登录启不启用」在配置面上不是同一件事，各判各的迟早会说两种话
         result.put("locked", authService.isEnabled());
@@ -2510,11 +2515,13 @@ public class ConfigUiController {
                 "pushEnabled", properties.getPush().isEnabled(),
                 "senders", senderService.getSenderNames().stream().sorted().toList(),
                 "quiet", quiet(), "live", liveNow(), "today", todayPushCounts());
-        includeSenderAdapters(result);
+        includeSenderMetadata(result);
         return result;
     }
 
-    private void includeSenderAdapters(JSONObject result) {
+    private void includeSenderMetadata(JSONObject result) {
+        var names = senderService.getSenderDisplayNames();
+        if (!names.isEmpty()) result.put("senderDisplayNames", names);
         Map<String, String> adapters = new LinkedHashMap<>();
         connectionTesters.orderedStream().forEach(tester -> {
             for (String sender : tester.configuredSenders()) adapters.putIfAbsent(sender, tester.adapter());

@@ -158,7 +158,7 @@ public class NovaMessageSender {
         if (!pushGate.allowedFor(message)) {
             PushGate.Block block = pushGate.blockedBy();
             log.info("{}, 已丢弃消息: [{}] {}: {}", block.getDescription(),
-                    message.getType().getStr(), message.getNum(), message.getDisplay());
+                    message.getType().getStr(), message.getNum(), summary(message));
 
             // 被丢掉的那条正是使用者最想知道的一条——日志里它只有一行 INFO，
             // 默认级别下人还得先知道去哪儿翻才找得到。
@@ -170,7 +170,7 @@ public class NovaMessageSender {
             timeline.record(TimelineEvent.of(block.timelineType(), TimelineEvent.Level.WARN)
                     .channel(describeTarget(message))
                     .text(block.getDescription() + "，丢弃了发往" + describeTarget(message) + "的一条消息")
-                    .detail("summary", message.getDisplay())
+                    .detail("summary", summary(message))
                     .detail("platform", message.getPlatform())
                     .build());
             return;
@@ -224,7 +224,7 @@ public class NovaMessageSender {
     private void enqueue(Message message) {
         Optional<Sender> optionalSender = senderService.getSender(message.getPlatform());
         if (optionalSender.isEmpty()) {
-            log.warn("未找到 {} 推送平台配置, 请检查配置文件是否正确配置, 已丢弃消息: [{}] {}: {}", message.getPlatform(), message.getType().getStr(), message.getNum(), message.getDisplay());
+            log.warn("未找到 {} 推送平台配置, 请检查配置文件是否正确配置, 已丢弃消息: [{}] {}: {}", message.getPlatform(), message.getType().getStr(), message.getNum(), summary(message));
             message.setFailureReason("未找到推送平台「" + message.getPlatform() + "」配置");
             runEach(message.markFailed(), message, "发送失败");
             return;
@@ -249,7 +249,7 @@ public class NovaMessageSender {
                 dropped.setFailureReason("队列已满, 被挤掉");
                 log.warn("{} 平台的发送队列已满({} 条), 丢弃最旧的一条消息: [{}] {}: {}（累计丢弃 {} 条）",
                         message.getPlatform(), QUEUE_CAPACITY, dropped.getType().getStr(),
-                        dropped.getNum(), dropped.getDisplay(), droppedCount.incrementAndGet());
+                        dropped.getNum(), summary(dropped), droppedCount.incrementAndGet());
             }
             try {
                 droppedCallbacks.execute(() -> {
@@ -257,7 +257,7 @@ public class NovaMessageSender {
                     else discardForPlatform(dropped, pause);
                 });
             } catch (RejectedExecutionException e) {
-                log.warn("停机时丢弃被挤掉消息的失败回调: [{}]{}", dropped.getSequence(), dropped.getDisplay());
+                log.warn("停机时丢弃被挤掉消息的失败回调: [{}]{}", dropped.getSequence(), summary(dropped));
             }
         }
     }
@@ -441,9 +441,13 @@ public class NovaMessageSender {
                 // 下游一慢线程就被占满，没有线程去读请求体，几百 KB 的图片因此卡满超时被丢弃，
                 // 而体积小的文字一次写进 socket 缓冲区就完事、照常送达——
                 // 「文字能发、图片发不出去」正是这么来的
-                JSONObject result = sender.getLocalDelivery() == null
-                        ? http.postJson(sender.getUrl(), headers, params)
-                        : sender.getLocalDelivery().deliver(headers, params);
+                JSONObject result;
+                var local = sender.getLocalDelivery();
+                if (local instanceof Sender.DeferredDelivery deferred) {
+                    result = deferred.deliver(headers, params, message.deliveryOrigin());
+                } else {
+                    result = local == null ? http.postJson(sender.getUrl(), headers, params) : local.deliver(headers, params);
+                }
                 if (result != null) {
                     return result;
                 }
@@ -514,12 +518,12 @@ public class NovaMessageSender {
     private void discardQueuedMessage(Message message) {
         PushGate.Block block = PushGate.Block.DISABLED;
         log.info("{}, 已丢弃消息: [{}] {}: {}", block.getDescription(),
-                message.getType().getStr(), message.getNum(), message.getDisplay());
+                message.getType().getStr(), message.getNum(), summary(message));
         if (!message.isAlert()) {
             timeline.record(TimelineEvent.of(block.timelineType(), TimelineEvent.Level.WARN)
                     .channel(describeTarget(message))
                     .text(block.getDescription() + "，丢弃了发往" + describeTarget(message) + "的一条消息")
-                    .detail("summary", message.getDisplay())
+                    .detail("summary", summary(message))
                     .detail("platform", message.getPlatform())
                     .build());
         }
@@ -535,7 +539,7 @@ public class NovaMessageSender {
 
     private void discardForPlatform(Message message, String reason) {
         if (!message.isAlert()) {
-            recordPlatformPause(message.getPlatform(), message.getType(), message.getNum(), message.getDisplay(), reason);
+            recordPlatformPause(message.getPlatform(), message.getType(), message.getNum(), summary(message), reason);
         }
         finishBlocked(message, reason);
     }
@@ -619,7 +623,8 @@ public class NovaMessageSender {
         // 配额检查放在这里而非各推送处理器里：处理器只经手 at_all 参数，
         // 而模板里手写的 {at=all} 同样会 @ 全体。所有消息最终都汇到这一处，
         // 只有在这里拦才拦得全
-        AtAllDecision quota = applyAtAllQuota(message);
+        AtAllDecision quota = sender.getLocalDelivery() instanceof Sender.DeferredDelivery
+                ? AtAllDecision.pass() : applyAtAllQuota(message);
         if (!quota.send()) {
             message.setFailureReason("摘掉 @全体成员 后没有内容");
             runEach(message.markFailed(), message, "发送失败");
@@ -657,7 +662,7 @@ public class NovaMessageSender {
 
         for (Predicate<Message> interceptor : message.getOnBeforeSendInterceptors()) {
             if (!interceptor.test(message)) {
-                log.info("已取消发送消息: NovaBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
+                log.info("已取消发送消息: NovaBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), summary(message));
                 releaseOnce(message, chargedOn);
                 message.setFailureReason("发送被拦截");
                 runEach(message.markFailed(), message, "发送失败");
@@ -681,7 +686,7 @@ public class NovaMessageSender {
             try {
                 callback.run();
             } catch (Exception e) {
-                log.error("执行消息发送完毕回调异常: [{}]{}", message.getSequence(), message.getDisplay(), e);
+                log.error("执行消息发送完毕回调异常: [{}]{}", message.getSequence(), summary(message), e);
             }
         }
 
@@ -696,14 +701,14 @@ public class NovaMessageSender {
             boolean imageDegraded = Boolean.TRUE.equals(result.get(Sender.LocalDelivery.IMAGE_DEGRADED));
             if (imageDegraded) {
                 String reason = result.getString("message");
-                activityRecorder.recordImageDegraded(sender.getName(), describeTarget(message), message.getDisplay(),
+                activityRecorder.recordImageDegraded(sender.getName(), describeTarget(message), summary(message),
                         reason, elapsedMillis, message.getChannel());
                 log.warn("推送已送达（部分图片未送达）: NovaBot -> {} ([{}] {}) [{}]: {}，原因: {}",
                         sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(),
-                        message.getDisplay(), reason);
+                        summary(message), reason);
             } else {
-                activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay(), elapsedMillis, message.getChannel());
-                log.info("NovaBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
+                activityRecorder.recordSuccess(sender.getName(), describeTarget(message), summary(message), elapsedMillis, message.getChannel());
+                log.info("NovaBot -> {} ([{}] {}) [{}]: {}", sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), summary(message));
             }
             runEach(succeeded, message, "发送成功");
             if (imageDegraded) {
@@ -715,13 +720,13 @@ public class NovaMessageSender {
             // 不记进失败次数。跑送达不明回调而不是失败回调——失败回调会让上层按「发不出去」入重投，
             // 群里就多一条一样的。手里没有编号，靠编号的后续（挂群待办）本来就做不成
             chargedOn.set(null);
-            activityRecorder.recordUncertain(sender.getName(), describeTarget(message), message.getDisplay(), result.getString("message"), elapsedMillis, message.getChannel());
-            log.warn("消息送达不明 ({}), 不重发: NovaBot -> {} ([{}] {}) [{}]: {}", result.getString("message"), sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
+            activityRecorder.recordUncertain(sender.getName(), describeTarget(message), summary(message), result.getString("message"), elapsedMillis, message.getChannel());
+            log.warn("消息送达不明 ({}), 不重发: NovaBot -> {} ([{}] {}) [{}]: {}", result.getString("message"), sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), summary(message));
             message.setFailureReason(result.getString("message"));
             runEach(message.markUncertain(), message, "送达不明");
         } else {
-            activityRecorder.recordFailure(sender.getName(), describeTarget(message), message.getDisplay(), result.getString("message"), elapsedMillis, message.getChannel());
-            log.error("消息发送失败 ({}): NovaBot -> {} ([{}] {}) [{}]: {}", result.getString("message"), sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), message.getDisplay());
+            activityRecorder.recordFailure(sender.getName(), describeTarget(message), summary(message), result.getString("message"), elapsedMillis, message.getChannel());
+            log.error("消息发送失败 ({}): NovaBot -> {} ([{}] {}) [{}]: {}", result.getString("message"), sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(), summary(message));
 
             // 先试去掉图片再发一次文字。文字送到了就按送达算：写下那条文字的编号，跑成功回调。
             // 失败回调只在文字也没送到时才跑，避免群里已经有这条文字，却被记成没发出去。
@@ -746,7 +751,7 @@ public class NovaMessageSender {
 
         // 文字到了才算「这个会话听见过机器人说话」，图片降级那一路同样算；
         // 告警不算——它不是推送，跟着出事的通报教人怎么用机器人，说的是另一件事
-        if (push && delivered && !message.isAlert()) {
+        if (push && delivered && !message.isAlert() && !(sender.getLocalDelivery() instanceof Sender.DeferredDelivery)) {
             tipAfterFirstPush(sender, message);
         }
 
@@ -781,7 +786,8 @@ public class NovaMessageSender {
      */
     private FallbackOutcome fallbackWithoutImages(Sender sender, Map<String, String> headers, Map<String, Object> params,
                                                   Message message, JSONObject failure) {
-        if (platformBlock(message) != null || Boolean.TRUE.equals(failure.get(Sender.LocalDelivery.SKIP_IMAGE_FALLBACK))
+        if (sender.getLocalDelivery() instanceof Sender.DeferredDelivery || platformBlock(message) != null
+                || Boolean.TRUE.equals(failure.get(Sender.LocalDelivery.SKIP_IMAGE_FALLBACK))
                 || !MessagePlaceholders.containsImage(message.getContent())) {
             return FallbackOutcome.FAILED;
         }
@@ -789,7 +795,7 @@ public class NovaMessageSender {
         String deliveredId = failure.getString("id");
         if (StringUtil.isNotBlank(deliveredId)) {
             log.warn("推送含图片的消息失败, 但响应带着消息 id {}, 无法排除其实已送达, 不重发纯文字: [{}]: {}",
-                    deliveredId, message.getSequence(), message.getDisplay());
+                    deliveredId, message.getSequence(), summary(message));
             return FallbackOutcome.FAILED;
         }
 
@@ -820,7 +826,7 @@ public class NovaMessageSender {
         boolean textUncertain = !textDelivered && result != null
                 && Boolean.TRUE.equals(result.getBoolean(Sender.LocalDelivery.DELIVERY_UNKNOWN));
         if (textDelivered) {
-            activityRecorder.recordSuccess(sender.getName(), describeTarget(message), message.getDisplay(), elapsedMillis, message.getChannel());
+            activityRecorder.recordSuccess(sender.getName(), describeTarget(message), summary(message), elapsedMillis, message.getChannel());
             log.warn("推送含图片的消息失败, 已剥除图片段重发纯文字并送达（图片未送达）: NovaBot -> {} ([{}] {}) [{}]: {}；原始失败: {}",
                     sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(),
                     textOnly, failure.getString("message"));
@@ -834,7 +840,7 @@ public class NovaMessageSender {
             // 也不当没发出去——额度不退、不记进失败，跑送达不明回调而不是失败回调，
             // 失败回调会让上层按「发不出去」入重投，群里就多一条一样的
             String reason = result.getString("message");
-            activityRecorder.recordUncertain(sender.getName(), describeTarget(message), message.getDisplay(), reason, elapsedMillis, message.getChannel());
+            activityRecorder.recordUncertain(sender.getName(), describeTarget(message), summary(message), reason, elapsedMillis, message.getChannel());
             log.warn("剥除图片段后重发的纯文字送达不明（图片未送达, 不重发）: NovaBot -> {} ([{}] {}) [{}]: {}；原始失败: {}；重发送达不明: {}",
                     sender.getName(), message.getType().getStr(), message.getNum(), message.getSequence(),
                     textOnly, failure.getString("message"), reason);
@@ -855,7 +861,7 @@ public class NovaMessageSender {
             try {
                 callback.run();
             } catch (Exception e) {
-                log.error("执行图片降级回调异常: [{}]{}", message.getSequence(), message.getDisplay(), e);
+                log.error("执行图片降级回调异常: [{}]{}", message.getSequence(), summary(message), e);
             }
         }
     }
@@ -886,7 +892,7 @@ public class NovaMessageSender {
             try {
                 callback.run();
             } catch (Exception e) {
-                log.error("执行消息{}回调异常: [{}]{}", name, message.getSequence(), message.getDisplay(), e);
+                log.error("执行消息{}回调异常: [{}]{}", name, message.getSequence(), summary(message), e);
             }
         }
     }
@@ -938,6 +944,14 @@ public class NovaMessageSender {
      */
     private static long elapsedMillisSince(long startedAtNanos) {
         return Duration.ofNanos(System.nanoTime() - startedAtNanos).toMillis();
+    }
+
+    private String summary(Message message) {
+        var sender = senderService.getSender(message.getPlatform());
+        if (sender.isPresent() && sender.get().getLocalDelivery() instanceof Sender.DeferredDelivery) {
+            return "外发消息";
+        }
+        return message.getDisplay();
     }
 
     /**

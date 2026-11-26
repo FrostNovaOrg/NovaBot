@@ -49,6 +49,9 @@ class NovaApiFilterTest {
 
     private final List<NovaApiStreamer> roster = new ArrayList<>();
 
+    /** 成员此刻能不能登录控制台；每个请求现读 */
+    private volatile boolean membersCanSignIn = true;
+
     private MockMvc mvc;
 
     /** 不该被走到的 MVC 处理器：这个前缀下的请求从不交给后面的链 */
@@ -94,6 +97,24 @@ class NovaApiFilterTest {
         }
     }
 
+    /** 测试用插件：一项仅管理员的范围，管的是整个实例 */
+    static final class OpsApi implements NovaApiProvider {
+        @Override
+        public String segment() {
+            return "ops";
+        }
+
+        @Override
+        public List<NovaApiScope> scopes() {
+            return List.of(NovaApiScope.adminOnly("ops:restart", "重启推送", "测试用"));
+        }
+
+        @Override
+        public List<NovaApiRoute> routes() {
+            return List.of(NovaApiRoute.post("restart", "ops:restart", request -> JSONObject.of("restarted", true)));
+        }
+    }
+
     @BeforeEach
     void api() {
         properties = new NovaCoreProperties();
@@ -106,7 +127,8 @@ class NovaApiFilterTest {
 
     private void rebuild(NovaApiThrottle throttle) {
         NovaApiFilter filter = new NovaApiFilter(new ConsoleAllowList(properties.getConfigUi()), tokens, accounts,
-                new NovaApiRegistry(List.of(new ProbeApi())), throttle, () -> List.of("bilibili"), () -> List.copyOf(roster));
+                () -> membersCanSignIn, new NovaApiRegistry(List.of(new ProbeApi(), new OpsApi())), throttle,
+                () -> List.of("bilibili"), () -> List.copyOf(roster));
         mvc = MockMvcBuilders.standaloneSetup(new Probe())
                 .addFilters(new SecurityHeadersFilter(List.of("/config", "/nova")), filter).build();
     }
@@ -248,6 +270,94 @@ class NovaApiFilterTest {
 
         accounts.role(member.id(), ConfigUiAccount.Role.ADMIN);
         assertEquals("ADMIN", body(me(token)).getJSONObject("data").getJSONObject("account").getString("role"));
+    }
+
+    // ———— 成员此刻登不进控制台 ————
+
+    // 抓的故障：管理员关掉成员登录后，成员手里的旧令牌还能取数据；或者重新开放登录后，成员得重签才能用。
+    @Test
+    void memberTokensStopWhileMembersCannotSignInAndResumeAfterwards() throws Exception {
+        var member = member("subject-1", "成员甲");
+        String memberToken = issue(member.id(), List.of("probe:read"));
+        String adminToken = issue(ConfigUiAccount.LOCAL_ID, List.of("probe:read"));
+        var other = member("subject-2", "成员乙");
+        String disabledToken = issue(other.id(), null);
+        accounts.status(other.id(), ConfigUiAccount.Status.DISABLED);
+        assertEquals(200, me(memberToken).getStatus());
+
+        membersCanSignIn = false;
+        MockHttpServletResponse closed = me(memberToken);
+        assertUnauthenticated(closed);
+        assertTrue(closed.getHeader(HttpHeaders.WWW_AUTHENTICATE).startsWith("Bearer"));
+        assertUnauthenticated(call(memberToken, "/nova/api/v1/probe/items"));
+        // 与别的无效令牌同一回包：不另给一种说法
+        assertEquals(me(disabledToken).getContentAsString(), closed.getContentAsString());
+        assertEquals(200, me(adminToken).getStatus(), "管理员的令牌不受成员登录开关影响");
+        assertEquals(200, call(adminToken, "/nova/api/v1/probe/items").getStatus());
+
+        membersCanSignIn = true;
+        assertEquals(200, me(memberToken).getStatus(), "开回来后下一个请求就该恢复，不用重签");
+        assertEquals(200, call(memberToken, "/nova/api/v1/probe/items").getStatus());
+    }
+
+    // ———— 仅管理员的范围 ————
+
+    // 抓的故障：被降成成员的人还能用旧令牌做管理员的操作。
+    @Test
+    void adminOnlyScopeFollowsTheAccountsCurrentRole() throws Exception {
+        var admin = accounts.role(member("subject-1", "管理员甲").id(), ConfigUiAccount.Role.ADMIN);
+        String token = issue(admin.id(), List.of("ops:restart", "probe:read"));
+        assertEquals(200, send(token, "/nova/api/v1/ops/restart").getStatus());
+
+        accounts.role(admin.id(), ConfigUiAccount.Role.MEMBER);
+        MockHttpServletResponse demoted = send(token, "/nova/api/v1/ops/restart");
+        assertEquals(403, demoted.getStatus(), demoted.getContentAsString());
+        assertError(demoted, "forbidden");
+        assertTrue(message(demoted).contains("管理员"), message(demoted));
+        assertEquals(200, call(token, "/nova/api/v1/probe/items").getStatus(), "别的范围不受影响");
+        assertEquals(200, me(token).getStatus());
+
+        accounts.role(admin.id(), ConfigUiAccount.Role.ADMIN);
+        assertEquals(200, send(token, "/nova/api/v1/ops/restart").getStatus(), "改回管理员后下一个请求就按管理员算");
+    }
+
+    // ———— 解码之后的路径段 ————
+
+    // 抓的故障：编码过的 `..`、`.`，或解码出斜杠、反斜杠、控制字符的段进了处理器。
+    @Test
+    void decodedDotSegmentsSeparatorsAndControlCharactersAre400() throws Exception {
+        String token = issue(ConfigUiAccount.LOCAL_ID, List.of("probe:read"));
+        assertEquals(200, call(token, "/nova/api/v1/probe/streamers/bilibili/100").getStatus(), "对照：正常写法能到处理器");
+        for (String path : List.of("/nova/api/v1/probe/%2e%2e/me", "/nova/api/v1/%2E/me", "/nova/api/v1/probe/.%2e/items",
+                "/nova/api/v1/probe/streamers/%2e%2e/100", "/nova/api/v1/probe/streamers/%2E/100",
+                "/nova/api/v1/probe/streamers/bili%2Fbili/100", "/nova/api/v1/probe/streamers/bili%5cbili/100",
+                "/nova/api/v1/probe/streamers/bili%0Abili/100", "/nova/api/v1/probe/streamers/bili%00/100",
+                "/nova/api/v1/probe/streamers/bili%7f/100", "/nova/api/v1/probe/streamers/bili%C2%85/100")) {
+            MockHttpServletResponse signed = mvc.perform(get(java.net.URI.create(path))
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)).andReturn().getResponse();
+            assertEquals(400, signed.getStatus(), path + " " + signed.getContentAsString());
+            assertError(signed, "bad_request");
+            MockHttpServletResponse anonymous = mvc.perform(get(java.net.URI.create(path))).andReturn().getResponse();
+            assertEquals(400, anonymous.getStatus(), path);
+        }
+    }
+
+    // ———— IPv6 来源 ————
+
+    // 抓的故障：同一个 IPv6 /64 里换着地址交无效令牌，每个地址各算各的，限速形同虚设。
+    @Test
+    void addressesInOneIpv6Slash64ShareTheInvalidTokenCount() throws Exception {
+        properties.getConfigUi().setAllowIps(List.of("2001:db8::/32"));
+        rebuild(new NovaApiThrottle(3, Duration.ofMinutes(1), clock));
+        String valid = issue(ConfigUiAccount.LOCAL_ID, null);
+        for (int i = 1; i <= 3; i++) {
+            assertEquals(401, from("2001:db8:1:2::" + i, "nvb_wrong-" + i).getStatus());
+        }
+        MockHttpServletResponse limited = from("2001:db8:1:2:ffff:ffff:ffff:fffe", "nvb_wrong-4");
+        assertEquals(429, limited.getStatus(), limited.getContentAsString());
+        assertError(limited, "too_many_requests");
+        assertEquals(200, from("2001:db8:1:2::99", valid).getStatus(), "被限的来源出示有效令牌照常可用");
+        assertEquals(401, from("2001:db8:1:3::1", "nvb_wrong-next-door").getStatus(), "隔壁的 /64 不受连累");
     }
 
     // ———— 只带控制台会话 Cookie / 地址栏参数 ————
@@ -470,6 +580,15 @@ class NovaApiFilterTest {
     private MockHttpServletResponse call(String token, String path) throws Exception {
         return mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(path)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)).andReturn().getResponse();
+    }
+
+    private MockHttpServletResponse send(String token, String path) throws Exception {
+        return mvc.perform(post(path).header(HttpHeaders.AUTHORIZATION, "Bearer " + token)).andReturn().getResponse();
+    }
+
+    private MockHttpServletResponse from(String address, String token) throws Exception {
+        return mvc.perform(get("/nova/api/v1/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .with(request -> { request.setRemoteAddr(address); return request; })).andReturn().getResponse();
     }
 
     private static List<Long> uids(JSONObject data) {

@@ -1044,3 +1044,5 @@ details.adv .inner{padding:0 16px 16px}
 #at-list td,#at-list th{white-space:nowrap}
 #at-list td:first-child{white-space:normal;min-width:8em}
 #at-list .at-scope-line{font-size:var(--fs-xs);color:var(--dim)}
+/* 暂不可用的原因另起一行、自己折行：整格不折行的话，这句话会把「吊销」按钮挤出表格 */
+#at-list .at-reason{display:block;white-space:normal;min-width:12em;max-width:20em;margin:2px 0 0;font-size:var(--fs-xs)}

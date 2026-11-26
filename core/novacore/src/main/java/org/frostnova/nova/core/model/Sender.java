@@ -108,4 +108,15 @@ public class Sender {
          */
         JSONObject deliver(Map<String, String> headers, Map<String, Object> params);
     }
+
+    /** 保存消息供稍后取件的去向。核心保留原始提醒标记，并附上主播和推送种类。 */
+    @FunctionalInterface
+    public interface DeferredDelivery extends LocalDelivery {
+        JSONObject deliver(Map<String, String> headers, Map<String, Object> params, Message.PushOrigin origin);
+
+        @Override
+        default JSONObject deliver(Map<String, String> headers, Map<String, Object> params) {
+            return deliver(headers, params, new Message.PushOrigin(Message.PushKind.OTHER, null, null, null));
+        }
+    }
 }

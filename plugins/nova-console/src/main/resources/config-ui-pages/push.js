@@ -874,6 +874,7 @@ async function refreshPushPlatforms() {
     if (Array.isArray(status?.senders)) {
       store.senderList = status.senders;
       store.senderAdapters = status.senderAdapters || {};
+      store.senderDisplayNames = status.senderDisplayNames || {};
     }
   } catch (e) {
     // 状态暂时取不到时，继续用上次取得的平台资料。
@@ -1625,7 +1626,7 @@ function channelRow(user, target) {
   link.textContent = channelName(session, target, directory);
   title.appendChild(link);
   title.appendChild(pill(typeName(session, target)));
-  const platform = pushPlatformLabel(target.platform, store.senderAdapters);
+  const platform = pushPlatformLabel(target.platform, store.senderAdapters, store.senderDisplayNames);
   if (platform) title.appendChild(pill(platform));
   if (target.enabled === false) title.appendChild(pill('已停用'));
   if (session.disabledCount) {
@@ -1691,7 +1692,7 @@ function renderChannelLevel(host, user, target) {
   title.textContent = name;
   line.appendChild(title);
   line.appendChild(pill(typeName(session, target)));
-  const platform = pushPlatformLabel(target.platform, store.senderAdapters);
+  const platform = pushPlatformLabel(target.platform, store.senderAdapters, store.senderDisplayNames);
   if (platform) line.appendChild(pill(platform));
   const num = el('span', 'ch-id');
   num.textContent = targetNumberLabel(target.platform, target.type) + ' ' + target.num;
@@ -2807,7 +2808,7 @@ async function pickMemberTarget(opts) {
       for (const platform of platformNames) {
         const option = el('option');
         option.value = platform;
-        option.textContent = pushPlatformLabel(platform, store.senderAdapters) || platform;
+        option.textContent = pushPlatformLabel(platform, store.senderAdapters, store.senderDisplayNames);
         sender.appendChild(option);
       }
       sender.value = platformNames[0];

@@ -80,7 +80,8 @@ class ConsoleAccountsTest extends OidcTestSupport {
                 properties.getConfigUi().getAuth(), properties.getConfigUi().getAgreement(), interceptor::recordSessionCheckUse);
         mvc = MockMvcBuilders.standaloneSetup(new ConfigUiAuthController(auth, files, properties),
                         new ConfigUiPasskeyController(new PasskeyService(new PasskeyStore(state), auth), properties, auth),
-                        new ConfigUiAccountController(accounts, auth, client, platforms),
+                        new ConfigUiAccountController(accounts, auth, client, platforms,
+                                new org.frostnova.nova.core.api.NovaApiTokenStore(state)),
                         new ConfigUiOidcController(client, auth, accounts, properties), values(files))
                 .addInterceptors(interceptor)
                 .addFilters(filter).build();

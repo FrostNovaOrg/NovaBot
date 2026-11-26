@@ -40,6 +40,7 @@
         <module>plugins/nova-onebot-adapter</module>
         <module>plugins/nova-onebot-adapter-napcat-extension</module>
         <module>plugins/nova-qqbot-adapter</module>
+        <module>plugins/nova-outbox-adapter</module>
         <module>plugins/nova-bilibili</module>
         <module>plugins/nova-bilibili-interact</module>
         <module>plugins/nova-console</module>

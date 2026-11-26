@@ -343,6 +343,18 @@ public class ConfigUiAuthService implements SmartLifecycle, EnvironmentAware {
 
     public boolean oidcEnabled() { return isEnabled() && oidc != null && oidc.isEnabled(); }
 
+    /**
+     * 成员账号此刻能不能登录控制台
+     * <p>
+     * 成员只有单点登录一条路：口令、通行密钥、启动令牌换出来的都是本地管理员的会话
+     * （见 {@code issueLocal}），只有 {@link #issueForOidc} 给别的账号签会话。
+     * 所以成员此刻能不能登录就是单点登录此刻开没开；开关每次现算（口令可以在运行期设下或撤掉），
+     * 访问令牌那边每个请求都问这里，开回来后下一个请求就恢复。
+     * 以后成员多了别的登录方式，改这一处。
+     * @return 成员此刻能登录时为 true
+     */
+    public boolean memberSignInOpen() { return oidcEnabled(); }
+
     public boolean oidcCallbackSetupNeeded() { return oidcEnabled() && oidc.callbackSetupNeeded(); }
 
     public boolean oidcCreateSupported() { return oidcEnabled() && oidc.createSupported(); }

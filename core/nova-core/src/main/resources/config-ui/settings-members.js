@@ -201,13 +201,14 @@ function accountRow(list, account, options, optionsReady, state, refresh) {
     }
     if (account.status === 'ENABLED') {
       button(actions, '停用', 'disable', () => run(async () => {
-        if (!await ask({title: '停用这个账号？', body: '对方会立刻被踢下线，停用后不能登录控制台。'})) return false;
+        if (!await ask({title: '停用这个账号？', body: '对方会立刻被踢下线，停用后不能登录控制台。'
+          + '这个账号名下的访问令牌会一并吊销，重新启用后也不会恢复，要用得重新签发。'})) return false;
         await accountApi(path + '/disable');
       }));
     }
     if (account.role === 'MEMBER' && ['PENDING', 'DISABLED'].includes(account.status)) {
       button(actions, '删除', 'delete', () => run(async () => {
-        if (!await ask({title: '删除这位成员？', body: '账号及指定主播将从控制台删除。'})) return false;
+        if (!await ask({title: '删除这位成员？', body: '账号及指定主播将从控制台删除，名下的访问令牌一并吊销。'})) return false;
         await accountApi(path, 'DELETE');
       }));
     }

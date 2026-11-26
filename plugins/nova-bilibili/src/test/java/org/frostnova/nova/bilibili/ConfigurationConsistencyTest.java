@@ -447,9 +447,11 @@ class ConfigurationConsistencyTest {
      * @return 合并后的分组表
      */
     private ConfigurationGroups groups() {
-        List<ConfigurationGroupContributor> contributors = new ArrayList<>();
+        var contributors = new ArrayList<ConfigurationGroupContributor>();
         contributors.add(new BilibiliConfigurationGroups());
         contributors.add(oneBotContributor());
+        contributors.addAll(loadOptionalContributor(ConfigurationGroupContributor.class,
+                "org.frostnova.nova.adapter.outbox.OutboxPluginAutoConfiguration"));
         // 直播间互动插件同样不在本模块的编译依赖里，它的两项归组也得并进来；
         // 单独构建本模块、那个插件还没产物时，它的配置项也不在分母里，缺席即跳过
         contributors.addAll(loadOptionalContributor(ConfigurationGroupContributor.class,

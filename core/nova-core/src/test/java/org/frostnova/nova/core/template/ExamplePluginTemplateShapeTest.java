@@ -34,6 +34,7 @@ class ExamplePluginTemplateShapeTest {
             "plugins/nova-onebot-adapter/pom.xml",
             "plugins/nova-onebot-adapter-napcat-extension/pom.xml",
             "plugins/nova-qqbot-adapter/pom.xml",
+            "plugins/nova-outbox-adapter/pom.xml",
             "plugins/nova-bilibili/pom.xml",
             "plugins/nova-bilibili-interact/pom.xml",
             "plugins/nova-console/pom.xml",
