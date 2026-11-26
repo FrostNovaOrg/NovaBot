@@ -98,7 +98,12 @@ function draw(account) {
   let tip;
   let qr = '';
   let buttons;
-  if (account.loggedIn) {
+  if (account.disabledReason) {
+    // 停用了（例如凭据文件与监听账号的是同一个）：扫码与退出都不给，那一句理由已在上面
+    waitingSince = 0;
+    tip = '发言账号已停用，改好配置并重启后才能使用。';
+    buttons = '';
+  } else if (account.loggedIn) {
     waitingSince = 0;
     tip = '退出登录会清除本机保存的发言账号凭据，监听账号不受影响。';
     buttons = '<button type="button" class="danger" data-speaker="logout"' + (busy ? ' disabled' : '') + '>退出登录</button>';

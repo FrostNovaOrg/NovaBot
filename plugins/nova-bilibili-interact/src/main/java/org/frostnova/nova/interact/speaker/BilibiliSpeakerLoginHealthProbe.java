@@ -72,6 +72,9 @@ public class BilibiliSpeakerLoginHealthProbe implements HealthProbe {
 
     @Override
     public HealthStatus check() {
+        if (speaker.disabledReason().isPresent()) {
+            return HealthStatus.down("与监听账号共用了凭据文件，发言账号已停用", speaker.disabledReason().get());
+        }
         if (!speaker.isLoggedIn()) {
             return HealthStatus.down(speaker.isLoggingIn() ? "等待扫码登录" : "凭据已失效，需要重新扫码", ADVICE_EXPIRED);
         }

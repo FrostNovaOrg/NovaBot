@@ -3,6 +3,13 @@ package org.frostnova.nova.interact.speaker;
 import org.frostnova.nova.bilibili.config.NovaBilibiliProperties;
 import org.frostnova.nova.interact.config.InteractProperties;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Optional;
+
 /**
  * 发言账号的账号配置
  * <p>
@@ -20,6 +27,59 @@ final class SpeakerAccountSettings extends NovaBilibiliProperties.Account {
     SpeakerAccountSettings(NovaBilibiliProperties.Account listener, InteractProperties.Account own) {
         this.listener = listener;
         this.own = own;
+    }
+
+    /**
+     * 发言账号的凭据文件或密钥文件是不是与监听账号的某一个落在同一处
+     * <p>
+     * 落在同一处的话，发言账号会把监听账号的凭据读进来，扫码登录会写坏它，退出登录会把它删掉——
+     * 监听账号跟着掉登录。四对路径两两比：各自解析成绝对路径、去掉 {@code .} 与 {@code ..} 之后比；
+     * 两头的文件都已存在时，再问一次文件系统是不是同一个文件（认得出链接）。只看路径与文件身份，不读内容。
+     * @return 冲突时的说明，没有冲突时为空
+     */
+    Optional<String> sharedFileWithListener() {
+        List<String> mine = List.of(own.getCookiePath(), own.getKeyPath());
+        List<String> theirs = List.of(listener.getCookiePath(), listener.getKeyPath());
+        for (String a : mine) {
+            for (String b : theirs) {
+                if (samePlace(a, b)) {
+                    return Optional.of(SHARED_FILE);
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * 路径冲突时说给使用者的话
+     */
+    static final String SHARED_FILE = "发言账号的凭据文件或密钥文件与监听账号的是同一个，发言账号已停用。"
+            + "两个账号不能共用同一个凭据文件，请把 novabot.bilibili.interact.account.cookie-path 与 key-path "
+            + "改回各自的路径后重启";
+
+    private static boolean samePlace(String a, String b) {
+        if (a == null || b == null || a.isBlank() || b.isBlank()) {
+            return false;
+        }
+        Path left;
+        Path right;
+        try {
+            left = Path.of(a).toAbsolutePath().normalize();
+            right = Path.of(b).toAbsolutePath().normalize();
+        } catch (InvalidPathException e) {
+            return false;
+        }
+        if (left.equals(right)) {
+            return true;
+        }
+        if (Files.exists(left) && Files.exists(right)) {
+            try {
+                return Files.isSameFile(left, right);
+            } catch (IOException e) {
+                return false;
+            }
+        }
+        return false;
     }
 
     @Override

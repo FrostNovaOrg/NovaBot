@@ -111,6 +111,14 @@ public class BilibiliSpeakerAccount {
     private final AtomicBoolean started = new AtomicBoolean();
 
     /**
+     * 发言账号为什么整个停用，没停用时为空
+     * <p>
+     * 眼下只有一种：凭据文件或密钥文件与监听账号的是同一个。停用之后不读、不写、不删那个文件，
+     * 也不向平台发任何请求，只在卡上与自检里说明原因。启动时判一次：两项路径都是改了要重启才生效的
+     */
+    private final Optional<String> disabled;
+
+    /**
      * 每退出一次加一。排上了还没开始的那一轮扫码，开始前对一下：退出登录之后排上的才算数
      */
     private final AtomicInteger generation = new AtomicInteger();
@@ -138,6 +146,8 @@ public class BilibiliSpeakerAccount {
         this.store = store == null ? new BilibiliCredentialStore(settings) : store;
         this.listener = listener;
         this.worker = worker;
+        this.disabled = settings instanceof SpeakerAccountSettings own ? own.sharedFileWithListener() : Optional.empty();
+        disabled.ifPresent(reason -> log.error("{}{}", LOG_PREFIX, reason));
         this.account = new BilibiliAccountService(api, this.store, settings,
                 new BilibiliAccountService.Profile(LOG_PREFIX, LOGGED_OUT_WARNING, QR_CODE_ROUNDS, this::refuse));
     }
@@ -173,7 +183,7 @@ public class BilibiliSpeakerAccount {
      */
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady() {
-        if (!started.compareAndSet(false, true)) {
+        if (!started.compareAndSet(false, true) || disabled.isPresent()) {
             return;
         }
         worker.execute(this::restore);
@@ -188,6 +198,9 @@ public class BilibiliSpeakerAccount {
      * 用保存的凭据登录
      */
     void restore() {
+        if (disabled.isPresent()) {
+            return;
+        }
         BilibiliAccountService.SavedLogin result = account.restoreSaved();
         if (result == BilibiliAccountService.SavedLogin.NONE) {
             return;
@@ -226,6 +239,9 @@ public class BilibiliSpeakerAccount {
      * @return 说给使用者的一句话
      */
     public String startLogin() {
+        if (disabled.isPresent()) {
+            return disabled.get();
+        }
         if (account.isLoggedIn()) {
             return "发言账号已登录，无需扫码";
         }
@@ -259,6 +275,10 @@ public class BilibiliSpeakerAccount {
      * 退出登录：中止正在进行的扫码，清掉本机保存的发言账号凭据。监听账号一个字节都不碰
      */
     public void logout() {
+        if (disabled.isPresent()) {
+            // 凭据文件就是监听账号的那一份：这里一删，监听账号就掉登录
+            return;
+        }
         generation.incrementAndGet();
         account.cancelQrCodeLogin();
         account.logout();
@@ -281,10 +301,20 @@ public class BilibiliSpeakerAccount {
 
     /**
      * 本机是否存着这个号的凭据（登录过、没退出；凭据失效了也算）
+     * <p>
+     * 停用时也答 true：自检项要出来说明为什么停用
      * @return 存着时返回 true
      */
     public boolean hasCredentials() {
-        return hasCredentials || account.isLoggedIn();
+        return disabled.isPresent() || hasCredentials || account.isLoggedIn();
+    }
+
+    /**
+     * 发言账号整个停用的原因
+     * @return 原因，没停用时为空
+     */
+    public Optional<String> disabledReason() {
+        return disabled;
     }
 
     /**
@@ -316,6 +346,9 @@ public class BilibiliSpeakerAccount {
      * @return 说明，没有时为空
      */
     public Optional<String> notice() {
+        if (disabled.isPresent()) {
+            return disabled;
+        }
         String last = account.getLoginNotice();
         if (last != null) {
             return Optional.of(last);
@@ -337,6 +370,9 @@ public class BilibiliSpeakerAccount {
      * @return 理由
      */
     public Optional<String> unusableReason() {
+        if (disabled.isPresent()) {
+            return disabled;
+        }
         if (!account.isLoggedIn()) {
             return Optional.of(hasCredentials ? "发言账号的登录已失效，请在连接页重新扫码登录" : "还没有登录发言账号");
         }

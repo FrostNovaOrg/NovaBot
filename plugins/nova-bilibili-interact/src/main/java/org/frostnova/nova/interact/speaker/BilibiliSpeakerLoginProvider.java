@@ -115,6 +115,11 @@ public class BilibiliSpeakerLoginProvider implements AccountLoginProvider {
     }
 
     @Override
+    public Optional<String> disabledReason() {
+        return speaker.disabledReason();
+    }
+
+    @Override
     public Optional<String> loginNotice() {
         return speaker.notice();
     }

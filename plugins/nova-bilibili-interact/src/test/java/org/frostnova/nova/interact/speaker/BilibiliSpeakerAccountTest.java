@@ -241,6 +241,49 @@ class BilibiliSpeakerAccountTest {
     }
 
     /**
+     * 抓的用户故障：把发言账号的凭据文件配成了监听账号那一份，在发言账号卡上点「退出登录」，
+     * 监听账号的凭据文件被删掉，监听账号跟着掉了登录
+     */
+    @Test
+    @DisplayName("凭据文件与监听账号的同一个：发言账号不启用，不读不写不删那个文件，卡上与自检说明原因")
+    void sharedCredentialFileWithListenerIsRefused() throws Exception {
+        NovaBilibiliProperties bilibili = new NovaBilibiliProperties();
+        Path listenerCookies = Files.writeString(dir.resolve("cookies.json"), "{\"payload\":\"listener\"}");
+        Path listenerKey = Files.writeString(dir.resolve("cookies.key"), "listener-key");
+        bilibili.getAccount().setCookiePath(listenerCookies.toString());
+        bilibili.getAccount().setKeyPath(listenerKey.toString());
+        byte[] cookiesBefore = Files.readAllBytes(listenerCookies);
+        byte[] keyBefore = Files.readAllBytes(listenerKey);
+
+        InteractProperties interact = new InteractProperties();
+        // 写法不同、落点相同：路径里绕一层目录再回来
+        Files.createDirectories(dir.resolve("sub"));
+        interact.getAccount().setCookiePath(dir.resolve("sub/../cookies.json").toString());
+        interact.getAccount().setKeyPath(dir.resolve("speaker-cookies.key").toString());
+        scanSucceedsAs(api, SPEAKER_UID);
+        BilibiliSpeakerAccount speaker = speaker(api,
+                new SpeakerAccountSettings(bilibili.getAccount(), interact.getAccount()), null);
+        BilibiliSpeakerLoginHealthProbe probe = new BilibiliSpeakerLoginHealthProbe(speaker);
+
+        speaker.onApplicationReady();
+        drain();
+        speaker.startLogin();
+        drain();
+        speaker.logout();
+        drain();
+
+        assertArrayEquals(cookiesBefore, Files.readAllBytes(listenerCookies), "监听账号的凭据文件被改了或被删了");
+        assertArrayEquals(keyBefore, Files.readAllBytes(listenerKey), "监听账号的密钥文件被改了");
+        verifyNoInteractions(api);
+        assertFalse(speaker.isLoggedIn());
+        assertTrue(speaker.notice().orElse("").contains("不能共用同一个凭据文件"), speaker.notice().toString());
+        assertTrue(probe.active(), "路径冲突要在自检里报出来");
+        assertEquals(HealthStatus.Level.DOWN, probe.check().level());
+        assertTrue(probe.check().advice().contains("各自的路径"), probe.check().advice());
+        assertFalse(new BilibiliSpeakerService(speaker).available());
+    }
+
+    /**
      * 抓的用户故障：发言账号的凭据明文落盘、混进监听账号的文件，或者把监听账号的凭据改掉；
      * 重启之后发言账号要重新扫码
      */
