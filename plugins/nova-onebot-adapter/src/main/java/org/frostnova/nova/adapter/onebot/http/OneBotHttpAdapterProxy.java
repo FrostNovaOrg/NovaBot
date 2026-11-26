@@ -23,13 +23,6 @@ import java.util.Map;
  */
 @Slf4j
 public class OneBotHttpAdapterProxy implements InvocationHandler {
-    /** HTTP 请求在发出前被通道开关拦下。 */
-    public static final class ChannelDisabledException extends IllegalStateException {
-        private ChannelDisabledException() {
-            super(OneBotAdapterPluginProperties.NapCat.DISABLED_REASON);
-        }
-    }
-
     private final HttpUtil http;
 
     private final OneBotConnectionState state;
@@ -78,7 +71,7 @@ public class OneBotHttpAdapterProxy implements InvocationHandler {
                 // 耗时是一个健康维度：接口调得通但每次要好几秒时，图片推送会因为
                 // 没有工作线程去读那个大请求体而超时丢弃，而连通性检查全程看不出异常
                 long startTime = System.currentTimeMillis();
-                if (properties.channelDisabled()) throw new ChannelDisabledException();
+                if (properties.channelDisabled()) throw new IllegalStateException(OneBotAdapterPluginProperties.NapCat.DISABLED_REASON);
                 JSONObject result = http.postJson(url, headers, params);
                 if (api.latency()) {
                     state.recordLatency(sender.getName(), System.currentTimeMillis() - startTime);

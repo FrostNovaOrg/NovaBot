@@ -9,7 +9,7 @@ import org.frostnova.nova.adapter.onebot.enums.ResultCode;
 import org.frostnova.nova.adapter.onebot.exception.OneBotApiException;
 import org.frostnova.nova.adapter.onebot.health.OneBotConnectionState;
 import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapter;
-import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapterProxy.ChannelDisabledException;
+import org.frostnova.nova.adapter.onebot.http.OneBotResponseErrorHandler;
 import org.frostnova.nova.adapter.onebot.dto.MessageDTO;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
 import org.frostnova.nova.core.enums.PushTargetType;
@@ -25,24 +25,13 @@ import org.springframework.core.annotation.Order;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.HttpStatusCodeException;
-import org.springframework.web.util.InvalidUrlException;
-import org.springframework.web.util.UriComponentsBuilder;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.DeserializationFeature;
-import tools.jackson.databind.ObjectReader;
-import tools.jackson.databind.json.JsonMapper;
 
-import javax.net.ssl.SSLHandshakeException;
 import java.net.ConnectException;
 import java.net.NoRouteToHostException;
 import java.net.PortUnreachableException;
 import java.net.SocketTimeoutException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.UnknownHostException;
 import java.net.http.HttpConnectTimeoutException;
-import java.net.http.HttpTimeoutException;
 import java.nio.channels.UnresolvedAddressException;
 import java.time.Duration;
 import java.time.Instant;
@@ -57,9 +46,6 @@ import java.util.concurrent.ScheduledFuture;
 @Slf4j
 @NovaComponent
 public class OneBotHttpService {
-    private static final ObjectReader SEND_RESULT_READER = JsonMapper.shared().readerFor(JSONObject.class)
-            .with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
-
     private final TaskScheduler taskScheduler;
 
     private final ThreadPoolTaskExecutor executor;
@@ -183,41 +169,30 @@ public class OneBotHttpService {
             return new JSONObject().fluentPut("code", ResultCode.UNKNOWN_PLATFORM.getCode()).fluentPut("message", "推送平台 " + message.getPlatform() + " 未注册").fluentPut("id", null);
         }
 
-        JSONArray elements;
         try {
-            elements = converter.convert(message.getContent());
+            JSONObject params = new JSONObject();
+
+            JSONArray elements = converter.convert(message.getContent());
             if (elements.isEmpty()) {
                 return new JSONObject().fluentPut("code", ResultCode.EMPTY_MESSAGE.getCode()).fluentPut("message", ResultCode.EMPTY_MESSAGE.getMsg()).fluentPut("id", null);
             }
-        } catch (RuntimeException e) {
-            return sendFailure(e);
-        }
-        boolean group = message.getType() == PushTargetType.GROUP;
-        if (!group && message.getType() != PushTargetType.FRIEND) {
-            return new JSONObject().fluentPut("code", ResultCode.UNKNOWN_TARGET_TYPE.getCode()).fluentPut("message", ResultCode.UNKNOWN_TARGET_TYPE.getMsg()).fluentPut("id", null);
-        }
-        if (!sender.httpTokenFitsInHeader()) {
-            return sendFailure(new IllegalArgumentException("OneBot HTTP Token 含有请求头放不下的字符"));
-        }
-        try {
-            String base = OneBotEndpointAddresses.httpBaseUrl(
-                    sender.getName(), sender.getOneBotAddress(), sender.getOneBotHttpPort());
-            URI endpoint = UriComponentsBuilder.fromUriString(base).buildAndExpand().encode().toUri();
-            if (endpoint.getHost() == null || endpoint.getPort() > 65535) {
-                return sendFailure(new IllegalArgumentException("OneBot HTTP 主机或端口无效"));
-            }
-        } catch (RuntimeException e) {
-            return sendFailure(e);
-        }
 
-        JSONObject params = JSONObject.of("message", elements, group ? "group_id" : "user_id", String.valueOf(message.getNum()));
-        try {
+            params.put("message", elements);
+
             JSONObject result;
-            if (group && needsAtAllImageSplit(elements)) {
+            if (message.getType() == PushTargetType.FRIEND) {
+                params.put("user_id", String.valueOf(message.getNum()));
+                result = http.sendPrivateMsg(sender, params);
+            } else if (message.getType() == PushTargetType.GROUP) {
+                params.put("group_id", String.valueOf(message.getNum()));
                 // QQ 会把同一条里的 @全体成员 降成文字；有图时拆成两次发
-                result = sendGroupAtAllThenImage(sender, params, elements);
+                if (needsAtAllImageSplit(elements)) {
+                    result = sendGroupAtAllThenImage(sender, params, elements);
+                } else {
+                    result = http.sendGroupMsg(sender, params);
+                }
             } else {
-                result = sendMessage(sender, params, group);
+                return new JSONObject().fluentPut("code", ResultCode.UNKNOWN_TARGET_TYPE.getCode()).fluentPut("message", ResultCode.UNKNOWN_TARGET_TYPE.getMsg()).fluentPut("id", null);
             }
 
             return new JSONObject().fluentPut("code", ResultCode.SUCCESS.getCode()).fluentPut("message", ResultCode.SUCCESS.getMsg()).fluentPut("id", result.getString("message_id"));
@@ -226,61 +201,30 @@ public class OneBotHttpService {
         } catch (HttpClientErrorException.Forbidden e) {
             log.warn("{} 的 OneBot HTTP Token 配置不正确, 请检查 Token 配置", message.getPlatform());
             return new JSONObject().fluentPut("code", ResultCode.UNAUTHORIZED.getCode()).fluentPut("message", "Token 配置不正确").fluentPut("id", null);
-        } catch (HttpStatusCodeException e) {
-            return sendFailure(e);
-        } catch (ChannelDisabledException e) {
-            return PlatformDeliveryGate.blockedResponse(e.getMessage());
         } catch (Exception e) {
+            boolean unreachable = requestNeverReached(e);
+            String missingReply = unreachable ? null : OneBotResponseErrorHandler.missingReplyReason(e);
+            if (missingReply != null) {
+                // NapCat 可能已经发进群，剥图补发也会让群里多一条。
+                log.error("OneBot HTTP 送达不明: {}, 不重发", missingReply, e);
+                return new JSONObject().fluentPut("code", ResultCode.UNKNOWN.getCode())
+                        .fluentPut("message", "送达不明: " + missingReply)
+                        .fluentPut("id", null)
+                        .fluentPut(Sender.LocalDelivery.DELIVERY_UNKNOWN, true);
+            }
+            if (properties.channelDisabled()) return PlatformDeliveryGate.blockedResponse(OneBotAdapterPluginProperties.NapCat.DISABLED_REASON);
             // 没送到（连接被拒、连接超时、找不到主机）不能包成普通结果。
             // 核心只在抛异常或结果为空时才按原有次数重试；包成非空结果，
             // NapCat 重启那几秒发出的开播通知就丢了。
-            TransportFailure failure = classifyTransportFailure(e);
-            if (failure == TransportFailure.UNREACHABLE) {
+            if (unreachable) {
                 log.warn("OneBot HTTP 请求未送到, 交回核心重试: {}", e.getMessage());
-                if (e instanceof RuntimeException runtime) throw runtime;
+                if (e instanceof RuntimeException runtime) {
+                    throw runtime;
+                }
                 throw new IllegalStateException(e);
             }
-            if (failure == TransportFailure.SETUP_FAILED) return sendFailure(e);
-            // 没有明确回包时，NapCat 可能已经发进群。重发原消息或剥图补发都会重复通知。
-            String reason = failure == TransportFailure.READ_TIMEOUT ? "请求已送出, 等回包超时" : "未取得 OneBot 的发送结果";
-            log.error("OneBot HTTP 送达不明: {}, 不重发", reason, e);
-            return new JSONObject().fluentPut("code", ResultCode.UNKNOWN.getCode())
-                    .fluentPut("message", "送达不明: " + reason)
-                    .fluentPut("id", null)
-                    .fluentPut(Sender.LocalDelivery.DELIVERY_UNKNOWN, true);
-        }
-    }
-
-    private static JSONObject sendFailure(Exception e) {
-        log.error("OneBot HTTP 发送消息异常", e);
-        return new JSONObject().fluentPut("code", ResultCode.UNKNOWN.getCode()).fluentPut("message", "OneBot HTTP 发送消息异常, 请检查插件日志错误信息").fluentPut("id", null);
-    }
-
-    private JSONObject sendMessage(OneBotSender sender, JSONObject params, boolean group) {
-        try {
-            return group ? http.sendGroupMsg(sender, params) : http.sendPrivateMsg(sender, params);
-        } catch (HttpStatusCodeException error) {
-            // HTTP 错误也可能带完整的 OneBot 发送结果，包括图片下载失败。
-            try {
-                JSONObject reply = SEND_RESULT_READER.readValue(error.getResponseBodyAsString());
-                if (reply != null) {
-                    String status = reply.getString("status");
-                    String code = reply.getString("retcode");
-                    if (code != null) {
-                        String fromCode = Integer.parseInt(code) == 0 ? "ok" : "failed";
-                        status = status == null || status.equals(fromCode) ? fromCode : null;
-                    }
-                    if ("failed".equals(status)) throw error;
-                    if ("ok".equals(status)) {
-                        JSONObject data = reply.getJSONObject("data");
-                        return data == null ? new JSONObject() : data;
-                    }
-                }
-            } catch (JacksonException | NumberFormatException unreadable) {
-                // 错误页、残缺的 JSON 或读不出的结果码都不能证明消息没发出。
-            }
-            if (error.getStatusCode().is4xxClientError()) throw error;
-            throw new IllegalStateException("未取得 OneBot 的发送结果", error);
+            log.error("OneBot HTTP 发送消息异常", e);
+            return new JSONObject().fluentPut("code", ResultCode.UNKNOWN.getCode()).fluentPut("message", "OneBot HTTP 发送消息异常, 请检查插件日志错误信息").fluentPut("id", null);
         }
     }
 
@@ -303,13 +247,13 @@ public class OneBotHttpService {
 
         JSONObject firstParams = new JSONObject(params);
         firstParams.put("message", text);
-        JSONObject first = sendMessage(sender, firstParams, true);
+        JSONObject first = http.sendGroupMsg(sender, firstParams);
 
         if (properties.channelDisabled()) return first;
         JSONObject secondParams = new JSONObject(params);
         secondParams.put("message", images);
         try {
-            sendMessage(sender, secondParams, true);
+            http.sendGroupMsg(sender, secondParams);
         } catch (Exception e) {
             log.warn("群消息图片补发失败, @全体成员与文字已送达: {}", e.getMessage());
         }
@@ -345,12 +289,11 @@ public class OneBotHttpService {
         return element != null && "image".equals(element.getString("type"));
     }
 
-    private enum TransportFailure {
-        UNREACHABLE, SETUP_FAILED, READ_TIMEOUT, UNKNOWN
-    }
-
-    private static TransportFailure classifyTransportFailure(Throwable error) {
-        TransportFailure failure = TransportFailure.UNKNOWN;
+    /**
+     * 请求有没有离开本机。连接被拒、连接超时、找不到主机都算没离开：
+     * 对端不可能已经把消息发出去，交回核心重试不会在群里变成两条。
+     */
+    private static boolean requestNeverReached(Throwable error) {
         Throwable current = error;
         for (int depth = 0; current != null && depth < 8; depth++) {
             if (current instanceof ConnectException
@@ -358,16 +301,11 @@ public class OneBotHttpService {
                     || current instanceof NoRouteToHostException
                     || current instanceof PortUnreachableException
                     || current instanceof HttpConnectTimeoutException
-                    || current instanceof UnresolvedAddressException
-                    || (current instanceof SocketTimeoutException && isConnectTimeout(current.getMessage()))) {
-                return TransportFailure.UNREACHABLE;
+                    || current instanceof UnresolvedAddressException) {
+                return true;
             }
-            if (current instanceof SSLHandshakeException || current instanceof InvalidUrlException
-                    || current instanceof URISyntaxException) {
-                return TransportFailure.SETUP_FAILED;
-            }
-            if (current instanceof SocketTimeoutException || current instanceof HttpTimeoutException) {
-                failure = TransportFailure.READ_TIMEOUT;
+            if (current instanceof SocketTimeoutException && mentionsConnect(current.getMessage())) {
+                return true;
             }
             Throwable next = current.getCause();
             if (next == current) {
@@ -375,13 +313,11 @@ public class OneBotHttpService {
             }
             current = next;
         }
-        return failure;
+        return false;
     }
 
-    private static boolean isConnectTimeout(String message) {
-        if (message == null) return false;
-        String reason = message.toLowerCase(Locale.ROOT);
-        return reason.startsWith("connect timed out") || reason.startsWith("connect timeout");
+    private static boolean mentionsConnect(String message) {
+        return message != null && message.toLowerCase(Locale.ROOT).contains("connect");
     }
 
     /**

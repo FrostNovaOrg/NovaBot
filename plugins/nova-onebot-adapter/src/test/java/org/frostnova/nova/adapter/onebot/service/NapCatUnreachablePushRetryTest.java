@@ -5,11 +5,11 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
+import org.frostnova.nova.adapter.onebot.config.OneBotHttpAdapterRegistrar;
 import org.frostnova.nova.adapter.onebot.converter.OneBotMessageConverter;
 import org.frostnova.nova.adapter.onebot.dto.MessageDTO;
 import org.frostnova.nova.adapter.onebot.health.OneBotConnectionState;
 import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapter;
-import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapterProxy;
 import org.frostnova.nova.adapter.onebot.model.OneBotSender;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.enums.PushTargetType;
@@ -35,19 +35,24 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.mock.http.client.MockClientHttpRequest;
+import org.springframework.mock.http.client.MockClientHttpResponse;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.test.web.client.ExpectedCount;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.ByteArrayInputStream;
 import java.io.EOFException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.SequenceInputStream;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.SocketException;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -156,11 +161,18 @@ class NapCatUnreachablePushRetryTest {
     }
 
     @Test
-    @DisplayName("读不懂回包时标记送达不明")
-    void unreadableReplyIsMarkedDeliveryUnknown() {
+    @DisplayName("HTTP 回应读到一半连接重置时标记送达不明")
+    void interruptedResponseBodyIsMarkedDeliveryUnknown() {
         RestTemplate client = new RestTemplate();
         MockRestServiceServer server = MockRestServiceServer.bindTo(client).build();
-        server.expect(requestTo(SEND_GROUP_URL)).andRespond(withSuccess("{", MediaType.APPLICATION_JSON));
+        InputStream reset = new InputStream() {
+            @Override
+            public int read() throws IOException {
+                throw new SocketException("Connection reset");
+            }
+        };
+        InputStream body = new SequenceInputStream(new ByteArrayInputStream(new byte[]{'{'}), reset);
+        server.expect(requestTo(SEND_GROUP_URL)).andRespond(request -> new MockClientHttpResponse(body, 500));
 
         JSONObject broken = open(Mode.PASS_THROUGH, client, 3000).sender.sendNow(notice());
 
@@ -215,7 +227,7 @@ class NapCatUnreachablePushRetryTest {
         server.expect(requestTo(SEND_GROUP_URL))
                 .andExpect(jsonPath("$.message[1].type").value("image"))
                 .andRespond(withServerError().contentType(MediaType.APPLICATION_JSON).body("""
-                        {"retcode":100,"status":"failed","message":"image download failed"}
+                        {"retcode":100.0,"status":"failed","message":"image download failed"}
                         """));
         server.expect(requestTo(SEND_GROUP_URL))
                 .andExpect(jsonPath("$.message[0].type").value("text"))
@@ -271,15 +283,16 @@ class NapCatUnreachablePushRetryTest {
 
         HttpUtil http = new HttpUtil(executor, client, new LogProperties());
         OneBotConnectionState state = new OneBotConnectionState();
-        InvocationHandler real = new OneBotHttpAdapterProxy(http, state);
+        OneBotAdapterPluginProperties properties = new OneBotAdapterPluginProperties();
+        properties.getDetect().setEnableHttpDetect(false);
+        InvocationHandler real = new OneBotHttpAdapterRegistrar().oneBotHttpAdapterProxy(
+                executor, client, new LogProperties(), state, properties);
         Gate gate = new Gate(mode, real, http, closedPort, hangUrl());
         OneBotHttpAdapter adapter = (OneBotHttpAdapter) Proxy.newProxyInstance(
                 OneBotHttpAdapter.class.getClassLoader(),
                 new Class[]{OneBotHttpAdapter.class},
                 gate);
 
-        OneBotAdapterPluginProperties properties = new OneBotAdapterPluginProperties();
-        properties.getDetect().setEnableHttpDetect(false);
         OneBotHttpService service = new OneBotHttpService(mock(TaskScheduler.class), executor, properties, adapter,
                 new OneBotMessageConverter(), state);
 
