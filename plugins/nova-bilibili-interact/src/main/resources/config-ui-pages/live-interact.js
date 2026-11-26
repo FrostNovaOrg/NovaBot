@@ -51,6 +51,9 @@ const welcomeKinds = {
   listedWelcome: {label: '欢迎指定的人进房', template: 'listedTemplate'},
 };
 const templateKinds = {...thanksKinds, ...welcomeKinds};
+const keywordKind = {label: '关键词回复', fields: ['{用户}', '{主播}']};
+const pkKind = {label: 'PK 对手信息播报', fields: ['{对手}', '{粉丝}', '{舰队}', '{高能}', '{主播}']};
+const messageKinds = {...templateKinds, keywordReply: keywordKind, pkOpponent: pkKind};
 const blankText = text => /^[\p{White_Space}\x1C-\x1F\uFEFF]*$/u.test(text);
 
 const part = id => root && root.querySelector('#' + id);
@@ -162,6 +165,13 @@ export function render(section) {
               <div class="li-fields" id="li-thanks"></div>
               <p class="hint">监听账号没登录时，平台可能遮住观众身份，两项进房欢迎都可能不起作用。</p>
               <div class="li-fields" id="li-welcomes"></div>
+              <fieldset class="li-thanks"><legend><label class="li-check">
+                <input id="li-keywordReply" type="checkbox">关键词回复</label></legend>
+                <p class="hint">按顺序匹配第一条启用的规则。同一位观众每 30 秒最多收到一次回复。</p>
+                <div class="li-people" id="li-rules"></div>
+                <button type="button" id="li-rule-add">添加规则</button> <small class="li-count">最多 30 条规则</small>
+              </fieldset>
+              <div id="li-pk"></div>
               <fieldset class="li-thanks"><legend><label class="li-check">
                 <input id="li-pauseActivities" type="checkbox">天选、红包期间暂停自动弹幕</label></legend>
                 <p class="hint">本房天选期间或红包开启后 60 秒内跳过自动弹幕，活动重叠时等到全部结束，试发照常。</p>
@@ -474,6 +484,13 @@ function bindAutomatic() {
     drawPlans();
     markDirty();
   });
+  part('li-rule-add').addEventListener('click', () => {
+    if (!draft || draft.keywordRules.length >= 30) return;
+    collectRules();
+    draft.keywordRules.push({enabled: true, keywords: [''], exact: false, replies: [''], random: false, cooldownSeconds: 60});
+    drawRules();
+    markDirty();
+  });
   part('li-save').addEventListener('click', saveSettings);
   part('li-history-room').addEventListener('change', () => {
     historyUid = part('li-history-room').value;
@@ -506,6 +523,8 @@ async function readSettings(uid) {
   part('li-plans').innerHTML = '';
   part('li-thanks').innerHTML = '';
   part('li-welcomes').innerHTML = '';
+  part('li-rules').innerHTML = '';
+  part('li-pk').innerHTML = '';
   showResult('li-settings-result', uid ? '正在读取设置…' : '请先添加一位主播。');
   if (!uid) return;
   try {
@@ -513,13 +532,14 @@ async function readSettings(uid) {
     if (mine !== settingsRequest) return;
     if (!res?.success) throw new Error(res?.message || '读取失败');
     draft = res.settings;
-    defaultTemplates = {...res.defaultThanksTemplates, ...res.defaultWelcomeTemplates};
+    defaultTemplates = {...res.defaultThanksTemplates, ...res.defaultWelcomeTemplates, pkOpponent: res.defaultPkTemplate};
     part('li-pauseActivities').checked = !!draft.features.pauseActivities;
     part('li-enabled').checked = draft.enabled;
     part('li-per-minute').value = draft.perMinute;
     part('li-timed').checked = !!draft.features.timed;
     drawPlans();
     drawFeatures();
+    drawRules();
     enableFields();
     part('li-editor').disabled = false;
     showResult('li-settings-result', '');
@@ -554,10 +574,14 @@ function drawPlans() {
   part('li-add').disabled = draft.plans.length >= 10;
 }
 
+function fieldsFor(kind) {
+  return kind.fields || ['{用户}', '{主播}', ...(kind.extra ? [kind.extra] : [])];
+}
+
 function templateEditor(key, kind) {
   return `<div class="li-template">
     <label>话术<input id="li-${key}-template" type="text" autocomplete="off">
-      <small class="li-count">可用 {用户} {主播}${kind.extra ? ' ' + kind.extra : ''}</small></label>
+      <small class="li-count">可用 ${fieldsFor(kind).join(' ')}</small></label>
     <div class="li-example"><small class="li-count">预览</small>
       <p id="li-${key}-preview"></p><small class="li-count" id="li-${key}-count"></small></div></div>`;
 }
@@ -605,10 +629,106 @@ function drawFeatures() {
     });
     if (kind.window) part('li-' + kind.window).value = draft.thanks[kind.window];
   }
+  part('li-keywordReply').checked = !!draft.features.keywordReply;
+  part('li-pk').innerHTML = featureCard('pkOpponent', pkKind);
+  part('li-pkOpponent').checked = !!draft.features.pkOpponent;
+  const pkTemplate = part('li-pkOpponent-template');
+  pkTemplate.value = draft.pkTemplate;
+  pkTemplate.placeholder = defaultTemplates.pkOpponent;
+  pkTemplate.addEventListener('input', () => drawPreview('pkOpponent'));
   part('li-giftMinYuan').value = draft.thanks.giftMinYuan;
   part('li-giftIncludeFree').checked = draft.thanks.giftIncludeFree;
   drawPeople();
   drawPreviews();
+}
+
+function ruleEditor(rule, i) {
+  const replies = rule.replies.map((_, j) => `<div class="li-template li-reply-row">
+    <label>回复 ${j + 1}<input class="li-reply" type="text" autocomplete="off"></label>
+    <div class="li-example"><small class="li-count">预览</small><p class="li-reply-preview"></p>
+      <small class="li-count li-reply-count"></small></div>
+    ${rule.replies.length > 1 ? '<div><button type="button" class="li-reply-remove">删除这句</button></div>' : ''}
+    </div>`).join('');
+  return `<fieldset class="li-plan li-rule"><legend>规则 ${i + 1}</legend>
+    <label class="li-check"><input class="li-rule-on" type="checkbox">启用这条规则</label>
+    <label>关键词（每行一个，最多 5 个，每个 1–20 字）<textarea class="li-keywords" rows="2"></textarea></label>
+    <div class="li-row"><label>匹配方式<select class="li-match"><option value="contains">包含</option>
+      <option value="exact">整句相同</option></select></label>
+      <label>冷却（秒）<input class="li-cooldown" type="number" min="10" max="3600"></label>
+      <label>回复顺序<select class="li-reply-order"><option value="cycle">轮流</option>
+      <option value="random">随机</option></select></label></div>
+    <small class="li-count">每句回复 1–60 字，可用 {用户} {主播}</small>${replies}
+    <div><button type="button" class="li-reply-add">添加回复</button> <small class="li-count">最多 5 句</small></div>
+    <div class="li-actions"><button type="button" class="li-rule-up">上移</button>
+      <button type="button" class="li-rule-down">下移</button>
+      <button type="button" class="li-rule-remove">删除规则</button></div></fieldset>`;
+}
+
+function collectRules() {
+  draft.keywordRules = Array.from(part('li-rules').querySelectorAll('.li-rule'), row => ({
+    enabled: !!row.querySelector('.li-rule-on').checked,
+    keywords: row.querySelector('.li-keywords').value.split(/\r?\n/),
+    exact: row.querySelector('.li-match').value === 'exact',
+    cooldownSeconds: Number(row.querySelector('.li-cooldown').value),
+    random: row.querySelector('.li-reply-order').value === 'random',
+    replies: Array.from(row.querySelectorAll('.li-reply'), input => input.value),
+  }));
+}
+
+function editRules(change) {
+  collectRules();
+  change(draft.keywordRules);
+  drawRules();
+  markDirty();
+}
+
+function drawRules() {
+  const box = part('li-rules');
+  box.innerHTML = draft.keywordRules.map(ruleEditor).join('');
+  box.querySelectorAll('.li-rule').forEach((row, i) => {
+    const rule = draft.keywordRules[i];
+    row.querySelector('.li-rule-on').checked = rule.enabled;
+    row.querySelector('.li-keywords').value = rule.keywords.join('\n');
+    row.querySelector('.li-match').value = rule.exact ? 'exact' : 'contains';
+    row.querySelector('.li-cooldown').value = rule.cooldownSeconds;
+    row.querySelector('.li-reply-order').value = rule.random ? 'random' : 'cycle';
+
+    row.querySelectorAll('.li-reply-row').forEach((line, j) => {
+      const input = line.querySelector('.li-reply');
+      input.value = rule.replies[j];
+      input.addEventListener('input', () => drawReplyPreview(line));
+      line.querySelector('.li-reply-remove')?.addEventListener('click',
+        () => editRules(rules => rules[i].replies.splice(j, 1)));
+      drawReplyPreview(line);
+    });
+    const add = row.querySelector('.li-reply-add');
+    add.disabled = rule.replies.length >= 5;
+    add.addEventListener('click', () => editRules(rules => rules[i].replies.push('')));
+    const up = row.querySelector('.li-rule-up');
+    const down = row.querySelector('.li-rule-down');
+    up.disabled = i === 0;
+    down.disabled = i === draft.keywordRules.length - 1;
+    function move(to) {
+      editRules(rules => {
+        const [moved] = rules.splice(i, 1);
+        rules.splice(to, 0, moved);
+      });
+    }
+    up.addEventListener('click', () => move(i - 1));
+    down.addEventListener('click', () => move(i + 1));
+    row.querySelector('.li-rule-remove').addEventListener('click', () => editRules(rules => rules.splice(i, 1)));
+  });
+  part('li-rule-add').disabled = draft.keywordRules.length >= 30;
+}
+
+function drawReplyPreview(line) {
+  const value = line.querySelector('.li-reply').value;
+  const counter = line.querySelector('.li-reply-count');
+  showPreview('keywordReply', value, '小明', line.querySelector('.li-reply-preview'), counter);
+  if (blankText(value) || [...value].length > 60) {
+    counter.textContent = blankText(value) ? '请填写回复' : '每句回复最多 60 字';
+    counter.classList.add('over');
+  }
 }
 
 function drawPeople() {
@@ -648,6 +768,8 @@ function collectPeople() {
 function drawPreviews() {
   if (!draft) return;
   for (const key of Object.keys(templateKinds)) drawPreview(key);
+  drawPreview('pkOpponent');
+  part('li-rules').querySelectorAll('.li-reply-row').forEach(drawReplyPreview);
   drawPeoplePreviews();
   if (!limits[settingsUid]) askLimit(settingsUid);
 }
@@ -671,20 +793,23 @@ function drawPreview(key) {
 }
 
 function showPreview(key, override, viewer, output, counter) {
-  const template = blankText(override) ? defaultTemplates[key] : override;
+  const template = blankText(override) ? defaultTemplates[key] || '' : override;
   const ranks = {CAPTAIN: '舰长', COMMANDER: '提督', GOVERNOR: '总督'};
-  const fields = {'用户': viewer, '主播': state.rooms.find(room => room.uid === settingsUid)?.name || '',
+  const streamer = state.rooms.find(room => room.uid === settingsUid)?.name || '';
+  const shortStreamer = [...streamer].length > 10 ? [...streamer].slice(0, 10).join('') + '…' : streamer;
+  const fields = {'用户': viewer, '主播': key === 'keywordReply' || key === 'pkOpponent' ? shortStreamer : streamer,
+    '对手': '小蓝', '粉丝': '12.3万', '舰队': '68', '高能': '320',
     '礼物': '小花花x3', '等级': key === 'guardWelcome' ? ranks[part('li-minimumLevel').value] : '舰长', '人数': '3'};
   let invalid = '';
   const preview = template.replace(/\{([^{}]*)}/g, (token, field) => {
-    if (field === '用户' || field === '主播' || token === templateKinds[key].extra) return fields[field];
+    if (fieldsFor(messageKinds[key]).includes(token)) return fields[field];
     invalid = token;
     return token;
   });
   output.textContent = preview;
   counter.classList.toggle('over', !!invalid);
   if (invalid) {
-    counter.textContent = templateKinds[key].label + '不能使用占位符 ' + invalid;
+    counter.textContent = messageKinds[key].label + '不能使用占位符 ' + invalid;
     return;
   }
   const count = lengthOf(preview);
@@ -711,6 +836,10 @@ function collectDraft() {
     draft.features[key] = !!part('li-' + key).checked;
     draft.welcome[kind.template] = part('li-' + key + '-template').value;
   }
+  draft.features.keywordReply = !!part('li-keywordReply').checked;
+  draft.features.pkOpponent = !!part('li-pkOpponent').checked;
+  draft.pkTemplate = part('li-pkOpponent-template').value;
+  collectRules();
   draft.welcome.minimumLevel = part('li-minimumLevel').value;
   draft.features.pauseActivities = !!part('li-pauseActivities').checked;
   collectPeople();
@@ -767,7 +896,7 @@ async function readHistory() {
     const pages = Math.max(1, Math.ceil(res.total / res.pageSize));
     if (page > pages) { page = pages; return readHistory(); }
     box.innerHTML = res.rows.map(r => '<article class="li-record"><small>'
-      + esc(new Date(r.time).toLocaleString()) + ' · ' + esc(r.feature === 'test' ? '试发' : r.feature === 'timed' ? '定时弹幕' : templateKinds[r.feature]?.label || r.feature)
+      + esc(new Date(r.time).toLocaleString()) + ' · ' + esc(r.feature === 'test' ? '试发' : r.feature === 'timed' ? '定时弹幕' : messageKinds[r.feature]?.label || r.feature)
       + '</small><p>' + esc(r.text) + '</p><small>' + esc(outcomes[r.outcome]) + (r.reason && r.reason !== outcomes[r.outcome]
         ? ' · ' + esc(r.reason) : '') + '</small></article>').join('') || '没有符合条件的记录。';
     part('li-page').textContent = '第 ' + page + ' / ' + pages + ' 页 · 共 ' + res.total + ' 条';

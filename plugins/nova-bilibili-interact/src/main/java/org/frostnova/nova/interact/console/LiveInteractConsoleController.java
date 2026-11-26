@@ -129,7 +129,8 @@ public class LiveInteractConsoleController {
     public ResponseEntity<JSONObject> settings(@RequestParam(name = "uid") String uid) {
         var room = room(uid).orElseThrow(() -> new IllegalArgumentException("没有这位主播"));
         return response(HttpStatus.OK, JSONObject.of("success", true, "settings", store.settings(room.uid()),
-                "defaultThanksTemplates", ThanksKind.defaultTemplates(), "defaultWelcomeTemplates", WelcomeSettings.defaultTemplates()));
+                "defaultPkTemplate", RoomSettings.defaultPkTemplate(), "defaultThanksTemplates", ThanksKind.defaultTemplates(),
+                "defaultWelcomeTemplates", WelcomeSettings.defaultTemplates()));
     }
 
     @PostMapping("/settings")
