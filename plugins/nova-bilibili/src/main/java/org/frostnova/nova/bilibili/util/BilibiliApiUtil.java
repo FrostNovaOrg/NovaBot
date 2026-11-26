@@ -1720,20 +1720,20 @@ public class BilibiliApiUtil {
     public Up getUpInfoByUid(@NonNull Long uid) {
         JSONObject data = requestBilibiliApi(MASTER_INFO_API + uid);
 
-        Map<?, ?> info = data.get("info") instanceof Map<?, ?> fields ? fields : Map.of();
-        String nickname = info.get("uname") instanceof String name ? name : null;
-        String face = info.get("face") instanceof String url ? url : null;
-        Long roomId = Optional.ofNullable(masterInfoLong(data.get("room_id"))).filter(id -> id != 0L).orElse(null);
-        return new Up(uid, nickname, roomId, face, masterInfoLong(data.get("follower_num")));
+        JSONObject info = Optional.ofNullable(readMasterInfoField(() -> data.getJSONObject("info")))
+                .orElseGet(JSONObject::new);
+        String nickname = readMasterInfoField(() -> info.getString("uname"));
+        String face = readMasterInfoField(() -> info.getString("face"));
+        Long roomId = Optional.ofNullable(readMasterInfoField(() -> data.getLong("room_id")))
+                .filter(id -> id != 0L).orElse(null);
+        Long fans = readMasterInfoField(() -> data.getLong("follower_num"));
+        return new Up(uid, nickname, roomId, face, fans);
     }
 
-    private static Long masterInfoLong(Object value) {
-        if (!(value instanceof Number || value instanceof String)) {
-            return null;
-        }
+    private static <T> T readMasterInfoField(Supplier<T> reader) {
         try {
-            return Long.valueOf(value.toString());
-        } catch (NumberFormatException ignored) {
+            return reader.get();
+        } catch (RuntimeException ignored) {
             return null;
         }
     }
