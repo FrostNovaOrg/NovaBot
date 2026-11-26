@@ -75,6 +75,16 @@ public class NovaStateStore {
     private volatile boolean diskSuspended;
 
     /**
+     * 状态文件读过了（读到、没有、坏了或读不了，四种都算）
+     * <p>
+     * 网页服务先开始接请求，就绪事件后发。读入若只等就绪事件，中间来的请求看到的是空状态：
+     * 账号表里查不到人、令牌一把也不认；登录时记一次最近登录时间、立即存盘，
+     * 就把盘上原有的账号、令牌、订阅名单整个盖成一份空壳。所以第一次用到时就先读，
+     * 不论这一次来自就绪事件还是来自请求。
+     */
+    private volatile boolean loaded;
+
+    /**
      * 挂起期间「跳过保存」的提醒只记一次。
      */
     private boolean skipSaveNoted;
@@ -99,11 +109,49 @@ public class NovaStateStore {
     }
 
     /**
-     * 加载状态
+     * 加载状态，清已撤功能的残留段，开始定时存盘
+     * <p>
+     * 就绪之前已有请求用到过状态的，文件那时已经读过，这里不再读第二遍：再读会把那之后写进内存的改动冲掉。
      */
     @Order(-10000)
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReadyEvent() {
+        ensureLoaded();
+
+        if (diskSuspended) {
+            return;
+        }
+
+        if (cache.containsKey(RETIRED_CHOICE_NAMESPACE)) {
+            log.info("清除已撤功能「记住的选择」留在运行状态里的残留段 {}", RETIRED_CHOICE_NAMESPACE);
+            remove(RETIRED_CHOICE_NAMESPACE);
+        }
+
+        autoSaveTask.start(properties.getLive().getAutoSaveLiveDataInterval());
+    }
+
+    /**
+     * 第一次用到时读状态文件，之后什么也不做
+     * <p>
+     * 读、写、存盘都先走这里，存盘因此总是写在读入之后，盘上原有的内容不会被一份空状态盖掉。
+     */
+    private void ensureLoaded() {
+        if (loaded) {
+            return;
+        }
+        synchronized (lock) {
+            if (loaded) {
+                return;
+            }
+            load();
+            loaded = true;
+        }
+    }
+
+    /**
+     * 读状态文件。调用方持有 {@link #lock}
+     */
+    private void load() {
         Path path = path();
         try {
             JSONObject parsed = JSONObject.parseObject(Files.readString(path));
@@ -125,17 +173,6 @@ public class NovaStateStore {
             // 坏件改名留底，下一次保存写的是新文件，盖不到它。
             parkBroken(path, e);
         }
-
-        if (diskSuspended) {
-            return;
-        }
-
-        if (cache.containsKey(RETIRED_CHOICE_NAMESPACE)) {
-            log.info("清除已撤功能「记住的选择」留在运行状态里的残留段 {}", RETIRED_CHOICE_NAMESPACE);
-            remove(RETIRED_CHOICE_NAMESPACE);
-        }
-
-        autoSaveTask.start(properties.getLive().getAutoSaveLiveDataInterval());
     }
 
     /**
@@ -155,6 +192,14 @@ public class NovaStateStore {
     public void onContextClosedEvent() {
         scheduler.shutdownNow();
         boolean interrupted = awaitScheduler();
+        if (!loaded) {
+            // 从没读过也就从没写过（写之前必先读）。这时去存盘要先读一遍文件再原样写回，
+            // 候命接手前停下的那一份会因此去碰仍归上一份所有的文件
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            return;
+        }
         try {
             save();
         } finally {
@@ -215,6 +260,7 @@ public class NovaStateStore {
      * @param <T> 值类型
      */
     public <T> Optional<T> read(@NonNull String namespace, @NonNull String key, @NonNull Function<JSONObject, T> reader) {
+        ensureLoaded();
         synchronized (lock) {
             return Optional.ofNullable(cache.getJSONObject(namespace))
                     .filter(data -> data.containsKey(key))
@@ -228,6 +274,7 @@ public class NovaStateStore {
      * @param writer 修改方式，入参为该命名空间的 JSON 对象
      */
     public void write(@NonNull String namespace, @NonNull Consumer<JSONObject> writer) {
+        ensureLoaded();
         synchronized (lock) {
             cache.putIfAbsent(namespace, new JSONObject());
             writer.accept(cache.getJSONObject(namespace));
@@ -242,6 +289,7 @@ public class NovaStateStore {
      * @return 在且不是对象时返回 true
      */
     public boolean isMalformed(@NonNull String namespace) {
+        ensureLoaded();
         synchronized (lock) {
             return cache.containsKey(namespace) && !(cache.get(namespace) instanceof Map);
         }
@@ -261,6 +309,7 @@ public class NovaStateStore {
      * @return 该命名空间的独立快照，不存在时为空对象
      */
     public JSONObject namespace(@NonNull String namespace) {
+        ensureLoaded();
         synchronized (lock) {
             return Optional.ofNullable(cache.getJSONObject(namespace))
                     .map(NovaStateStore::deepCopy)
@@ -298,6 +347,7 @@ public class NovaStateStore {
     /** 在同一份状态上读取切换结果并补入选定的值。copyValue 返回 null 时略过，成功写盘后才更新缓存。 */
     public <T> T copyMissingKeyAndSave(String from, String to, Collection<String> namespaces,
                                       Function<String, Object> copyValue, Function<List<String>, T> describe) {
+        ensureLoaded();
         synchronized (writeLock) {
             synchronized (lock) {
                 if (diskSuspended) throw new IllegalStateException("运行状态文件目前无法读取，请检查后重启");
@@ -352,6 +402,7 @@ public class NovaStateStore {
      * @return 写进了磁盘，或段本来就不在、无须写盘时为 true；本轮停写或写盘出错时为 false
      */
     public boolean tryRemove(@NonNull String namespace) {
+        ensureLoaded();
         synchronized (writeLock) {
             String content;
             synchronized (lock) {
@@ -378,6 +429,7 @@ public class NovaStateStore {
      * @return 写进了磁盘，或从没写过东西、无须写盘时为 true；本轮停写或写盘出错时为 false
      */
     public boolean trySave() {
+        ensureLoaded();
         synchronized (writeLock) {
             String content;
             synchronized (lock) {
@@ -393,6 +445,7 @@ public class NovaStateStore {
 
     /** 本次启动未能读取状态文件时，不得将空缓存当作已经完成设置迁移。 */
     public boolean isDiskSuspended() {
+        ensureLoaded();
         return diskSuspended;
     }
 
