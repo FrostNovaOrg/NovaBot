@@ -130,6 +130,13 @@ public class ConfigUiOperationAdvice extends RequestBodyAdviceAdapter implements
         }
     }
 
+    /** 停用、删除账号时一并吊销的访问令牌只记把数：编号、明文、摘要都不进操作记录。 */
+    static void revokedTokens(int count) {
+        var request = ConfigUiAccess.request();
+        if (request != null && request.getAttribute(ConfigUiOperationFilter.TARGET) instanceof JSONObject target)
+            target.put("revokedTokens", count);
+    }
+
     /** 由只持有主播号码的操作补齐实际的平台。 */
     public static void streamer(String platform, Long uid) {
         var request = ConfigUiAccess.request();

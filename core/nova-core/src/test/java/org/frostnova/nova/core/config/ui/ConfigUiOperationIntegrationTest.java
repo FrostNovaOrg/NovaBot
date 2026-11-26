@@ -100,7 +100,8 @@ class ConfigUiOperationIntegrationTest {
         when(accounts.streamers(eq(account.id()), anyList())).thenReturn(account);
         when(accounts.role(eq(account.id()), any())).thenReturn(account);
         when(accounts.require(account.id())).thenReturn(account);
-        var mvc = mvc(new ConfigUiAccountController(accounts, authService, mock(OidcClient.class), registry));
+        var mvc = mvc(new ConfigUiAccountController(accounts, authService, mock(OidcClient.class), registry,
+                mock(org.frostnova.nova.core.api.NovaApiTokenStore.class)));
         mvc.perform(post("/config/api/accounts/member-7/streamers").requestAttr(ConfigUiAccess.ACCOUNT, admin)
                 .contentType(MediaType.APPLICATION_JSON).content("{\"streamers\":[\"bilibili:123\"]}"))
                 .andExpect(jsonPath("$.success").value(true));

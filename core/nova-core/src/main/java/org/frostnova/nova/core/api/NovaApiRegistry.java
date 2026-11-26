@@ -100,6 +100,16 @@ public class NovaApiRegistry {
     }
 
     /**
+     * 某项范围是不是仅管理员的
+     * @param id 范围标识
+     * @return 已登记且标了仅管理员时为 true
+     */
+    public boolean adminOnly(String id) {
+        NovaApiScope scope = scopes.get(id);
+        return scope != null && scope.adminOnly();
+    }
+
+    /**
      * 按方法与 {@code /nova/api/v1/} 之后的各段找接口
      * <p>
      * 同一地址对得上好几条时，取写死的段多的那条：{@code streamers/live} 先于 {@code streamers/{uid}}。

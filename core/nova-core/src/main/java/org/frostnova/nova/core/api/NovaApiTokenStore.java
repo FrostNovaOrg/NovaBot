@@ -167,6 +167,38 @@ public class NovaApiTokenStore {
     }
 
     /**
+     * 吊销一个账号名下的全部令牌
+     * <p>
+     * 停用、删除账号时调。与单独吊销一样<b>先在内存里生效</b>、写盘失败不回滚：
+     * 账号多半是因为令牌泄露才停用的，不能因为磁盘一时写不进就让那几把接着能用。
+     * 吊销不可恢复，账号重新启用之后要重签。已吊销的不重复算；已过期但没吊销的一并标上。
+     * @param accountId 账号编号
+     * @return 这一次新吊销了几把
+     */
+    public synchronized int revokeAccount(String accountId) {
+        Instant now = now();
+        JSONObject data = state.namespace(NAMESPACE);
+        int revoked = 0;
+        for (NovaApiToken token : list()) {
+            if (token.accountId().equals(accountId) && !token.revoked()) {
+                data.put(token.id(), json(token.revokedAt(now)));
+                revoked++;
+            }
+        }
+        if (revoked == 0) {
+            return 0;
+        }
+        state.write(NAMESPACE, target -> {
+            target.clear();
+            target.putAll(data);
+        });
+        if (!state.trySave()) {
+            log.error("账号 {} 名下的 {} 把访问令牌已吊销, 但没能写进磁盘, 定时保存时会再试", accountId, revoked);
+        }
+        return revoked;
+    }
+
+    /**
      * 吊销的结果
      * @param token   吊销后的记录
      * @param saved   是否写进了磁盘

@@ -14,17 +14,37 @@ export const VALIDITY = [
 
 export const DEFAULT_VALIDITY = 90;
 
-/** 列表里「状态」一格的字 */
+/** 列表里「状态」一格的字；暂不可用的原因另起一行，见 {@link unavailableText} */
 export function stateText(token) {
   if (token.state === 'revoked') return '已吊销';
   if (token.state === 'expired') return '已过期';
+  if (token.state === 'unavailable') return '暂不可用';
   return '有效';
 }
 
-/** 有效的在上，同一档里新签的在上：要吊销的多半是刚签错的那一把 */
+/** 暂不可用的原因；别的状态为空串 */
+export function unavailableText(token) {
+  return token.state === 'unavailable' ? (token.unavailableReason || '所属账号此刻不能使用访问令牌') : '';
+}
+
+/** 这一行给不给「吊销」按钮：已吊销、已过期的不给；暂不可用的照给，恢复之前也能作废它 */
+export function revocable(token) {
+  return token.state === 'active' || token.state === 'unavailable';
+}
+
+/** 还没作废的在上（有效、暂不可用），同一档里新签的在上：要吊销的多半是刚签错的那一把 */
 export function sortTokens(tokens) {
-  const rank = token => (token.state === 'active' ? 0 : 1);
+  const rank = token => (revocable(token) ? 0 : 1);
   return (tokens || []).slice().sort((a, b) => rank(a) - rank(b) || (b.issuedAt || 0) - (a.issuedAt || 0));
+}
+
+/**
+ * 签发页上这一项范围勾不勾得了
+ * @param scope 范围（含 adminOnly）
+ * @param admin 当前账号是不是管理员
+ */
+export function scopeSelectable(scope, admin) {
+  return !scope.adminOnly || !!admin;
 }
 
 /** 所属账号的显示名；本地管理员与已删除的账号由服务端给好名字。停用的账号注一句，那把令牌此刻用不了 */
