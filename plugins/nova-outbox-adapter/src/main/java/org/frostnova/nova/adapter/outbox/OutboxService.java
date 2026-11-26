@@ -38,6 +38,7 @@ import static org.frostnova.nova.adapter.outbox.OutboxRecord.Status.*;
 
 /** 外发箱的本机取件、发送状态与管理入口。所有时刻均以本机时钟为准。 */
 public class OutboxService {
+    static final String NO_LOCAL_IMAGE = "这段没有本地图片";
     private static final Pattern NEXT = Pattern.compile(Pattern.quote(MessagePlaceholders.NEXT));
     private final OutboxDatabase database;
     private final OutboxSettings settings;
@@ -176,6 +177,24 @@ public class OutboxService {
         });
     }
 
+    synchronized OutboxRecord get(long id, Predicate<Streamer> visible) {
+        advance(clock.instant());
+        return database.transaction(db -> require(db, id, visible));
+    }
+
+    /** 图片不可读时返回 null，列出记录无需载入图片内容。 */
+    Long readableImageSize(long id, int segmentIndex) {
+        Path path = database.images.resolve(imageName(id, segmentIndex));
+        try {
+            if (!Files.isRegularFile(path)) return null;
+            try (var image = Files.newByteChannel(path, StandardOpenOption.READ)) {
+                return image.size();
+            }
+        } catch (IOException | SecurityException unavailable) {
+            return null;
+        }
+    }
+
     /** segmentIndex 从 0 开始，仅内联图片段有本地字节。 */
     public synchronized byte[] readImage(long id, int segmentIndex) {
         return readImage(id, segmentIndex, streamer -> true);
@@ -185,24 +204,34 @@ public class OutboxService {
         advance(clock.instant());
         return database.transaction(db -> {
             var segments = require(db, id, visible).segments();
-            if (segmentIndex < 0 || segmentIndex >= segments.size() || segments.get(segmentIndex).type() != SegmentType.IMAGE_BYTES) {
-                throw new IllegalArgumentException("这段没有本地图片");
+            Path path = database.images.resolve(imageName(id, segmentIndex));
+            try {
+                if (segmentIndex < 0 || segmentIndex >= segments.size()
+                        || segments.get(segmentIndex).type() != SegmentType.IMAGE_BYTES || !Files.isRegularFile(path)) {
+                    throw new NotFound(NO_LOCAL_IMAGE);
+                }
+                return Files.readAllBytes(path);
+            } catch (IOException | SecurityException unavailable) {
+                throw new NotFound(NO_LOCAL_IMAGE);
             }
-            return Files.readAllBytes(database.images.resolve(imageName(id, segmentIndex)));
         });
     }
 
     public synchronized OutboxRecord claim(long id, String claimant) {
+        return claim(id, claimant, streamer -> true);
+    }
+
+    synchronized OutboxRecord claim(long id, String claimant, Predicate<Streamer> visible) {
         if (claimant == null || claimant.isBlank()) throw new IllegalArgumentException("请填写认领者名称");
         advance(clock.instant());
         var record = database.transaction(db -> {
+            expect(require(db, id, visible), PENDING);
             long now = clock.millis();
             int claimed = update(db, """
                     UPDATE records SET status='SENDING', claimant=?, claimed_at=?, claim_number=claim_number+1
                     WHERE id=? AND status='PENDING' AND expires_at>?
                     """, claimant.strip(), now, id, now);
             if (claimed == 0) {
-                expect(require(db, id), PENDING);
                 // 等写锁期间到期，直接记为过期。
                 update(db, "UPDATE records SET status='EXPIRED' WHERE id=?", id);
             }
@@ -217,13 +246,17 @@ public class OutboxService {
 
     /** claimNumber 取自本次 claim 的返回值，旧认领迟到的结果不会覆盖新认领。 */
     public synchronized OutboxRecord receipt(long id, long claimNumber, Status outcome, String note) {
+        return receipt(id, claimNumber, outcome, note, streamer -> true);
+    }
+
+    synchronized OutboxRecord receipt(long id, long claimNumber, Status outcome, String note, Predicate<Streamer> visible) {
         if (outcome != SENT && outcome != FAILED && outcome != SKIPPED) throw new IllegalArgumentException("发送结果无效");
         Instant now = clock.instant();
         advance(now);
         var result = database.transaction(db -> {
-            var claimed = require(db, id);
+            var claimed = require(db, id, visible);
             expect(claimed, SENDING);
-            if (claimNumber != claimed.claimNumber()) throw new IllegalStateException("该次认领已结束");
+            if (claimNumber != claimed.claimNumber()) throw new StatusConflict("该次认领已结束");
             update(db, "UPDATE records SET status=?, note=?, result_at=? WHERE id=?", outcome.name(), note, now.toEpochMilli(), id);
             return require(db, id);
         });
@@ -262,6 +295,10 @@ public class OutboxService {
         StatusConflict(String message) { super(message); }
     }
 
+    static class NotFound extends IllegalArgumentException {
+        NotFound(String message) { super(message); }
+    }
+
     private static String imageName(long id, int part) { return id + "-" + part + ".bin"; }
 
     private static OutboxRecord require(Connection db, long id) throws SQLException {
@@ -270,9 +307,9 @@ public class OutboxService {
 
     private static OutboxRecord require(Connection db, long id, Predicate<Streamer> visible) throws SQLException {
         try (var sql = prepare(db, "SELECT * FROM records WHERE id=?", id); var rows = sql.executeQuery()) {
-            if (!rows.next()) throw new IllegalArgumentException("外发记录不存在");
+            if (!rows.next()) throw new NotFound("外发记录不存在");
             var owner = streamer(rows);
-            if (!visible.test(owner)) throw new IllegalArgumentException("外发记录不存在");
+            if (!visible.test(owner)) throw new NotFound("外发记录不存在");
             return read(rows, owner);
         }
     }

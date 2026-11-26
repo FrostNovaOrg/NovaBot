@@ -51,7 +51,8 @@ public record NovaApiRoute(String method, String path, String scope, Handler han
      * 接口处理器
      * <p>
      * 返回值放进 {@code data}：一个对象、一张 Map，或 {@link NovaApiPage}（列表类接口）。
-     * 返回 null 时 {@code data} 为空对象。要回错误时抛 {@link NovaApiException}。
+     * 返回 null 时 {@code data} 为空对象。返回 {@link NovaApiBytes} 时直接写出原始字节。
+     * 要回错误时抛 {@link NovaApiException}。
      */
     @FunctionalInterface
     public interface Handler {

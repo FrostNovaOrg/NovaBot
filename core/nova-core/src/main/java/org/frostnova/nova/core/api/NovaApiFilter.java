@@ -261,6 +261,12 @@ public class NovaApiFilter extends OncePerRequestFilter {
             internalError(response);
             return;
         }
+        if (data instanceof NovaApiBytes binary) {
+            headers(response, HttpServletResponse.SC_OK, binary.contentType().toString());
+            response.setContentLength(binary.bytes().length);
+            response.getOutputStream().write(binary.bytes());
+            return;
+        }
         JSONObject body = new JSONObject();
         body.put("ok", true);
         body.put("data", data == null ? new JSONObject() : data);
@@ -336,11 +342,15 @@ public class NovaApiFilter extends OncePerRequestFilter {
     }
 
     private static void write(HttpServletResponse response, int status, String text) throws IOException {
-        response.setStatus(status);
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        headers(response, status, MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        // 安全响应头那道已经按 /nova 前缀写过，这里再写一遍：这个前缀的响应里可能有账号与主播名单
-        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
         response.getWriter().write(text);
+    }
+
+    private static void headers(HttpServletResponse response, int status, String contentType) {
+        response.setStatus(status);
+        response.setContentType(contentType);
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+        response.setHeader("X-Content-Type-Options", "nosniff");
     }
 }
