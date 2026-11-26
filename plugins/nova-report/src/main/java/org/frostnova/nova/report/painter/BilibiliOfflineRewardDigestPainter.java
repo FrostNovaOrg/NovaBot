@@ -139,8 +139,12 @@ public class BilibiliOfflineRewardDigestPainter {
      * @return 文字版播报
      */
     public String textDigest(BilibiliOfflineRewardDigestEvent event, boolean showRevenue) {
+        return textDigest(event, showRevenue, PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()));
+    }
+
+    public String textDigest(BilibiliOfflineRewardDigestEvent event, boolean showRevenue, String uname) {
         return (event.isClosingReminder() ? title(event) + "\n" : "") + "感谢 " + renderList(event, showRevenue) + "，"
-                + PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()) + " 都收到啦"
+                + uname + " 都收到啦"
                 + "\n\n（播报图片绘制失败，本条为文字版）";
     }
 

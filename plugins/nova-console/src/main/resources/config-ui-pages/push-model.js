@@ -137,9 +137,11 @@ export function channelName(session, target, directory) {
   return typeName(session, target) + ' ' + target.num;
 }
 
-export function pushPlatformLabel(platform, adapters = {}) {
+export function pushPlatformLabel(platform, adapters = {}, displayNames = {}) {
   if (platform === OFFICIAL) return '官方机器人';
-  if (adapters[platform] !== 'onebot') return '';
+  if (adapters[platform] !== 'onebot') {
+    return Object.hasOwn(displayNames, platform) ? displayNames[platform] || platform : platform;
+  }
   const multiple = Object.values(adapters).filter(value => value === 'onebot').length > 1;
   return multiple ? 'NapCat（' + platform + '）' : 'NapCat';
 }

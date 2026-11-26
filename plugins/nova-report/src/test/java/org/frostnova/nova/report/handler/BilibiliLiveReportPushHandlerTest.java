@@ -82,6 +82,7 @@ class BilibiliLiveReportPushHandlerTest {
         handler.handle(new BilibiliLiveOffEvent(new LiveStreamerInfo(10001L, "{at=all}{report}", 20002L)), message);
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
         verify(sender).send(captor.capture());
+        assertEquals(Message.PushKind.LIVE_REPORT, captor.getValue().deliveryOrigin().kind());
         String content = captor.getValue().getContent();
         var segments = new org.frostnova.nova.adapter.onebot.converter.OneBotMessageConverter().convert(content);
         assertFalse(segments.isEmpty());

@@ -125,6 +125,7 @@ class BilibiliLiveOffPushHandlerTest {
         handler.handle(event(), message);
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
         verify(sender).send(captor.capture());
+        assertEquals(Message.PushKind.LIVE_OFF, captor.getValue().deliveryOrigin().kind());
         assertEquals(template.contains("前") ? "前正文后" : "正文", captor.getValue().getContent(), "下播不提醒且不发空段");
         assertFalse(handler.placeholders().contains("{at=all}"));
         assertFalse(handler.placeholderLabels().containsKey("{at=all}"));

@@ -17,6 +17,7 @@ import org.frostnova.nova.bilibili.util.BilibiliApiUtil;
 import org.frostnova.nova.core.enums.PushTargetType;
 import org.frostnova.nova.core.event.NovaExternalBaseEvent;
 import org.frostnova.nova.core.handler.NovaEventHandler;
+import org.frostnova.nova.core.model.Message;
 import org.frostnova.nova.core.model.PushMessage;
 import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.plugin.NovaComponent;
@@ -133,8 +134,9 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
                         target.getPlatform(), target.getNum(), event.getSource().getUid(), "dynamic"))
                 : "";
 
+        var uname = PushHandlerSupport.lookupUname(api, names, event.getPlatform(), event.getSource());
         String content = template
-                .replace("{uname}", PushHandlerSupport.resolveUname(api, names, event.getPlatform(), event.getSource()))
+                .replace("{uname}", uname.forContent())
                 .replace("{action}", MessagePlaceholders.escapeExternalText(Optional.ofNullable(event.getAction()).orElse("发布了动态")))
                 .replace("{url}", MessagePlaceholders.escapeExternalText(Optional.ofNullable(event.getUrl()).orElse("")))
                 .replace("{picture}", picture)
@@ -151,9 +153,9 @@ public class BilibiliDynamicPushHandler implements NovaEventHandler {
         Runnable onImageDegraded = uid == null ? null : () -> liveDataService.incrementLiveMetric(
                 event.getPlatform(), uid, BilibiliLiveMetric.IMAGE_DEGRADED_COUNT, 1);
 
-        PushHandlerSupport.send(sender, target,
+        PushHandlerSupport.sendWithOrigin(sender, target, uname.origin(Message.PushKind.DYNAMIC, event.getPlatform()),
                 PushHandlerSupport.withAtBlock(mode, target, template, content, subscriberAt), onImageDegraded,
-                PushHandlerSupport.atAllFallback(mode, target, template, subscriberAt));
+                PushHandlerSupport.atAllFallback(mode, target, template, subscriberAt), null);
     }
 
     /**

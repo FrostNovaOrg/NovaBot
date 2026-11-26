@@ -164,6 +164,7 @@ class BilibiliDynamicPushHandlerTest {
     private List<Message> sentMessages() {
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
         verify(sender, org.mockito.Mockito.atLeastOnce()).send(captor.capture());
+        captor.getAllValues().forEach(message -> assertEquals(Message.PushKind.DYNAMIC, message.deliveryOrigin().kind()));
         return captor.getAllValues();
     }
 

@@ -447,7 +447,12 @@ class ConfigurationConsistencyTest {
      * @return 合并后的分组表
      */
     private ConfigurationGroups groups() {
-        return ConfigurationGroups.of(List.of(new BilibiliConfigurationGroups(), oneBotContributor()));
+        var contributors = new ArrayList<ConfigurationGroupContributor>();
+        contributors.add(new BilibiliConfigurationGroups());
+        contributors.add(oneBotContributor());
+        contributors.addAll(loadOptionalContributor(ConfigurationGroupContributor.class,
+                "org.frostnova.nova.adapter.outbox.OutboxPluginAutoConfiguration"));
+        return ConfigurationGroups.of(contributors);
     }
 
     private ConfigurationGroupContributor oneBotContributor() {

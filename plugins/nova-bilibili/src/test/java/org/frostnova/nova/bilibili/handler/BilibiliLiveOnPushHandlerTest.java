@@ -57,6 +57,8 @@ class BilibiliLiveOnPushHandlerTest {
         handler.handle(new BilibiliLiveOnEvent(new LiveStreamerInfo(10001L, "{title}{at=all}", 20002L)), message);
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
         verify(sender).send(captor.capture());
+        assertEquals(Message.PushKind.LIVE_ON, captor.getValue().deliveryOrigin().kind());
+        assertEquals(10001L, captor.getValue().deliveryOrigin().uid());
         String content = captor.getValue().getContent();
         assertEquals("｛title｝｛at=all｝|｛at=all｝｛at=123｝｛cover｝｛at｝｛next｝｛image_path=/opt/a.png｝|{image_url=https://example.com/cover.png}", content);
         var segments = new OneBotMessageConverter().convert(content);

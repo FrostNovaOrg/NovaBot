@@ -102,7 +102,7 @@ public class WeeklyReportContentService {
                 live.monitoringIntervals(platform, uid, now.toEpochMilli()), report.lastDay(), 35,
                 Clock.fixed(now, StatisticsDay.ZONE));
         var data = report.withCalendar(calendar);
-        return Optional.of(WeeklyReport.preview(data, () -> renderers.orderedStream()
+        return Optional.of(WeeklyReport.preview(data, uname, () -> renderers.orderedStream()
                 .filter(r -> platform.equals(r.platform())).findFirst()
                 .map(r -> r.render(identity, data, palette, layout)).orElse(null)));
     }
