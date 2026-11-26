@@ -84,7 +84,8 @@ class QqBotSender {
             registered.setDelay(delay);
         } else if (current.configured()) {
             Sender sender = new Sender(PLATFORM, null, "", delay, this::deliver);
-            registry.addSender(sender, DISPLAY_NAME);
+            // 只收群消息：私聊在投递时就会被拒，先声明出来，程序接口发送前就能说清
+            registry.addSender(sender, DISPLAY_NAME, java.util.Set.of(PushTargetType.GROUP));
             registered = sender;
         }
     }

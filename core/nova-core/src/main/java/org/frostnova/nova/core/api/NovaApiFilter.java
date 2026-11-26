@@ -303,6 +303,9 @@ public class NovaApiFilter extends OncePerRequestFilter {
         try {
             data = handler.handle(new NovaApiRequest(request, caller, variables));
         } catch (NovaApiException refused) {
+            if (refused.retryAfterSeconds() > 0) {
+                response.setHeader(HttpHeaders.RETRY_AFTER, String.valueOf(refused.retryAfterSeconds()));
+            }
             error(response, refused.status(), refused.code(), refused.getMessage());
             return;
         } catch (Throwable failure) {

@@ -110,6 +110,8 @@ class QqBotAdapterTest {
                     assertEquals(HealthStatus.Level.DEGRADED, probe.check().level());
                     assertTrue(probe.check().summary().contains("正在连接"));
                     assertEquals(4500, senders.getSender("qq-official").orElseThrow().getDelay());
+                    // 只收群消息：程序接口不该把它列成能发私聊，让调用方发出去才被拒
+                    assertEquals(java.util.Set.of(PushTargetType.GROUP), senders.targetTypes("qq-official"));
                 });
     }
 

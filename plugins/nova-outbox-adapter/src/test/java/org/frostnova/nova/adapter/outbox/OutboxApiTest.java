@@ -155,6 +155,44 @@ class OutboxApiTest {
         return json.getJSONObject("error").getString("message");
     }
 
+    @Test @DisplayName("程序接口的推送只发得了机器人通道，经外发发不进外发箱；或外发被列成也能发好友，发出去才被拒")
+    void thePushGroupDeliversIntoAnOutboxConversation() throws Exception {
+        var senders = context.getBean(NovaSenderService.class);
+        assertEquals(Set.of(org.frostnova.nova.core.enums.PushTargetType.GROUP),
+                senders.targetTypes(OutboxPluginAutoConfiguration.PLATFORM));
+        var beans = new StaticListableBeanFactory();
+        beans.addBean("senders", senders);
+        beans.addBean("timeline", (TimelineWriter) event -> {});
+        beans.addBean("sender", new org.frostnova.nova.core.sender.NovaMessageSender(
+                mock(org.frostnova.nova.core.util.HttpUtil.class), senders,
+                new org.frostnova.nova.core.health.PushActivityRecorder(TimelineWriter.NONE),
+                new org.frostnova.nova.core.sender.PushGate(properties), TimelineWriter.NONE,
+                new org.frostnova.nova.core.service.AtAllQuotaService(properties),
+                beans.getBeanProvider(org.frostnova.nova.core.sender.AtAllPermissionResolver.class),
+                new org.frostnova.nova.core.sender.FirstPushTipService(new NovaStateStore(properties))));
+        var push = new org.frostnova.nova.core.api.push.PushApiProvider(beans.getBeanProvider(NovaSenderService.class),
+                beans.getBeanProvider(org.frostnova.nova.core.sender.NovaMessageSender.class),
+                beans.getBeanProvider(TimelineWriter.class));
+        useRegistry(new NovaApiRegistry(List.of(context.getBean(OutboxApiProvider.class), push)));
+        String admin = tokens.issue(ConfigUiAccount.LOCAL_ID, "推送脚本", List.of("push:send", READ), null).plaintext();
+
+        var sent = data(call(admin, post(CONTEXT + "/nova/api/v1/push/messages").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"platform\":\"outbox\",\"targetType\":\"GROUP\",\"target\":\"" + conversation
+                        + "\",\"content\":\"接口发来的通知\"}")));
+        assertEquals("SENT", sent.getString("delivery"));
+        var listed = data(call(admin, get(API + "messages"))).getJSONArray("items");
+        assertEquals(1, listed.size());
+        assertEquals(sent.getString("id"), listed.getJSONObject(0).getString("id"));
+        assertEquals("接口发来的通知", listed.getJSONObject(0).getJSONArray("segments").getJSONObject(0).getString("text"));
+        assertTrue(data(call(device, get(API + "messages"))).getJSONArray("items").isEmpty(),
+                "不挂主播的通知只有管理员看得见");
+
+        error(call(admin, post(CONTEXT + "/nova/api/v1/push/messages").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"platform\":\"outbox\",\"targetType\":\"FRIEND\",\"target\":\"" + conversation
+                        + "\",\"content\":\"发给好友\"}")), 400, "bad_request");
+        assertEquals(1, service.listForDevice(PENDING, 0, 10, streamer -> true).size());
+    }
+
     @Test @DisplayName("取件设备停了一晚却没人收到提醒，或通知过期后明明没人来取却报恢复")
     void alertsOnceAndWaitsForPickupAfterExpiry() throws Exception {
         var watch = new PickupWatch();
