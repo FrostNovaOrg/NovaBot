@@ -81,9 +81,11 @@ class FirstPushTipCorpusTest {
 
     /**
      * 落盘回环那一行用的目录，语料回放不落盘
+     * <p>
+     * 每个测试各一个：状态文件总是叫 {@code state.json}，与数据文件叫什么无关，几个测试共用一个目录就共用一份状态
      */
     @TempDir
-    static Path dataDir;
+    Path dataDir;
 
     /**
      * 一条推送
