@@ -353,11 +353,25 @@ function editConversation(item) {
   save.type = 'submit';
   actions.append(button('取消', () => form.remove()), save);
   form.append(actions);
+  function readForm() {
+    const fields = Object.fromEntries(new FormData(form));
+    fields.minIntervalSeconds = Number(fields.minIntervalSeconds);
+    fields.dailyLimit = Number(fields.dailyLimit);
+    return fields;
+  }
+  const initial = item ? readForm() : null;
   form.onsubmit = async event => {
     event.preventDefault();
-    const edit = Object.fromEntries(new FormData(form));
-    edit.minIntervalSeconds = Number(edit.minIntervalSeconds);
-    edit.dailyLimit = Number(edit.dailyLimit);
+    const edit = readForm();
+    if (initial) {
+      for (const key of Object.keys(edit)) {
+        if (edit[key] === initial[key]) delete edit[key];
+      }
+      if (!Object.keys(edit).length) {
+        form.remove();
+        return;
+      }
+    }
     if (await mutate(save, '/conversations' + (item ? '/' + item.id : ''), {
       method: item ? 'PUT' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(edit),
     })) form.remove();
