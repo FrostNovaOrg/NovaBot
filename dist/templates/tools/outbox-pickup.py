@@ -223,12 +223,13 @@ class Pickup:
         self.now = now
 
     def run_round(self):
+        self.image_retry_pending = False
         for folder in list_folders(self.staging):
             self.recover(folder)
 
         # 人或发件程序可以在扫描期间把文件夹从待发移进结果文件夹。
         active = set()
-        for directory in (self.pending, *self.results):
+        for directory in (self.pending, *self.results, self.staging):
             for folder in list_folders(directory):
                 state = read_state(folder)
                 if state is not None:
@@ -252,6 +253,7 @@ class Pickup:
                     # 文件夹已被移走，下轮按所在位置处理。
                     continue
                 self.report(staged, state, 'SKIPPED', '过期未发')
+        return self.image_retry_pending
 
     def expired(self, state):
         expires = datetime.fromisoformat(state['expiresAt'].replace('Z', '+00:00'))
@@ -340,7 +342,12 @@ class Pickup:
             except RoundError as error:
                 state['imageRetry'] = str(error)
                 save_state(folder, state)
-                raise RoundError(f'通知 {state["id"]} 取图暂时失败：{error}', error.retry_after) from None
+                detail = f'通知 {state["id"]} 取图暂时失败：{error}'
+                if isinstance(error, ApiError) and error.status in (401, 403, 429):
+                    raise RoundError(detail, error.retry_after) from None
+                self.image_retry_pending = True
+                self.log(f'{detail}。后续轮次会重试。')
+                return
             del state['message']
             state.pop('imageRetry', None)
             save_state(folder, state)
@@ -563,7 +570,7 @@ def run(client, interval, once, sleep=time.sleep):
     failures = 0
     while True:
         try:
-            client.run_round()
+            image_retry_pending = client.run_round()
         except (RoundError, OSError, ValueError, KeyError, TypeError) as error:
             if isinstance(error, RoundError):
                 detail, retry_after = str(error), error.retry_after
@@ -580,6 +587,8 @@ def run(client, interval, once, sleep=time.sleep):
             client.log(f'{detail}，{delay} 秒后再试。')
         else:
             if once:
+                if image_retry_pending:
+                    return 1
                 client.log('已完成一轮取件和回报。')
                 return 0
             failures, delay = 0, interval

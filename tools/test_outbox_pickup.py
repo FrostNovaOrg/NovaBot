@@ -304,6 +304,34 @@ class PickupTest(unittest.TestCase):
         for number in (1, 2):
             self.assertIn('图片', self.nova.receipts[number]['note'])
 
+    def test_unavailable_image_does_not_delay_other_notifications(self):
+        """一张图卡住了，后面的开播通知全都没发出去。"""
+        self.nova.add(message(3))
+        self.client.run_round()
+        folder, = self.folders('待发')
+        self.move(folder, '已发')
+        self.nova.add(message(1, segments=[image(1, 0)]), message(2))
+        waits = []
+
+        def fail_image(route):
+            if route == 'messages/1/images/0':
+                self.nova.fail(503)
+
+        def stop_after_round(seconds):
+            waits.append(seconds)
+            raise Stopped()
+
+        self.nova.on_request = fail_image
+        with self.assertRaises(Stopped):
+            pickup.run(self.client, 60, False, stop_after_round)
+
+        self.assertEqual([path.name for path in self.folders('待发')], ['2-早班'])
+        self.assertEqual(self.nova.records[1]['status'], 'SENDING')
+        self.assertEqual(self.nova.receipts[3]['outcome'], 'SENT')
+        archived, = (self.work / '已回报').glob('????-??-??/*')
+        self.assertEqual(archived.name, folder.name)
+        self.assertEqual(waits, [60])
+
     def test_retries_images_after_connection_failures_until_expiry(self):
         """网络抖了一下，本来能发的通知被报成没发成。"""
         record = message(9, segments=[image(9, 0)])
@@ -336,8 +364,7 @@ class PickupTest(unittest.TestCase):
         self.nova.add(message(10, segments=[image(10, 0)]))
         self.nova.records[10]['expiresAt'] = '2026-01-01T01:00:00Z'
         failures = iter([TimeoutError(TOKEN)])
-        with self.assertRaises(pickup.RoundError):
-            self.new_client().run_round()
+        self.assertEqual(pickup.run(self.new_client(), 60, True), 1)
         self.assertEqual(self.folders('待发'), [folder])
         self.assertEqual(self.nova.receipts, {})
         self.now = NOW + timedelta(hours=1)
