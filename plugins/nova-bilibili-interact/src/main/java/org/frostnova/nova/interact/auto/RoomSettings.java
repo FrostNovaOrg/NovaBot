@@ -10,9 +10,13 @@ import java.util.List;
 import java.util.Map;
 
 /** 一位主播的自动弹幕设置。未列入 features 的功能默认关闭。 */
-public record RoomSettings(boolean enabled, int perMinute, Map<String, Boolean> features, List<Plan> plans) {
+public record RoomSettings(boolean enabled, int perMinute, Map<String, Boolean> features, List<Plan> plans, ThanksSettings thanks) {
     public static final String TIMED = "timed";
     public static final RoomSettings DEFAULT = new RoomSettings(false, 6, Map.of(), List.of());
+
+    public RoomSettings(boolean enabled, int perMinute, Map<String, Boolean> features, List<Plan> plans) {
+        this(enabled, perMinute, features, plans, ThanksSettings.DEFAULT);
+    }
 
     public RoomSettings {
         if (perMinute < 1 || perMinute > 20) throw new IllegalArgumentException("每分钟上限应为 1 至 20 条");
@@ -63,16 +67,16 @@ public record RoomSettings(boolean enabled, int perMinute, Map<String, Boolean> 
                         lines.stream().map(String.class::cast).toList(), flag(row, "random", false), flag(row, "skipQuiet", true)));
             }
         }
-        return new RoomSettings(flag(json, "enabled", false), number(json, "perMinute", 6), switches, plans);
+        return new RoomSettings(flag(json, "enabled", false), number(json, "perMinute", 6), switches, plans, ThanksSettings.parse(json));
     }
 
-    private static boolean flag(JSONObject json, String key, boolean fallback) {
+    static boolean flag(JSONObject json, String key, boolean fallback) {
         if (!json.containsKey(key)) return fallback;
         if (json.get(key) instanceof Boolean flag) return flag;
         throw new IllegalArgumentException("开关必须为开或关");
     }
 
-    private static int number(JSONObject json, String key, int fallback) {
+    static int number(JSONObject json, String key, int fallback) {
         if (!json.containsKey(key)) return fallback;
         if (json.get(key) instanceof Integer value) return value;
         throw new IllegalArgumentException("间隔和上限必须是整数");
