@@ -74,7 +74,9 @@ function applySingleStreamerView() {
   push.href = '#/push/' + one.uid;
   push.innerHTML = navIcon(pages.find(page => page.meta.id === 'push').meta);
   push.append('推送设置');
-  nav.replaceChildren(data, push);
+  const otherPages = [...nav.querySelectorAll('a')].filter(link =>
+    link !== data && link !== push && topPageIds.has(link.dataset.page) && accessiblePages.has(link.dataset.page));
+  nav.replaceChildren(data, push, ...otherPages);
 
   const name = one.uname || String(one.uid);
   $('.brand-name').textContent = name;

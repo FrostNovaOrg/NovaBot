@@ -145,6 +145,11 @@ public final class ConfigUiPermissions {
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/napcat/credential");
         add(entries, Access.ADMIN, Subject.NONE, "GET /config/api/bot/targets");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/bot/targets/refresh");
+        add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/outbox/records");
+        add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/outbox/summary");
+        add(entries, Access.FILTERED, Subject.NONE, "GET /config/api/outbox/records/{num}/images/{segment}");
+        add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/outbox/records/{num}/requeue");
+        add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/outbox/records/{num}/void");
         add(entries, Access.EVERYONE, Subject.NONE, "GET /config/api/outbox/conversations");
         add(entries, Access.ADMIN, Subject.NONE, "POST /config/api/outbox/conversations");
         add(entries, Access.ADMIN, Subject.NONE, "PUT /config/api/outbox/conversations/{num}");

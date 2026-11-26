@@ -93,6 +93,9 @@ class ConfigUiMemberPermissionsTest {
             GET streamers
             GET state
             GET push-history
+            GET outbox/records
+            GET outbox/summary
+            GET outbox/records/{num}/images/{segment}
             GET at-all/quota
             GET bot/targets/lookup
             GET api-tokens
@@ -174,6 +177,8 @@ class ConfigUiMemberPermissionsTest {
             POST qqbot/groups/{num}/remark
             POST qqbot/admin-claims/code
             POST qqbot/admin-claims/{memberNum}/revoke
+            POST outbox/records/{num}/requeue
+            POST outbox/records/{num}/void
             POST outbox/conversations
             PUT outbox/conversations/{num}
             POST outbox/conversations/{num}/disable
@@ -351,7 +356,7 @@ class ConfigUiMemberPermissionsTest {
         String[] pair = route.split(" ", 2);
         String path = pair[1].replace("{platform}", "bilibili").replace("{uid}", uid)
                 .replace("{version}", "1792497600000").replace("{start}", "1").replace("{name}", "core.js").replace("{id}", "member")
-                .replace("{fingerprint}", "test").replace("{num}", "1001").replace("{memberNum}", "1001");
+                .replace("{fingerprint}", "test").replace("{num}", "1001").replace("{segment}", "0").replace("{memberNum}", "1001");
         var req = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request(
                 org.springframework.http.HttpMethod.valueOf(pair[0]), path)
                 .requestAttr(ConfigUiAccess.ACCOUNT, account).contentType("application/json")

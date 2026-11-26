@@ -42,6 +42,9 @@ class MemberConsoleFrontendTest {
             "unchanged-multiple", "unchanged-zero", "unchanged-admin-one"})
     void singleStreamerMemberAndUnchangedAccounts(String mode) throws Exception { run(mode); }
 
+    // 只有一位主播的成员在简化导航中找不到已安装的外发箱。
+    @Test void singleStreamerMemberCanReachOutbox() throws Exception { run("outbox-nav"); }
+
     // 重新打开控制台后应重新数授权名单，不能沿用上一回的一人或多人界面。
     @Test void authorizationChangesApplyOnNextReload() throws Exception {
         run("single-enabled");
