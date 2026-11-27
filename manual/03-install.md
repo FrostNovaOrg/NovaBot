@@ -22,6 +22,9 @@ cd NovaBot
 `/opt/starbot/releases/<版本>/`（配置与数据留在 `/opt/starbot`）、生成初始配置、
 创建 systemd 服务。缺了 Java 17 或中文字体，默认经包管理器装上。坐等跑完就行。
 
+如果有 `/etc/needrestart/conf.d/`，安装脚本会写入其中的 `novabot.conf`，避免 needrestart 在系统升级库后自动重启 NovaBot 的各版本服务。
+要用上新库，请自行择时重启 NovaBot 或换版；要恢复自动重启，删除 `/etc/needrestart/conf.d/novabot.conf` 即可。
+
 Maven 要先装好（3.9 或更高版本），脚本不替你装；没有就在构建前停下，印
 「错误: 未找到 Maven，请先安装 Maven 3.9 或更高版本」。
 

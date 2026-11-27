@@ -761,6 +761,38 @@ configure_syslog() {
     reload_rsyslog
 }
 
+NEEDRESTART_DIR="${NOVABOT_NEEDRESTART_DIR:-/etc/needrestart/conf.d}"
+NEEDRESTART_RULE="$NEEDRESTART_DIR/novabot.conf"
+NEEDRESTART_CONFIGURED=no
+
+configure_needrestart() {
+    [ -d "$NEEDRESTART_DIR" ] || return 0
+
+    local content='# 由 NovaBot 安装脚本 install.sh 写入，禁止 needrestart 自动重启 NovaBot 的各版本服务。
+$nrconf{override_rc}{qr(^novabot\@.+\.service$)} = 0;'
+    local tmp=""
+    if [ -f "$NEEDRESTART_RULE" ] && printf '%s\n' "$content" | $SUDO cmp -s - "$NEEDRESTART_RULE" 2>/dev/null; then
+        NEEDRESTART_CONFIGURED=yes
+        return 0
+    fi
+
+    # 规则写完整再改名，避免 needrestart 读到写了一半的配置。
+    if {
+        [ ! -d "$NEEDRESTART_RULE" ] &&
+            tmp="$($SUDO mktemp "$NEEDRESTART_DIR/.novabot.conf.XXXXXX")" &&
+            printf '%s\n' "$content" | $SUDO tee "$tmp" > /dev/null &&
+            $SUDO chmod 0644 "$tmp" &&
+            $SUDO mv -f "$tmp" "$NEEDRESTART_RULE"
+    } 2>/dev/null; then
+        NEEDRESTART_CONFIGURED=yes
+    else
+        if [ -n "$tmp" ]; then
+            $SUDO rm -f "$tmp" 2>/dev/null || true
+        fi
+        warn "写不进去 ${NEEDRESTART_RULE}，needrestart 仍可能自动重启 NovaBot"
+    fi
+}
+
 # 5.x 的 novabot.service、更早的 starbot.service。只关开机自启，不停正在跑的。
 # 不在跑的删单元文件；在跑的留着，等用户自己停，下次再跑、它已不在跑时再删。
 # 覆盖设置目录不删，新单元不沿用。
@@ -875,6 +907,8 @@ if [ "$CREATE_SERVICE" = "yes" ] && command -v systemctl > /dev/null 2>&1; then
     fi
 fi
 
+configure_needrestart
+
 # 有别的分目录实例在跑、又没给 --no-switch：装完直接换过去。工具的输出原样透出，退码原样带走。
 if [ "$SWITCH_PLAN" = "switch" ]; then
     $SUDO "$SWITCH_TOOL" "$VERSION" || SWITCH_RC=$?
@@ -987,6 +1021,9 @@ case "$SYSLOG_RESULT" in
     absent)
         printf '\n  机器上没有 rsyslog（%s 不在），系统日志这一项跳过\n' "$RSYSLOG_DIR" ;;
 esac
+if [ "$NEEDRESTART_CONFIGURED" = yes ]; then
+    printf '\n  已配置 needrestart，系统升级库后不会自动重启 NovaBot，请自行择时重启或换版以用上新库（删除 %s 可恢复自动重启）。\n' "$NEEDRESTART_RULE"
+fi
 if [ "$SWITCH_PLAN" = "no-service" ]; then
     # 没有 systemd，启动输出就是日志
     BROWSER_STEP=2
