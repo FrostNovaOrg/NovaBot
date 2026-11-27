@@ -21,6 +21,7 @@ import org.frostnova.nova.core.service.NovaStateStore;
 import org.frostnova.nova.core.timeline.TimelineWriter;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
+import org.frostnova.nova.core.util.MessageImageAddressPolicy;
 import org.frostnova.nova.core.web.SecurityHeadersFilter;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
@@ -92,6 +93,8 @@ class OutboxApiTest {
         context.registerBean(NovaCoreProperties.class, () -> properties);
         context.registerBean(NovaSenderService.class, () -> new NovaSenderService(properties));
         context.registerBean(TimelineWriter.class, () -> event -> {});
+        // 图片主机不联网解析
+        context.registerBean(MessageImageAddressPolicy.class, () -> OutboxImageHosts.policy());
         context.register(OutboxPluginAutoConfiguration.class);
         context.refresh();
         service = context.getBean(OutboxService.class);

@@ -23,8 +23,10 @@ import org.springframework.stereotype.Component;
  * </ul>
  * <p>
  * @、图片与旧路径写法的值<b>空着</b>时整段丢掉；表情 ID <b>解析不了</b>、图片网址
- * 不符合要求时原样留成文本。图片网址只接受 HTTP 与 HTTPS，且按 {@link MessageImageAddressPolicy}
- * 不许指向本机、内网与链路本地：机器人程序会照这个地址去取图。
+ * 写法不对（不是 HTTP、HTTPS，读不出主机名，带 {@code ..} 段等）时原样留成文本。
+ * 图片网址按 {@link MessageImageAddressPolicy} 判：机器人程序会照这个地址去取图，所以指向本机、内网与链路本地的，
+ * 以及主机名解析不出的，<b>这张图不发</b>，与值空着一样整段丢掉、也不留成文本（地址连同查询串里的令牌不进群），
+ * 消息其余部分照发，日志里记一条不带地址的警告。
  * 本地图片写法不再支持，非空值原样留成文本，请改用 Base64 图片。
  */
 @Slf4j
@@ -114,8 +116,7 @@ public class OneBotMessageConverter {
         } else if (placeholder.startsWith(AT_PREFIX)) {
             addIfPresent(elements, "at", "qq", valueOf(placeholder, AT_PREFIX), "");
         } else if (placeholder.startsWith(MessagePlaceholders.IMAGE_URL_PREFIX)) {
-            String value = valueOf(placeholder, MessagePlaceholders.IMAGE_URL_PREFIX);
-            addImage(elements, placeholder, value, "", StringUtil.isNotBlank(value) && isFetchable(value));
+            addImageUrl(elements, placeholder, valueOf(placeholder, MessagePlaceholders.IMAGE_URL_PREFIX));
         } else if (placeholder.startsWith(MessagePlaceholders.IMAGE_PATH_PREFIX)) {
             String value = valueOf(placeholder, MessagePlaceholders.IMAGE_PATH_PREFIX);
             if (StringUtil.isNotBlank(value)) {
@@ -128,29 +129,29 @@ public class OneBotMessageConverter {
         }
     }
 
-    private void addImage(JSONArray elements, String placeholder, String value, String scheme, boolean valid) {
-        if (StringUtil.isBlank(value)) {
-            return;
-        }
-        if (valid) {
-            addIfPresent(elements, "image", "file", value, scheme);
-        } else {
-            elements.add(element("text", "text", placeholder));
-        }
-    }
-
     /**
-     * 图片网址能不能交给机器人程序去取
+     * 网络图片：能交给机器人程序去取的成图片段
+     * <p>
+     * 指向本机、内网，或主机名解析不出的，这张图不发：不成图片段，也不留成文本——
+     * 留成文本的话，内网图床的地址连同查询串里的令牌会原样进群，开播那一刻本机域名解析抖一下，
+     * 群里也会多出一行占位符原文。只有写法不对的才原样留成文本，让使用者看见自己写错的那几个字。
+     * 警告里不带地址：地址里可能有令牌。
      * <p>
      * 机器人程序自己取图时跟不跟跳转，这里管不到；这里只看写在消息里的这个地址。
      */
-    private boolean isFetchable(String value) {
-        MessageImageAddressPolicy.Verdict verdict = imageAddresses.check(value);
-        if (verdict == MessageImageAddressPolicy.Verdict.BLOCKED) {
-            log.warn("消息里的图片地址指向本机或内网, 没有交给机器人程序, 原样留成文字; "
-                    + "确实要从内网取图时在设置页「消息图片 · 允许的内网网段」里放行");
+    private void addImageUrl(JSONArray elements, String placeholder, String value) {
+        if (StringUtil.isBlank(value)) {
+            return;
         }
-        return verdict.allowed();
+        switch (imageAddresses.check(value)) {
+            case ALLOWED -> elements.add(element("image", "file", value));
+            case BLOCKED -> log.warn("消息里有一张图片的地址指向本机或内网, 这张图没有交给机器人程序、没有发出, 消息其余部分照发; "
+                    + "确实要从内网取图时, 在设置页「推送」组高级里的「消息图片 · 允许的内网网段」"
+                    + "（novabot.core.push.image-allowed-networks）写上图床的地址并重启");
+            case UNRESOLVED -> log.warn("消息里有一张图片的地址主机名解析不出, 这张图没有交给机器人程序、没有发出, 消息其余部分照发; "
+                    + "请检查图片地址和这台机器的域名解析");
+            case INVALID -> elements.add(element("text", "text", placeholder));
+        }
     }
 
     /**

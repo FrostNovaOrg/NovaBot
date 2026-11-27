@@ -1,11 +1,20 @@
 package org.frostnova.nova.adapter.onebot.converter;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSONArray;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 占位符消息转 OneBot 消息段
@@ -42,6 +51,8 @@ class OneBotMessageConverterTest {
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(strings = {
             "{image_url=file:///etc/passwd}", "{image_url=ftp://example.com/a.png}",
+            "{image_url=http://example.com/../../../../etc/x.png}", "{image_url=http://example.com/a/%2e%2e/b.png}",
+            "{image_url=http:///a.png}",
             "{image_path=/etc/passwd}", "{image_path=/a/../b.png}", "{image_path=a.png}",
             "{image_path=/a/..hidden.png}"
     })
@@ -58,10 +69,56 @@ class OneBotMessageConverterTest {
             "http://[fe80::1]/a.png", "http://[fd00::1]/a.png", "http://[::ffff:127.0.0.1]/a.png",
             "http://[64:ff9b::a9fe:a9fe]/a.png"
     })
-    @DisplayName("指向本机、内网或链路本地的图片地址保留为文字，不交给机器人程序去取")
+    @DisplayName("指向本机、内网或链路本地的图片地址这张图不发：既不交给机器人程序，也不作为文字进群，消息其余部分照发")
     void doesNotHandInternalImageAddressesToTheBotProgram(String url) {
         String placeholder = "{image_url=" + url + "}";
-        assertEquals("[{\"type\":\"text\",\"data\":{\"text\":\"" + placeholder + "\"}}]", convert(placeholder));
+        List<ILoggingEvent> warnings = capturingWarnings(() -> {
+            assertEquals("[]", convert(placeholder));
+            assertEquals("[{\"type\":\"text\",\"data\":{\"text\":\"开播了 \"}},"
+                            + "{\"type\":\"text\",\"data\":{\"text\":\" 快来看\"}}]",
+                    convert("开播了 " + placeholder + " 快来看"));
+        });
+        assertEquals(2, warnings.size(), "每张被拒的图各记一条警告: " + warnings);
+        for (ILoggingEvent warning : warnings) {
+            String text = warning.getFormattedMessage();
+            assertTrue(text.contains("本机或内网"), text);
+            assertTrue(text.contains("消息图片 · 允许的内网网段"), text);
+            assertFalse(text.contains(url), "警告里不带地址: " + text);
+        }
+    }
+
+    @Test
+    @DisplayName("主机名解析不出的图片这张图不发，占位符原文（连同查询串里的令牌）不进群，记一条不带地址的警告")
+    void dropsImagesWhoseHostDoesNotResolve() {
+        String url = "https://img.missing.example/a.png?token=s3cr3t";
+        List<ILoggingEvent> warnings = capturingWarnings(() -> {
+            String sent = convert("{at=all}主播开播了{image_url=" + url + "}{face=66}");
+            assertEquals("[{\"type\":\"at\",\"data\":{\"qq\":\"all\"}},"
+                    + "{\"type\":\"text\",\"data\":{\"text\":\"主播开播了\"}},"
+                    + "{\"type\":\"face\",\"data\":{\"id\":66}}]", sent);
+            assertFalse(sent.contains("s3cr3t"), sent);
+            assertEquals("[]", convert("{image_url=" + url + "}"));
+        });
+        assertEquals(2, warnings.size(), warnings.toString());
+        for (ILoggingEvent warning : warnings) {
+            String text = warning.getFormattedMessage();
+            assertTrue(text.contains("解析不出"), text);
+            assertFalse(text.contains("missing.example") || text.contains("s3cr3t"), "警告里不带地址: " + text);
+        }
+    }
+
+    /** 跑一段转换，收下转换器这期间记的警告 */
+    private static List<ILoggingEvent> capturingWarnings(Runnable work) {
+        Logger logger = (Logger) LoggerFactory.getLogger(OneBotMessageConverter.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            work.run();
+        } finally {
+            logger.detachAppender(appender);
+        }
+        return appender.list.stream().filter(event -> event.getLevel() == Level.WARN).toList();
     }
 
     @org.junit.jupiter.params.ParameterizedTest

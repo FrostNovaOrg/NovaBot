@@ -296,6 +296,9 @@ curl -H "Authorization: Bearer nvb_..." http://127.0.0.1:7827/nova/api/v1/me
 `streamer` 中未取得的信息为 `null`。`kind` 是推送种类，`atAll` 表示原通知是否要 @ 全体。
 按 `segments` 数组顺序处理各段。`IMAGE_BYTES.url` 是本机取图路径，包含部署前缀，需要带读取令牌。
 `IMAGE_URL.url` 是原图网址，访问外站时不要带 NovaBot 的令牌。
+入箱时网址已按设置页「消息图片 · 允许的内网网段」（`novabot.core.push.image-allowed-networks`）检查过：
+指向本机、内网或链路本地地址的，以及主机名解析不出的，不会作为 `IMAGE_URL` 交出，也不出现在文字段里，其余各段照常；
+写法不对的（不是 http、https，读不出主机名，或路径里有 `..` 这样的一段）整个占位符原样留在 `TEXT` 段里。
 
 本机图片文件不可读时，列表、单条记录和认领响应都保留该段的下标和取图地址，`byteCount` 为 `null`。仅在这种情况下返回 `unavailable: true`。
 
@@ -463,7 +466,7 @@ curl -X POST http://127.0.0.1:7827/nova/api/v1/push/messages \
 | `platform` | 去向标识，取自 `platforms` 里的 `id` |
 | `targetType` | `FRIEND` 或 `GROUP`，大写 |
 | `target` | 号码：正整数，不带正负号与前导零。收字符串或整数；号码可能超出一些语言的安全整数范围，**建议写成字符串** |
-| `content` | 要发的内容，不能为空。写法与平时推送模板相同，`{at=all}`、`{image_url=…}`、`{face=…}` 照常用；`{next}` 不收，一次请求只发一条。`{image_url=…}` 的地址默认不许指向本机、内网和链路本地地址，要从内网取图时在设置页「消息图片 · 允许的内网网段」（`novabot.core.push.image-allowed-networks`）里放行；机器上配了系统代理或用了假地址解析时，按域名的判断不起作用，直接写内网地址的照样拦得住 |
+| `content` | 要发的内容，不能为空。写法与平时推送模板相同，`{at=all}`、`{image_url=…}`、`{face=…}` 照常用；`{next}` 不收，一次请求只发一条。`{image_url=…}` 的地址默认不许指向本机、内网和链路本地地址，要从内网取图时在设置页「消息图片 · 允许的内网网段」（`novabot.core.push.image-allowed-networks`）里写上图床那一台的地址（例如 `192.168.1.30`）；经 QQ（OneBot）和外发箱发出时，这类图片和主机名解析不出的图片不发，消息其余部分照发，写法不对的地址原样留成文字；机器上配了系统代理或用了假地址解析时，按域名的判断不起作用，直接写内网地址的照样拦得住 |
 
 别的字段不看。发出了：
 

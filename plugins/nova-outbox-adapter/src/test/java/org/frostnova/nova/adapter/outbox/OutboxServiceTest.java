@@ -2,6 +2,7 @@ package org.frostnova.nova.adapter.outbox;
 
 import org.frostnova.nova.core.model.Message.PushKind;
 import org.frostnova.nova.core.timeline.TimelineEvent;
+import org.frostnova.nova.core.util.MessageImageAddressPolicy;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +41,8 @@ class OutboxServiceTest {
     OutboxService service;
     OutboxConversations conversations;
     long conversation;
+    /** 图片主机不联网解析 */
+    MessageImageAddressPolicy imageAddresses = OutboxImageHosts.policy();
 
     OutboxSettings settings(Map<String, String> values) {
         return new Binder(new MapConfigurationPropertySource(values))
@@ -54,7 +57,7 @@ class OutboxServiceTest {
     void reopen(OutboxSettings settings) {
         var db = new OutboxDatabase(root);
         conversations = new OutboxConversations(db);
-        service = new OutboxService(db, settings, Clock.fixed(now, ZoneOffset.UTC), events::add);
+        service = new OutboxService(db, settings, Clock.fixed(now, ZoneOffset.UTC), events::add, imageAddresses);
         service.maintain();
     }
 
@@ -107,6 +110,9 @@ class OutboxServiceTest {
             exchange.close();
         });
         server.start();
+        // 本机地址默认不交给取件程序；这里要看的是入箱时不去取，所以放行本机这一台
+        imageAddresses = OutboxImageHosts.policy("127.0.0.1");
+        reopen(settings(Map.of()));
         try {
             String url = "http://127.0.0.1:" + server.getAddress().getPort() + "/picture?v=2";
             var record = put("{image_url=" + url + "}").get(0);

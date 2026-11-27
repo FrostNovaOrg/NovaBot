@@ -12,6 +12,7 @@ import org.frostnova.nova.core.model.MessagePlaceholders;
 import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineWriter;
+import org.frostnova.nova.core.util.MessageImageAddressPolicy;
 import org.springframework.scheduling.annotation.Scheduled;
 
 import java.io.IOException;
@@ -50,6 +51,7 @@ public class OutboxService {
     private final OutboxSettings settings;
     private final Clock clock;
     private final TimelineWriter timeline;
+    private final MessageImageAddressPolicy imageAddresses;
     private boolean needsImageCleanup = true;
     private Pickup lastPickup;
     private volatile PickupHealth pickupHealth = new PickupHealth(-1, null, NO_OVERDUE_PICKUP);
@@ -59,11 +61,19 @@ public class OutboxService {
     private record PickupHealth(long activation, PickupIssue issue, HealthStatus status) {}
     record ConsoleSummary(Map<Status, Long> counts, Instant lastPickupAt, boolean pickupAlert) {}
 
+    /** 图片网址按不放行任何内网网段、系统解析判 */
     OutboxService(OutboxDatabase database, OutboxSettings settings, Clock clock, TimelineWriter timeline) {
+        this(database, settings, clock, timeline, new MessageImageAddressPolicy());
+    }
+
+    /** @param imageAddresses 图片网址能不能交给取件程序去取 */
+    OutboxService(OutboxDatabase database, OutboxSettings settings, Clock clock, TimelineWriter timeline,
+                  MessageImageAddressPolicy imageAddresses) {
         this.database = database;
         this.settings = settings;
         this.clock = clock;
         this.timeline = timeline;
+        this.imageAddresses = Objects.requireNonNull(imageAddresses);
     }
 
     /** 每个分条单独入箱并核算会话限量。 */
@@ -74,7 +84,7 @@ public class OutboxService {
         var records = new ArrayList<OutboxRecord>();
         for (String part : NEXT.split(content)) {
             if (part.isEmpty()) continue;
-            var parsed = OutboxContent.parse(part);
+            var parsed = OutboxContent.parse(part, imageAddresses);
             try {
                 records.add(database.transaction(db -> insert(db, OutboxConversations.active(db, conversationId),
                         streamer, kind, parsed, clock.instant())));
