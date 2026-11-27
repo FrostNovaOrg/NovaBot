@@ -24,6 +24,15 @@ import java.time.Clock;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AssistantPropertiesTest {
+    @ParameterizedTest @ValueSource(ints = {0, 1, 8, 9})
+    void concurrentQuestionsBindWithinTheSupportedRange(int limit) {
+        assertEquals(2, new AssistantProperties().getMaxConcurrentQuestions());
+        var binder = new Binder(new MapConfigurationPropertySource(Map.of("novabot.assistant.max-concurrent-questions", limit)));
+        var target = Bindable.of(AssistantProperties.class);
+        if (limit == 0 || limit == 9) assertThrows(BindException.class, () -> binder.bind("novabot.assistant", target));
+        else assertEquals(limit, binder.bind("novabot.assistant", target).get().getMaxConcurrentQuestions());
+    }
+
     @Test void apiFormatDefaultsToChatAndOffersAdvancedChoices() {
         var field = assertDoesNotThrow(() -> AssistantProperties.class.getDeclaredField("apiFormat"));
         assertEquals("chat", new BeanWrapperImpl(new AssistantProperties()).getPropertyValue("apiFormat"));

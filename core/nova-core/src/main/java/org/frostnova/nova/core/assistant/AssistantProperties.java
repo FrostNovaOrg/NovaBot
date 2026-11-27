@@ -16,6 +16,8 @@ import java.util.List;
 @Getter
 @ConfigurationProperties(prefix = "novabot.assistant")
 public class AssistantProperties {
+    public static final int MAX_CONCURRENT_QUESTIONS = 8;
+
     /** 是否启用智能助手，默认关闭；启用还需要模型密钥和当前版本的配置者确认。 */
     @ConfigLabel("启用智能助手")
     @ConfigLevel(ConfigLevel.Level.COMMON)
@@ -64,6 +66,11 @@ public class AssistantProperties {
     @ConfigLevel(ConfigLevel.Level.ADVANCED)
     @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
     private String difficultyModel = "";
+    /** 控制台和聊天共用，默认同时回答 2 个问题，可设为 1 至 8。其余问题按提问顺序排队。 */
+    @ConfigLabel("同时最多回答几个问题")
+    @ConfigLevel(ConfigLevel.Level.COMMON)
+    @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)
+    private int maxConcurrentQuestions = 2;
     /** 难题整问的限时，默认 180 秒。普通问题限时 55 秒。 */
     @ConfigLabel("难题限时（秒）")
     @ConfigLevel(ConfigLevel.Level.ADVANCED)
@@ -134,6 +141,12 @@ public class AssistantProperties {
 
     public synchronized void setEnabled(boolean value) { enabled = value; }
     public synchronized void setAdaptiveThinking(boolean value) { adaptiveThinking = value; }
+    public synchronized void setMaxConcurrentQuestions(int value) {
+        if (value < 1 || value > MAX_CONCURRENT_QUESTIONS) throw new IllegalArgumentException("同时最多回答几个问题请填写 1 至 8 的整数");
+        maxConcurrentQuestions = value;
+        // 排队的问题与批量保存共用此锁，整批生效后即可按新上限放行。
+        notifyAll();
+    }
     public synchronized void setMaxToolCalls(int value) { maxToolCalls = positive(value); }
     public synchronized void setQuestionInputLimit(int value) { questionInputLimit = positive(value); }
     public synchronized void setExcludedUids(List<Long> value) {

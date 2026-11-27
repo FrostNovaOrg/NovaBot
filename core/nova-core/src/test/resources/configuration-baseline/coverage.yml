@@ -17,6 +17,7 @@ novabot:
     streamer-daily-budget-yuan: 0.8
     streamer-weekly-budget-yuan: 3.75
     answer-limit: 500
+    max-concurrent-questions: 4
     max-tool-calls: 4
     question-input-limit: 24000
     excluded-uids:

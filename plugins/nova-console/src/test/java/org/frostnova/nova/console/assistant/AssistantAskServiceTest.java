@@ -1,5 +1,8 @@
 package org.frostnova.nova.console.assistant;
 
+import jakarta.servlet.Filter;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponseWrapper;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -46,10 +49,17 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.*;
 import java.math.BigDecimal;
 import java.time.*;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.function.IntPredicate;
 import java.util.stream.Stream;
 
@@ -2947,12 +2957,149 @@ class AssistantAskServiceTest {
         assertFalse(result.containsKey("label"));
     }
 
-    private MockMvc mvc() {
+    private MockMvc mvc(Filter... filters) {
         var registry = mock(DataSourceServiceRegistry.class);
         when(registry.platforms()).thenReturn(List.of("bilibili"));
         return MockMvcBuilders.standaloneSetup(new AssistantAskController(service, local,
-                consoleData, consoleDirectory, consoleNames, consoleArchive)).addInterceptors(
+                consoleData, consoleDirectory, consoleNames, consoleArchive)).addFilters(filters).addInterceptors(
                 new ConfigUiApiInterceptor(mock(ConfigUiAuthService.class), null, registry)).build();
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {true, false})
+    void queuedConsoleQuestionGetsItsFullQueryBudgetAndMemberResponse(boolean showProgress) throws Exception {
+        properties.setMaxConcurrentQuestions(1);
+        var answering = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        var queued = new CountDownLatch(1);
+        onSend = () -> { answering.countDown(); await(release); };
+        replies.add(JSONObject.of("content", "完成"));
+        replies.add(call("revenue", JSONObject.of("start", 123)));
+        replies.add(JSONObject.of("content", "已经查到"));
+        when(queries.revenue("bilibili", 1L, 123L)).thenReturn(toolData());
+        var mvc = mvc((request, response, chain) -> chain.doFilter(request,
+                new HttpServletResponseWrapper((HttpServletResponse) response) {
+                    @Override public void flushBuffer() throws IOException {
+                        super.flushBuffer();
+                        queued.countDown();
+                    }
+                }));
+        var callers = Executors.newFixedThreadPool(2);
+        try {
+            var first = callers.submit(() -> ask());
+            await(answering);
+            var waiting = callers.submit(() -> mvc.perform(post("/config/api/streamers/bilibili/1/assistant/ask")
+                    .header("X-Assistant-Progress", showProgress ? "1" : "0")
+                    .requestAttr(ConfigUiAccess.ACCOUNT, member()).contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"question\":\"这场流水怎样\"}")).andReturn().getResponse());
+            await(queued);
+            assertEquals(1, sent.size());
+            verifyNoInteractions(queries);
+            clock.now = clock.now.plusSeconds(60);
+            release.countDown();
+            first.get(10, TimeUnit.SECONDS);
+            var response = waiting.get(10, TimeUnit.SECONDS);
+            String body = response.getContentAsString(UTF_8);
+            JSONObject result;
+            if (showProgress) {
+                var frames = body.lines().filter(line -> !line.isBlank()).map(JSON::parseObject).toList();
+                assertEquals(1, frames.get(0).getIntValue("ahead"));
+                assertTrue(frames.get(1).getBooleanValue("started"));
+                result = frames.get(2).getJSONObject("result");
+                assertTrue(response.getContentType().startsWith("application/x-ndjson"));
+            } else {
+                result = JSON.parseObject(body);
+                assertTrue(response.getContentType().startsWith("application/json"));
+            }
+            assertTrue(result.getBooleanValue("answered"), result::toJSONString);
+            assertFalse(result.containsKey("costYuan"));
+            assertFalse(result.containsKey("remaining"));
+            verify(queries).revenue("bilibili", 1L, 123L);
+        } finally {
+            release.countDown();
+            callers.shutdownNow();
+            assertTrue(callers.awaitTermination(10, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test void fullAndAbandonedConsoleQuestionsNeverReachTheModelOrChargeQuota() throws Exception {
+        properties.setMaxConcurrentQuestions(1);
+        var answering = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        onSend = () -> { answering.countDown(); await(release); };
+        var spent = client.status().spentYuan();
+        var callers = Executors.newFixedThreadPool(7);
+        try {
+            var first = callers.submit(() -> ask());
+            await(answering);
+            var waiting = new ArrayList<Future<JSONObject>>();
+            for (int i = 1; i <= 6; i++) {
+                var position = new CompletableFuture<Integer>();
+                waiting.add(callers.submit(() -> service.ask("bilibili", List.of(1L), "member",
+                        JSONObject.of("question", "上周播过吗"), AssistantQueryContext.CONSOLE, position::complete)));
+                assertEquals(i, position.get(10, TimeUnit.SECONDS));
+            }
+            var full = ask();
+            assertFalse(full.getBooleanValue("answered"));
+            assertEquals("现在提问的人比较多，请稍后再问", full.getString("answer"));
+            service.close();
+            for (var question : waiting) assertEquals("queue_busy", question.get(10, TimeUnit.SECONDS).getString("reason"));
+            assertEquals(1, sent.size());
+            verifyNoInteractions(queries);
+            assertEquals(spent, client.status().spentYuan());
+            release.countDown();
+            var cost = first.get(10, TimeUnit.SECONDS).getBigDecimal("costYuan");
+            assertEquals(0, cost.compareTo(client.status().spentYuan().subtract(spent)));
+        } finally {
+            release.countDown();
+            callers.shutdownNow();
+            assertTrue(callers.awaitTermination(10, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test void disconnectedConsoleLeavesTheQueueBeforeASlotOpens() throws Exception {
+        properties.setMaxConcurrentQuestions(1);
+        var answering = new CountDownLatch(1);
+        var release = new CountDownLatch(1);
+        onSend = () -> { answering.countDown(); await(release); };
+        var mvc = mvc((request, response, chain) -> chain.doFilter(request,
+                new HttpServletResponseWrapper((HttpServletResponse) response) {
+                    @Override public void flushBuffer() throws IOException {
+                        if (isCommitted()) throw new IOException("connection closed");
+                        super.flushBuffer();
+                    }
+                }));
+        var callers = Executors.newFixedThreadPool(2);
+        try {
+            var first = callers.submit(() -> ask());
+            await(answering);
+            var disconnected = callers.submit(() -> mvc.perform(post("/config/api/streamers/bilibili/1/assistant/ask")
+                    .header("X-Assistant-Progress", "1").requestAttr(ConfigUiAccess.ACCOUNT, member())
+                    .contentType(MediaType.APPLICATION_JSON).content("{\"question\":\"今天播了吗\"}")));
+            var stopped = disconnected.get(10, TimeUnit.SECONDS).andReturn();
+            assertInstanceOf(UncheckedIOException.class, stopped.getResolvedException());
+            var position = new CompletableFuture<Integer>();
+            var next = callers.submit(() -> service.ask("bilibili", List.of(1L), "member",
+                    JSONObject.of("question", "昨天播了吗"), AssistantQueryContext.CONSOLE, position::complete));
+            assertEquals(1, position.get(10, TimeUnit.SECONDS));
+            assertEquals(1, sent.size());
+            release.countDown();
+            first.get(10, TimeUnit.SECONDS);
+            assertTrue(next.get(10, TimeUnit.SECONDS).getBooleanValue("answered"));
+            assertEquals(2, sent.size());
+        } finally {
+            release.countDown();
+            callers.shutdownNow();
+            assertTrue(callers.awaitTermination(10, TimeUnit.SECONDS));
+        }
+    }
+
+    private static void await(CountDownLatch event) {
+        try {
+            assertTrue(event.await(15, TimeUnit.SECONDS));
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError(interrupted);
+        }
     }
 
     private void useUnreadableUsage() throws Exception {

@@ -93,6 +93,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
@@ -217,6 +218,45 @@ class QqAssistantCommandTest {
     void close() {
         if (command != null) command.close();
         if (service != null) service.close();
+    }
+
+    @Test void qqWaitsBehindTwoConsoleQuestionsAndKeepsItsSessionBusy() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        var received = new CountDownLatch(2);
+        var release = new CountDownLatch(1);
+        holdModel(received, release);
+        var consoles = Executors.newFixedThreadPool(2);
+        try {
+            var single = consoles.submit(() -> service.ask(BILIBILI, FIRST, "operator", JSONObject.of("question", "最近播过吗")));
+            var comparison = consoles.submit(() -> service.ask(BILIBILI, List.of(FIRST, SECOND), "operator",
+                    JSONObject.of("question", "两位主播最近开播怎么样")));
+            assertTrue(received.await(10, TimeUnit.SECONDS));
+            group(ASKER, "问 昨天播了吗");
+            assertReply("前面还有 2 个问题", "轮到就开始查");
+            receive(GROUP, ROOM, OTHER, "问 本周播过吗", true);
+            assertReply("上一个问题还在查", "稍等");
+            assertEquals(2, requests.size());
+            clock.advance(Duration.ofSeconds(60));
+            var qqStarted = new CountDownLatch(1);
+            var qqRelease = new CountDownLatch(1);
+            holdModel(qqStarted, qqRelease);
+            release.countDown();
+            try {
+                assertTrue(qqStarted.await(10, TimeUnit.SECONDS));
+                assertReply("收到，正在查");
+            } finally {
+                qqRelease.countDown();
+            }
+            assertReply(LABEL);
+            awaitIdle(GROUP, ROOM);
+            assertTrue(single.get(10, TimeUnit.SECONDS).getBooleanValue("answered"));
+            assertTrue(comparison.get(10, TimeUnit.SECONDS).getBooleanValue("answered"));
+            assertEquals(3, requests.size());
+        } finally {
+            release.countDown();
+            consoles.shutdown();
+            assertTrue(consoles.awaitTermination(10, TimeUnit.SECONDS));
+        }
     }
 
     // 控制台和 QQ 各算各的，问同一位主播，加起来超了每天上限还能接着问。
@@ -964,7 +1004,7 @@ class QqAssistantCommandTest {
     private AssistantAskService.Answer askWithHiddenAmounts(String question, Map<Long, PushTarget> channels) {
         var source = local.qqSource("QQ", GROUP, ROOM, ASKER);
         return service.askFromQq(BILIBILI, List.of(FIRST), source, JSONObject.of("question", question), false,
-                channels, List.of(), null, ignored -> {}, timing -> {});
+                channels, List.of(), null, ignored -> {}, timing -> {}, AssistantQuestionQueue.Progress.SILENT);
     }
 
     @Test

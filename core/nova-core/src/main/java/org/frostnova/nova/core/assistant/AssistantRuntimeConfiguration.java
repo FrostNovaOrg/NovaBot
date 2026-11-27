@@ -26,6 +26,8 @@ public final class AssistantRuntimeConfiguration implements RuntimeConfiguration
                     value -> bool(value, "按难度调思考强度"), AssistantProperties::setAdaptiveThinking),
             setting("hard-thinking", DEFAULTS.getHardThinking(), Function.identity(), AssistantProperties::setHardThinking),
             setting("difficulty-model", DEFAULTS.getDifficultyModel(), Function.identity(), AssistantProperties::setDifficultyModel),
+            setting("max-concurrent-questions", DEFAULTS.getMaxConcurrentQuestions(), AssistantRuntimeConfiguration::integer,
+                    AssistantProperties::setMaxConcurrentQuestions),
             setting("hard-timeout-seconds", DEFAULTS.getHardTimeoutSeconds(), AssistantRuntimeConfiguration::integer,
                     AssistantProperties::setHardTimeoutSeconds),
             setting("weekly-budget-yuan", DEFAULTS.getWeeklyBudgetYuan(),

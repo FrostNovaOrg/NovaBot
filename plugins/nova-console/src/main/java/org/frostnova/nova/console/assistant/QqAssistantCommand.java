@@ -7,6 +7,7 @@ import org.frostnova.nova.core.analytics.StatisticsDay;
 import org.frostnova.nova.core.assistant.AssistantClient;
 import org.frostnova.nova.core.assistant.AssistantException;
 import org.frostnova.nova.core.assistant.AssistantLocalStore;
+import org.frostnova.nova.core.assistant.AssistantProperties;
 import org.frostnova.nova.core.command.CommandContext;
 import org.frostnova.nova.core.command.CommandFallback;
 import org.frostnova.nova.core.command.CommandFollowUp;
@@ -41,12 +42,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
@@ -93,7 +95,9 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
     private final Map<Asker, PendingFollowUps> pendingFollowUps = new ConcurrentHashMap<>();
     private final Map<HistoryKey, List<Turn>> histories = new ConcurrentHashMap<>();
     private final Map<ReportHistoryKey, List<Report>> reportHistories = new ConcurrentHashMap<>();
-    private final ExecutorService workers = Executors.newCachedThreadPool(task -> daemon(task, "assistant-qq"));
+    private final ExecutorService workers = new ThreadPoolExecutor(0,
+            AssistantProperties.MAX_CONCURRENT_QUESTIONS + AssistantQuestionQueue.WAITING_LIMIT, 60, TimeUnit.SECONDS,
+            new SynchronousQueue<>(), task -> daemon(task, "assistant-qq"));
     private final ScheduledThreadPoolExecutor reminders =
             new ScheduledThreadPoolExecutor(1, task -> daemon(task, "assistant-qq-reminder"));
 
@@ -320,7 +324,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         } catch (RuntimeException error) {
             active.finish(null);
             inFlight.remove(session);
-            if (error instanceof RejectedExecutionException) return CommandReply.of(UNAVAILABLE);
+            if (error instanceof RejectedExecutionException) return CommandReply.of(AssistantQuestionQueue.BUSY);
             throw error;
         }
         return CommandReply.none();
@@ -352,7 +356,19 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
                 reportChannels.put(uid, snapshot);
             });
             var answer = assistant.askFromQq(LIVE_PLATFORM, uids, source, request, amountVisible, reportChannels, previousResults,
-                    previousQuestion, adaptiveThinking -> active.accepted(chosenName, adaptiveThinking), active::difficultyResolved);
+                    previousQuestion, adaptiveThinking -> active.accepted(chosenName, adaptiveThinking), active::difficultyResolved,
+                    new AssistantQuestionQueue.Progress() {
+                        @Override public void queued(int ahead) {
+                            active.queued(ahead);
+                        }
+                        @Override public void started() {
+                            active.startDeadline();
+                            var current = groupAccess(context, streamers);
+                            if (current.closed() != null) throw new AssistantException(closedAnswer(current.closed()).text());
+                            if (amountVisible && !current.amountVisible())
+                                throw new AssistantException("通道的金额显示已更改，请重新提问");
+                        }
+                    });
             JSONObject result = answer.response();
             if (result.containsKey("difficulty"))
                 AssistantAskService.logQuestion(log, source.entry() + " " + source.account(), LIVE_PLATFORM, uids.get(0), result);
@@ -620,7 +636,18 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
 
         synchronized void start(Future<?> work) {
             this.work = work;
-            scheduleDeadline(Duration.ofSeconds(AssistantAskService.QUESTION_TIMEOUT_SECONDS));
+            startDeadline();
+        }
+
+        synchronized void queued(int ahead) {
+            if (finished) return;
+            deadline.cancel(false);
+            deadline = null;
+            progressReply("前面还有 " + ahead + " 个问题在答，轮到就开始查");
+        }
+
+        synchronized void startDeadline() {
+            if (!finished) scheduleDeadline(Duration.ofSeconds(AssistantAskService.QUESTION_TIMEOUT_SECONDS));
         }
 
         synchronized void accepted(String chosenName, boolean adaptiveThinking) {
@@ -667,7 +694,7 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
         }
 
         private synchronized void expire(long scheduledAt) {
-            if (scheduledAt == deadlineAt && finish(QqAnswer.text("智能助手本次提问已超时，请问得具体一点")))
+            if (deadline != null && scheduledAt == deadlineAt && finish(QqAnswer.text("智能助手本次提问已超时，请问得具体一点")))
                 work.cancel(true);
         }
 

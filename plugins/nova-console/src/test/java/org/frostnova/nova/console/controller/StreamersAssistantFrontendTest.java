@@ -6,6 +6,10 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 
 class StreamersAssistantFrontendTest {
+    @Test void showsQueuePositionUntilAdmitted() throws Exception {
+        run("queue");
+    }
+
     private void run(String name) throws Exception {
         FrontendFixture.runFromModule("src/test/resources/frontend/streamers-assistant-fixture.mjs",
                 "智能助手", Map.of("ASSISTANT_CASE", name));

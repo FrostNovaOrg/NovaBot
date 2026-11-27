@@ -55,8 +55,8 @@ globalThis.document = {
   querySelectorAll(selector) { return this.body.querySelectorAll(selector); },
   createRange() { return {selectNodeContents(node) { this.node = node; }}; },
 };
-globalThis.window = {getSelection: () => ({removeAllRanges() {}, addRange(range) { selectedText = range.node.textContent; }}),
-  matchMedia: () => ({matches: false}), scrollY: 0, scrollTo(_x, y) { this.lastScroll = y; }};
+globalThis.window = Object.assign(new EventTarget(), {getSelection: () => ({removeAllRanges() {}, addRange(range) { selectedText = range.node.textContent; }}),
+  matchMedia: () => ({matches: false}), scrollY: 0, scrollTo(_x, y) { this.lastScroll = y; }});
 globalThis.location = {hash: '#/streamers/sample/1', reload() {}};
 globalThis.ResizeObserver = class { observe() {} disconnect() {} };
 globalThis.setInterval = () => 1;
@@ -83,6 +83,7 @@ let reply = {answered: true, label: '由人工智能生成', answer: '样例回�
   costYuan: 0.01230001, remaining: {spentYuan: 1.2300001, weeklyBudgetYuan: 2},
   state: {...initialState, streamerQuota: {dailyPercent: 80, weeklyPercent: 96}}};
 const initialReply = reply;
+let askStream;
 let askError = null, httpStatus = 200;
 const requests = [];
 const memoFixtures = new Map(), memoWrites = [], unreadableMemos = new Set();
@@ -96,6 +97,11 @@ globalThis.fetch = async (url, options) => {
   }
   if (url.endsWith('/assistant/ask')) {
     requests.push({url, options, body: JSON.parse(options.body)});
+    if (askStream) {
+      assert.equal(options.headers['X-Assistant-Progress'], '1');
+      assert.equal(options.headers['X-CSRF-Token'], store.csrfToken);
+      return new Response(askStream, {headers: {'Content-Type': 'application/x-ndjson'}});
+    }
     if (askGate) await askGate;
     if (askError) throw askError;
     return response(reply);
@@ -151,6 +157,34 @@ async function until(predicate, message) {
   }
 }
 const checks = {
+  async queue() {
+    const mounted = await mount();
+    let writer;
+    askStream = new ReadableStream({start(controller) { writer = controller; }});
+    const send = frame => writer.enqueue(new TextEncoder().encode(JSON.stringify(frame) + '\n'));
+    const pending = ask(mounted);
+    send({ahead: 2});
+    await until(() => mounted.node.textContent.includes('前面还有 2 个问题在答，排队中'), '排队位置没有显示');
+    assert.ok(!mounted.node.textContent.includes('正在查数并回答'));
+    send({started: true});
+    await until(() => mounted.node.textContent.includes('正在查数并回答'), '轮到后没有切回查数提示');
+    assert.ok(!mounted.node.textContent.includes('排队中'));
+    send({result: reply});
+    writer.close();
+    await pending;
+    assert.match(mounted.node.textContent, /样例回答/);
+
+    askStream = new ReadableStream({start(controller) { writer = controller; }});
+    const leaving = ask(mounted);
+    send({ahead: 3});
+    await until(() => mounted.node.textContent.includes('前面还有 3 个问题'), '第二次提问应显示新的位置');
+    const signal = requests.at(-1).options.signal;
+    signal.addEventListener('abort', () => writer.error(signal.reason));
+    window.dispatchEvent(new Event('pagehide'));
+    assert.ok(signal.aborted);
+    await leaving;
+    assert.match(mounted.node.textContent, /提问已取消/);
+  },
   async memos() {
     const identity = {platform: 'sample', uid: 81};
     const text = '本月试播三场<img>';
