@@ -6,12 +6,14 @@ REPO_DIR="$SCRIPT_DIR/../.."
 GH_REPO_CI=
 NOWAIT_CI=0
 CI_POLL=30; CI_MAX=1800; CI_APPEAR=180
+CI_QUERY_FAILURE_LIMIT=5
 # --no-wait 时两种查法都回空，隔 CI_EMPTY_WAIT 秒再查，最多再查 CI_EMPTY_TRIES 轮。
 CI_EMPTY_WAIT=10; CI_EMPTY_TRIES=2
 usage() {
   cat <<'HELP'
 用法：ci-status.sh [--repo DIR] [--github-repo OWNER/NAME] <提交> [--no-wait]
 查询 ci.yml 对该提交的 push 运行；默认每 30 秒查询，最多等 30 分钟。
+等待期间查询出错会在下一轮重试，连续 5 次出错则返回。
 有两种查法：先按工作流查，回空列表时再按提交查；两种都查不到会重查。
 --no-wait：运行未结束时立即返回；查不到时隔 10 秒再查，最多再查 2 轮。
 退码：0 绿；4 红；5 查不到；6 等待超时；7 gh 查询失败；8 还在跑；2 参数错误。
@@ -80,14 +82,20 @@ else:
 
 ci_status() {
   local want full t0 out alt id via seen=0 empty=0
+  local query_error failed_queries=0
   want=$1
   full=$(git -C "$R" rev-parse -q --verify "${want}^{commit}" 2>/dev/null) || full=$want
   t0=$(date +%s)
   while :; do
-    out=$(gh run list -R "$GH_REPO_CI" --workflow ci.yml --commit "$full" --event push \
-            --json databaseId,status,conclusion,createdAt,updatedAt --limit 20 2>&1) \
-      || { echo "🛑 gh 查不通（gh run list 退非 0）：$(printf '%s' "$out" | tail -n 1 | cut -c1-200)"; return 7; }
-    out=$(printf '%s' "$out" | python3 -c "$JUDGE_PY" list)
+    query_error='（gh run list 回的不是 JSON）'
+    if out=$(gh run list -R "$GH_REPO_CI" --workflow ci.yml --commit "$full" --event push \
+               --json databaseId,status,conclusion,createdAt,updatedAt --limit 20 2>&1); then
+      out=$(printf '%s' "$out" | python3 -c "$JUDGE_PY" list) || out=坏
+    else
+      query_error="（gh run list 退非 0）：$(printf '%s' "$out" | tail -n 1 | cut -c1-200)"
+      out=坏
+    fi
+    if [ "$out" != 坏 ]; then failed_queries=0; fi
     via=
     # GitHub 偶发按工作流查回空列表（HTTP 200、总数 0，不是限流），同一时刻按提交查仍查得到。
     # 按提交查失败或回的不是 JSON，这一轮照「无」算；退 7 只看上面按工作流那一查。
@@ -141,9 +149,15 @@ for j in jobs or []:
           else
             echo "⏳ 还查不到提交 ${full:0:8} 的 CI 运行（刚推的要等登记），${CI_POLL} 秒后再查"
           fi;;
-      *) echo "🛑 gh 查不通（gh run list 回的不是 JSON）"; return 7;;
+      *) failed_queries=$(( failed_queries + 1 ))
+         if [ "$NOWAIT_CI" = 1 ] || [ "$failed_queries" -ge "$CI_QUERY_FAILURE_LIMIT" ]; then
+           echo "🛑 gh 查不通${query_error}"; return 7
+         fi;;
     esac
     [ $(( $(date +%s) - t0 )) -lt "$CI_MAX" ] || { echo "🛑 等满 $(( CI_MAX / 60 )) 分 CI 仍没出结论（提交 ${full:0:8}）"; return 6; }
+    if [ "$failed_queries" -gt 0 ]; then
+      echo "⏳ gh 查不通，${CI_POLL} 秒后再查（连续 ${failed_queries}/${CI_QUERY_FAILURE_LIMIT} 次）"
+    fi
     sleep "$CI_POLL"
   done
 }
