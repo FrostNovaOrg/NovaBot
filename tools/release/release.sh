@@ -36,6 +36,7 @@ beta 建为 GitHub 预发布，不标最新版；正式版标最新版。
   --help                 显示帮助
 
 步骤：preflight tag package push-tag publish upload install wait deploy verify
+发布页已有安装包时，可用 --publish-only --from publish 接手回下载核对。
 auto 只许试装：读取 --host 上的 novabot@ 实例，在 X.Y.90 与 X.Y.91 间轮换。
 试装不能从 upload 接手：需重传时从 package 开始，包已在远端时从 install 开始。
 临时目录：${RELEASE_WORKDIR:-${TMPDIR:-/tmp}/novabot-release}
@@ -222,6 +223,29 @@ buildinfo_ok() {
   gotc=$(git -C "$repo" rev-parse "${tag}^{commit}" 2>/dev/null) || return 1
   gott=$(git -C "$repo" rev-parse "${tag}^{tree}" 2>/dev/null) || return 1
   [ "$commit" = "$gotc" ] || [ "$tree" = "$gott" ]
+}
+check_downloaded_buildinfo(){
+  local step="$1" archive="$2" info commit tree
+  info=$(tar -xzOf "$archive" ./BUILD-INFO 2>/dev/null) || stop "$step" "取回包里读不到 BUILD-INFO"
+  commit=$(printf '%s\n' "$info" | sed -n 's/^commit=//p')
+  tree=$(printf '%s\n' "$info" | sed -n 's/^tree=//p')
+  buildinfo_ok "$commit" "$tree" "refs/tags/${TAG}" "$REPO" || stop "$step" "取回包的 BUILD-INFO commit 不是标签 ${TAG} 所指（commit 与 tree 皆不合）"
+  printf '%s\n' "$info" | grep -q '^dirty=false$' || stop "$step" "取回包的 BUILD-INFO dirty≠false"
+}
+download_release_asset(){
+  local destination="$1" attempt
+  if [ "$SANDBOX" = 1 ]; then
+    say "〔沙盘〕gh release download ${TAG} -p ${ASSET} -O ${destination}（最多 3 次，间隔 5、15 秒，重试前删残包）"
+    return 0
+  fi
+  rm -f -- "$destination" || return 1
+  for attempt in 1 2 3; do
+    gh release download "$TAG" -p "$ASSET" -O "$destination" && return 0
+    say "gh release download ${TAG} 第 ${attempt}/3 次失败"
+    rm -f -- "$destination" || return 1
+    case "$attempt" in 1) sleep 5;; 2) sleep 15;; esac
+  done
+  return 1
 }
 
 # 远端已开始的长步骤不随本地停止；标签不删，打印接手方法。
@@ -417,7 +441,8 @@ elif should tag; then
   [ -n "$TR" ] || LOCAL_TAG_PENDING=1
 fi
 
-TB="$REPO/dist/NovaBot-${VER}.tar.gz"
+ASSET="NovaBot-${VER}.tar.gz"
+TB="$REPO/dist/${ASSET}"
 package_stop(){ say "本地标签 ${TAG} 留着、远端未推：同一提交重试走 --from package；改代码先 git tag -d ${TAG} 再从头跑"; stop package "$1"; }
 if should package; then
   [ "$FROM" = package ] && tag_check package
@@ -438,10 +463,8 @@ if should package; then
 fi
 SHA=$(shasum -a 256 "$TB" 2>/dev/null | cut -d' ' -f1)
 
-# 发布接手也核远端标签，避免 gh 隐式创建一个指向默认分支的标签。
-if [ "$TRIAL" = 1 ]; then
-  { should push-tag || should publish; } && say "── push-tag、publish 跳过（试装：不打对外标签、不推、不建发布页）"
-elif should push-tag || [ "$FROM" = publish ]; then
+# 从 publish 接手且尚未建发布页时，也先核 CI 与远端标签。
+push_release_tag(){
   say "── push-tag ${TAG}"
   tag_check push-tag
   if [ "$SANDBOX" = 1 ]; then say "〔沙盘〕沙盘不核 CI"
@@ -458,19 +481,99 @@ elif should push-tag || [ "$FROM" = publish ]; then
     say "标签 ${TAG} 已$( [ "$SANDBOX" = 1 ] && echo '推（沙盘只打印）' || echo '推远端')"
   fi
   LOCAL_TAG_PENDING=0
+}
+if [ "$TRIAL" = 1 ]; then
+  { should push-tag || should publish; } && say "── push-tag、publish 跳过（试装：不打对外标签、不推、不建发布页）"
+elif should push-tag; then
+  push_release_tag
 fi
 if should publish && [ "$TRIAL" = 0 ]; then
   RELEASE_FLAG=--latest; RELEASE_KIND=Latest
   case "$VER" in *-beta.*) RELEASE_FLAG=--prerelease; RELEASE_KIND=Pre-release;; esac
   say "── publish gh release ${TAG}"
+  DL="$SCRATCH/dl-${VER}.tar.gz"
+  release_draft=false
   if [ "$SANDBOX" = 1 ]; then
-    say "〔沙盘〕gh release create ${TAG} ${TB} --title \"NovaBot ${VER}\" --notes-file ${NOTES} ${RELEASE_FLAG}"
+    say "〔沙盘〕gh release view ${TAG} --json assets,isDraft,databaseId"
+    if [ "$FROM" = publish ]; then
+      release_draft=true
+      release_id='{release_id}'
+      say "〔沙盘〕草稿发布页及 ${ASSET} 模拟为已存在，接手上一趟"
+    else
+      say "〔沙盘〕发布页模拟为不存在"
+      say "〔沙盘〕gh release create ${TAG} ${TB} --title \"NovaBot ${VER}\" --notes-file ${NOTES} ${RELEASE_FLAG} --verify-tag"
+    fi
+  elif release_state=$(gh release view "$TAG" --json assets,isDraft,databaseId \
+      --jq "[.isDraft, .databaseId, any(.assets[]?; .name == \"${ASSET}\")] | @tsv" 2>&1); then
+    IFS=$'\t' read -r release_draft release_id release_has_asset <<< "$release_state"
+    case "$release_draft:$release_has_asset" in
+      true:true|true:false|false:true|false:false) ;;
+      *) stop publish "gh release view 未返回有效的草稿和资产状态" ;;
+    esac
+    if [ "$release_has_asset" = true ]; then
+      say "发布页及 ${ASSET} 已在，接手上一趟的回下载核对"
+    else
+      [ -f "$TB" ] || stop publish "发布页 ${TAG} 缺少安装包资产 ${ASSET}，本地也没有 ${TB} 可补传"
+      say "发布页 ${TAG} 缺少 ${ASSET}，从本地补传"
+      gh release upload "$TAG" "$TB" || stop publish "gh release upload 补传失败"
+    fi
+  elif [ "$release_state" = 'release not found' ]; then
+    [ -f "$TB" ] || stop publish "发布页 ${TAG} 不存在，本地也没有安装包 ${TB}"
+    [ "$FROM" != publish ] || push_release_tag
+    [ -s "$NOTES" ] || prepare_notes
+    gh release create "$TAG" "$TB" --title "NovaBot ${VER}" --notes-file "$NOTES" "$RELEASE_FLAG" --verify-tag >/dev/null || stop publish "gh release create 失败"
+    say "release ${TAG} 已建（${RELEASE_KIND}）"
   else
-    gh release create "$TAG" "$TB" --title "NovaBot ${VER}" --notes-file "$NOTES" "$RELEASE_FLAG" >/dev/null || stop publish "gh release create 失败"
-    DL="$SCRATCH/dl-${VER}.tar.gz"; rm -f "$DL"
-    gh release download "$TAG" -p "NovaBot-${VER}.tar.gz" -O "$DL" || stop publish "回下载失败"
-    [ "$(shasum -a 256 "$DL" | cut -d' ' -f1)" = "$SHA" ] || stop publish "回下 sha 不一致"
-    say "release ${TAG} 已建（${RELEASE_KIND}），回下 sha 一致"
+    stop publish "gh release view 失败：${release_state}"
+  fi
+  download_release_asset "$DL" || stop publish "回下载失败，可用 \`tools/release/release.sh --publish-only --from publish\` 接手"
+  digest_endpoint="repos/{owner}/{repo}/releases/tags/${TAG}"
+  if [ "$release_draft" = true ]; then
+    # 按标签查询的接口只返回已公开的发布页，草稿按发布页 ID 查询。
+    digest_endpoint="repos/{owner}/{repo}/releases/${release_id}"
+  fi
+  if [ "$SANDBOX" = 1 ]; then
+    if [ -f "$TB" ]; then
+      say "〔沙盘〕回下包与本地包比 sha256"
+    else
+      say "〔沙盘〕取远端标签 ${TAG}，核回下包 BUILD-INFO。gh api ${digest_endpoint} 有资产 digest 时再比 sha256"
+    fi
+  else
+    dl_sha=$(shasum -a 256 "$DL") || stop publish "算不了回下包 sha256"
+    dl_sha=${dl_sha%% *}
+    if [ -f "$TB" ]; then
+      [ "$dl_sha" = "$SHA" ] || stop publish "回下 sha 不一致"
+      say "release ${TAG} 回下 sha 与本地包一致"
+    else
+      git fetch -q --no-tags origin "refs/tags/${TAG}:refs/tags/${TAG}" || stop publish "取不到远端标签 ${TAG}（若本地已有同名标签，核对两边所指）"
+      check_downloaded_buildinfo publish "$DL"
+      digest=$(gh api "$digest_endpoint" \
+        --jq ".assets[] | select(.name == \"${ASSET}\") | (.digest // empty)") || stop publish "查不了 GitHub 资产 digest"
+      if [ -n "$digest" ]; then
+        [ "$digest" = "sha256:${dl_sha}" ] || stop publish "回下 sha 与 GitHub 资产 digest 不一致"
+        say "release ${TAG} 回下包 BUILD-INFO 与标签相符，sha256 与 GitHub 资产 digest 一致"
+      else
+        say "release ${TAG} 的 GitHub 资产未提供 digest，回下包仅核 BUILD-INFO，已与标签对上"
+      fi
+    fi
+  fi
+  publish_resume='可用 `tools/release/release.sh --publish-only --from publish` 接手'
+  if [ "$release_draft" = true ]; then
+    if [ "$SANDBOX" = 1 ]; then
+      say "〔沙盘〕回下载核对通过后转公开：gh release edit ${TAG} --draft=false"
+    else
+      gh release edit "$TAG" --draft=false >/dev/null ||
+        stop publish "发布页 ${TAG} 还没确认公开（gh release edit 失败），${publish_resume}"
+    fi
+  fi
+  if [ "$SANDBOX" = 1 ]; then
+    say "〔沙盘〕gh release view ${TAG} --json isDraft --jq .isDraft（确认已公开）"
+  else
+    final_draft=$(gh release view "$TAG" --json isDraft --jq '.isDraft') ||
+      stop publish "发布页 ${TAG} 还没确认公开（gh release view 失败），${publish_resume}"
+    [ "$final_draft" = false ] ||
+      stop publish "发布页 ${TAG} 还没确认公开（isDraft=${final_draft}），${publish_resume}"
+    [ "$release_draft" != true ] || say "发布页 ${TAG} 已从草稿转为公开"
   fi
 fi
 if [ "$PUBLISH_ONLY" = 1 ]; then
@@ -640,17 +743,16 @@ bash -n "$DEPLOY" || stop upload "部署脚本语法红"
 if should upload; then
   # 本地包不在时，从发行页取回并核 BUILD-INFO，不能空手开始 SSH 重试。
   if [ ! -f "$TB" ]; then
+    upload_download="${TB}.part"
     if [ "$SANDBOX" = 1 ]; then
-      say "〔沙盘〕gh release download ${TAG} -p NovaBot-${VER}.tar.gz -O ${TB}"
+      download_release_asset "$upload_download"
+      say "〔沙盘〕核回下包 BUILD-INFO 后存到 ${TB}"
     else
       say "本地无 ${TB}，从 release ${TAG} 取回"
-      mkdir -p "$(dirname "$TB")"
-      gh release download "$TAG" -p "NovaBot-${VER}.tar.gz" -O "$TB" || stop upload "本地无包，且 gh release download ${TAG} 取不回"
-      BI=$(tar -xzOf "$TB" ./BUILD-INFO 2>/dev/null)
-      bi_commit=$(printf '%s\n' "$BI" | sed -n 's/^commit=//p')
-      bi_tree=$(printf '%s\n' "$BI" | sed -n 's/^tree=//p')
-      buildinfo_ok "$bi_commit" "$bi_tree" "$TAG" "$REPO" || stop upload "取回包的 BUILD-INFO commit 不是标签 ${TAG} 所指（commit 与 tree 皆不合）"
-      echo "$BI" | grep -q '^dirty=false$' || stop upload "取回包的 BUILD-INFO dirty≠false"
+      mkdir -p "$(dirname "$TB")" || stop upload "建不了安装包目录"
+      download_release_asset "$upload_download" || stop upload "本地无包，且 gh release download ${TAG} 取不回"
+      check_downloaded_buildinfo upload "$upload_download"
+      mv -f -- "$upload_download" "$TB" || stop upload "存不了取回的安装包 ${TB}"
       SHA=$(shasum -a 256 "$TB" | cut -d' ' -f1)
       say "取回 $(stat -f %z "$TB") B sha $(printf '%s' "$SHA" | cut -c1-16)… BUILD-INFO 对上"
     fi
