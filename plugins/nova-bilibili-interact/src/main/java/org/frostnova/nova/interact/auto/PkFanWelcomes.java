@@ -64,7 +64,13 @@ final class PkFanWelcomes {
 
     CompletableFuture<Profile> profile(Opponent opponent) {
         if (!positive(opponent.uid())) return CompletableFuture.completedFuture(null);
-        return profiles.computeIfAbsent(opponent.uid(), uid -> lookup.apply(opponent));
+        return profiles.compute(opponent.uid(), (uid, cached) -> {
+            if (cached != null) {
+                if (!cached.isDone()) return cached;
+                if (!cached.isCompletedExceptionally() && cached.getNow(null) != null) return cached;
+            }
+            return lookup.apply(opponent);
+        });
     }
 
     boolean hasSlot(long uid, int limit) {
