@@ -6,7 +6,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.adapter.onebot.config.OneBotAdapterPluginProperties;
 import org.frostnova.nova.adapter.onebot.config.OneBotHttpAdapterRegistrar;
-import org.frostnova.nova.adapter.onebot.converter.OneBotMessageConverter;
+import org.frostnova.nova.adapter.onebot.converter.PublicImageHosts;
 import org.frostnova.nova.adapter.onebot.dto.MessageDTO;
 import org.frostnova.nova.adapter.onebot.health.OneBotConnectionState;
 import org.frostnova.nova.adapter.onebot.http.OneBotHttpAdapter;
@@ -294,7 +294,7 @@ class NapCatUnreachablePushRetryTest {
                 gate);
 
         OneBotHttpService service = new OneBotHttpService(mock(TaskScheduler.class), executor, properties, adapter,
-                new OneBotMessageConverter(), state);
+                PublicImageHosts.converter(), state);
 
         OneBotSender onebot = new OneBotSender();
         onebot.setName(PLATFORM);

@@ -16,6 +16,7 @@ import org.frostnova.nova.core.timeline.TimelineEvent;
 import org.frostnova.nova.core.timeline.TimelineEventType;
 import org.frostnova.nova.core.timeline.TimelineStore;
 import org.frostnova.nova.core.util.HttpUtil;
+import org.frostnova.nova.core.util.MessageImageAddressPolicy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,6 +32,7 @@ import org.springframework.context.support.GenericApplicationContext;
 
 import java.io.IOException;
 import java.net.ConnectException;
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpConnectTimeoutException;
@@ -70,6 +72,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class QqBotDeliveryTest {
@@ -1298,6 +1301,88 @@ class QqBotDeliveryTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {
+            "http://127.0.0.1/a.png", "http://127.1.2.3:8080/a.png", "http://localhost/a.png",
+            "http://LOCALHOST./a.png", "http://0.0.0.0/a.png", "http://0/a.png", "http://2130706433/a.png",
+            "http://10.0.0.8/a.png", "http://172.16.5.4/a.png", "http://192.168.1.10/a.png",
+            "http://169.254.169.254/latest/meta-data/", "http://100.64.0.1/a.png", "http://224.0.0.1/a.png",
+            "http://240.0.0.1/a.png", "http://255.255.255.255/a.png", "http://[::1]/a.png", "http://[::]/a.png",
+            "http://[fe80::1]/a.png", "http://[fc00::1]/a.png", "http://[fd12:3456::1]/a.png",
+            "http://[fec0::1]/a.png", "http://[::ffff:127.0.0.1]/a.png", "http://[::ffff:a9fe:a9fe]/a.png",
+            "http://[64:ff9b::a9fe:a9fe]/latest/meta-data/", "http://[64:ff9b::7f00:1]/a.png"
+    })
+    @DisplayName("模板里的图片地址指向本机、内网或链路本地时不发起下载，推送记录写明原因")
+    void refusesToDownloadImagesPointingAtLoopbackPrivateOrLinkLocalAddresses(String url) {
+        HttpClient client = mock(HttpClient.class);
+        withSender(new QqBotImageDownloader(client), rig -> {
+            JSONObject result = rig.send("{image_url=" + url + "}");
+            assertEquals(-1, result.getIntValue("code"));
+            assertEquals("图片地址指向本机或内网，未下载", result.getString("message"));
+            assertEquals("图片地址指向本机或内网，未下载", rig.group().lastFailure().reason());
+            assertTrue(rig.endpoints().isEmpty());
+        });
+        verifyNoInteractions(client);
+    }
+
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            http://169.254.169.254/latest/meta-data/ | 图片地址指向本机或内网，未下载
+            http://127.0.0.1:8080/admin.png          | 图片地址指向本机或内网，未下载
+            http://localhost/a.png                   | 图片地址指向本机或内网，未下载
+            https://10.1.2.3/a.png                   | 图片地址指向本机或内网，未下载
+            https://[::1]/a.png                      | 图片地址指向本机或内网，未下载
+            https://[fd00::1]/a.png                  | 图片地址指向本机或内网，未下载
+            http://198.51.100.20/b.png               | 图片下载失败，请稍后再试
+            """)
+    @DisplayName("公网图片跳转到内网地址或从 https 跳到 http 时不跟过去")
+    void refusesRedirectsToInternalAddressesOrFromHttpsToHttp(String location, String reason) {
+        List<URI> requested = new ArrayList<>();
+        HttpClient client = scriptedClient(requested, Map.of(
+                "https://203.0.113.10/cover.png", new Reply(302, location, new byte[0])));
+        withSender(new QqBotImageDownloader(client), rig -> {
+            JSONObject result = rig.send("{image_url=https://203.0.113.10/cover.png}");
+            assertEquals(-1, result.getIntValue("code"));
+            assertEquals(reason, result.getString("message"));
+            assertEquals(reason, rig.group().lastFailure().reason());
+            assertTrue(rig.endpoints().isEmpty());
+        });
+        assertEquals(List.of(URI.create("https://203.0.113.10/cover.png")), requested);
+    }
+
+    @Test
+    @DisplayName("公网图片照常取到，https 之间的跳转最多跟三跳")
+    void downloadsPublicImagesAndFollowsUpToThreeHttpsRedirects() {
+        byte[] png = Base64.getDecoder().decode(PNG);
+        List<URI> requested = new ArrayList<>();
+        HttpClient client = scriptedClient(requested, Map.of(
+                "https://203.0.113.10:8443/cover.png?size=large", new Reply(200, null, png),
+                "http://198.18.0.5/cover.png", new Reply(200, null, png),
+                "https://[2001:db8::10]/cover.png", new Reply(200, null, png),
+                "https://203.0.113.10/a.png", new Reply(302, "https://198.51.100.20/b.png", new byte[0]),
+                "https://198.51.100.20/b.png", new Reply(301, "/c.png", new byte[0]),
+                "https://198.51.100.20/c.png", new Reply(307, "https://[2001:db8::10]/d.png", new byte[0]),
+                "https://[2001:db8::10]/d.png", new Reply(200, null, png),
+                "https://203.0.113.10/one.png", new Reply(302, "https://203.0.113.10/a.png", new byte[0])));
+        withSender(new QqBotImageDownloader(client), rig -> {
+            rig.exchange = path -> path.equals("files") ? json("file_info", FILE_INFO) : json("id", "message-1");
+            for (String url : List.of("https://203.0.113.10:8443/cover.png?size=large",
+                    "http://198.18.0.5/cover.png", "https://[2001:db8::10]/cover.png", "https://203.0.113.10/a.png")) {
+                requested.clear();
+                assertEquals(0, rig.send("{image_url=" + url + "}").getIntValue("code"), url);
+                assertEquals(URI.create(url), requested.get(0));
+            }
+            assertEquals(List.of("https://203.0.113.10/a.png", "https://198.51.100.20/b.png",
+                    "https://198.51.100.20/c.png", "https://[2001:db8::10]/d.png"),
+                    requested.stream().map(URI::toString).toList());
+
+            requested.clear();
+            JSONObject fourHops = rig.send("{image_url=https://203.0.113.10/one.png}");
+            assertEquals("图片下载失败，请稍后再试", fourHops.getString("message"));
+            assertEquals(4, requested.size());
+        });
+    }
+
+    @ParameterizedTest
     @CsvSource(delimiter = '|', textBlock = """
             40054010 | 链接被平台拦了（example.invalid）
             40054002 | 在这个群被禁言了
@@ -1511,7 +1596,55 @@ class QqBotDeliveryTest {
                 return response;
             }).toCompletableFuture();
         });
-        return new QqBotImageDownloader(client);
+        // 图片主机解析不了，判地址时换成不联网的解析，当它是一个公网地址
+        return new QqBotImageDownloader(client, new MessageImageAddressPolicy(List.of(), host -> {
+            assertEquals("images.example.invalid", host);
+            return new InetAddress[]{InetAddress.getByAddress(host, new byte[]{(byte) 203, 0, 113, 80})};
+        }));
+    }
+
+    private record Reply(int status, String location, byte[] body) {}
+
+    /** 按请求地址回包的假客户端，记下每一跳请求的地址；没写回包的地址一律不该被请求 */
+    private static HttpClient scriptedClient(List<URI> requested, Map<String, Reply> replies) {
+        HttpClient client = mock(HttpClient.class);
+        when(client.<byte[]>sendAsync(any(HttpRequest.class), any())).thenAnswer(call -> {
+            HttpRequest request = call.getArgument(0);
+            requested.add(request.uri());
+            assertEquals("GET", request.method());
+            assertEquals(Duration.ofSeconds(15), request.timeout().orElseThrow());
+            assertTrue(request.headers().map().isEmpty());
+            Reply reply = replies.get(request.uri().toString());
+            if (reply == null) throw new AssertionError("不该请求 " + request.uri());
+            HttpHeaders headers = HttpHeaders.of(reply.location() == null ? Map.of()
+                    : Map.of("Location", List.of(reply.location())), (name, value) -> true);
+            HttpResponse.BodyHandler<byte[]> handler = call.getArgument(1);
+            HttpResponse.ResponseInfo info = mock(HttpResponse.ResponseInfo.class);
+            when(info.statusCode()).thenReturn(reply.status());
+            when(info.headers()).thenReturn(headers);
+            var subscriber = handler.apply(info);
+            AtomicBoolean cancelled = new AtomicBoolean();
+            subscriber.onSubscribe(new Flow.Subscription() {
+                @Override
+                public void request(long n) {}
+
+                @Override
+                public void cancel() {
+                    cancelled.set(true);
+                }
+            });
+            if (!cancelled.get()) subscriber.onNext(List.of(ByteBuffer.wrap(reply.body())));
+            if (!cancelled.get()) subscriber.onComplete();
+            HttpResponse<byte[]> response = mock();
+            when(response.statusCode()).thenReturn(reply.status());
+            when(response.headers()).thenReturn(headers);
+            when(response.uri()).thenReturn(request.uri());
+            return subscriber.getBody().thenApply(body -> {
+                when(response.body()).thenReturn(body);
+                return response;
+            }).toCompletableFuture();
+        });
+        return client;
     }
 
     private static JSONObject media() {

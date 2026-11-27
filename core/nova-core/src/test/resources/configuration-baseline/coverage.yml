@@ -116,6 +116,8 @@ novabot:
       at-all-session-daily-limit: 92
       quiet-start: "23:30"
       quiet-end: "07:45"
+      image-allowed-networks:
+        - 192.168.50.0/24
     command:
       admins:
         - 101

@@ -5,10 +5,11 @@ import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.model.MessagePlaceholders;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.core.lang.StringUtil;
+import org.frostnova.nova.core.util.MessageImageAddressPolicy;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-
-import java.net.URI;
 
 /**
  * 把占位符写法翻译成 OneBot 认得的消息段
@@ -22,7 +23,8 @@ import java.net.URI;
  * </ul>
  * <p>
  * @、图片与旧路径写法的值<b>空着</b>时整段丢掉；表情 ID <b>解析不了</b>、图片网址
- * 不符合要求时原样留成文本。图片网址只接受 HTTP 与 HTTPS。
+ * 不符合要求时原样留成文本。图片网址只接受 HTTP 与 HTTPS，且按 {@link MessageImageAddressPolicy}
+ * 不许指向本机、内网与链路本地：机器人程序会照这个地址去取图。
  * 本地图片写法不再支持，非空值原样留成文本，请改用 Base64 图片。
  */
 @Slf4j
@@ -32,6 +34,30 @@ public class OneBotMessageConverter {
     private static final String FACE_PREFIX = "{face=";
 
     private static final String AT_PREFIX = "{at=";
+
+    private final MessageImageAddressPolicy imageAddresses;
+
+    /**
+     * 不放行任何内网网段，按系统解析判图片地址
+     */
+    public OneBotMessageConverter() {
+        this(new MessageImageAddressPolicy());
+    }
+
+    /**
+     * 插件单独装起来（不带核心）时没有核心的那一件，就按不放行任何内网网段判
+     */
+    @Autowired
+    public OneBotMessageConverter(ObjectProvider<MessageImageAddressPolicy> imageAddresses) {
+        this(imageAddresses.getIfAvailable(MessageImageAddressPolicy::new));
+    }
+
+    /**
+     * @param imageAddresses 图片地址能不能交给机器人程序去取
+     */
+    public OneBotMessageConverter(MessageImageAddressPolicy imageAddresses) {
+        this.imageAddresses = imageAddresses;
+    }
 
     /**
      * 将可包含占位符的原始消息转换为 OneBot 可识别的格式
@@ -89,7 +115,7 @@ public class OneBotMessageConverter {
             addIfPresent(elements, "at", "qq", valueOf(placeholder, AT_PREFIX), "");
         } else if (placeholder.startsWith(MessagePlaceholders.IMAGE_URL_PREFIX)) {
             String value = valueOf(placeholder, MessagePlaceholders.IMAGE_URL_PREFIX);
-            addImage(elements, placeholder, value, "", isHttpUrl(value));
+            addImage(elements, placeholder, value, "", StringUtil.isNotBlank(value) && isFetchable(value));
         } else if (placeholder.startsWith(MessagePlaceholders.IMAGE_PATH_PREFIX)) {
             String value = valueOf(placeholder, MessagePlaceholders.IMAGE_PATH_PREFIX);
             if (StringUtil.isNotBlank(value)) {
@@ -113,14 +139,18 @@ public class OneBotMessageConverter {
         }
     }
 
-    private boolean isHttpUrl(String value) {
-        try {
-            URI uri = URI.create(value);
-            return ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
-                    && StringUtil.isNotBlank(uri.getRawAuthority());
-        } catch (IllegalArgumentException e) {
-            return false;
+    /**
+     * 图片网址能不能交给机器人程序去取
+     * <p>
+     * 机器人程序自己取图时跟不跟跳转，这里管不到；这里只看写在消息里的这个地址。
+     */
+    private boolean isFetchable(String value) {
+        MessageImageAddressPolicy.Verdict verdict = imageAddresses.check(value);
+        if (verdict == MessageImageAddressPolicy.Verdict.BLOCKED) {
+            log.warn("消息里的图片地址指向本机或内网, 没有交给机器人程序, 原样留成文字; "
+                    + "确实要从内网取图时在设置页「消息图片 · 允许的内网网段」里放行");
         }
+        return verdict.allowed();
     }
 
     /**

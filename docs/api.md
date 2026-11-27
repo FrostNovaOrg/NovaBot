@@ -463,7 +463,7 @@ curl -X POST http://127.0.0.1:7827/nova/api/v1/push/messages \
 | `platform` | 去向标识，取自 `platforms` 里的 `id` |
 | `targetType` | `FRIEND` 或 `GROUP`，大写 |
 | `target` | 号码：正整数，不带正负号与前导零。收字符串或整数；号码可能超出一些语言的安全整数范围，**建议写成字符串** |
-| `content` | 要发的内容，不能为空。写法与平时推送模板相同，`{at=all}`、`{image_url=…}`、`{face=…}` 照常用；`{next}` 不收，一次请求只发一条 |
+| `content` | 要发的内容，不能为空。写法与平时推送模板相同，`{at=all}`、`{image_url=…}`、`{face=…}` 照常用；`{next}` 不收，一次请求只发一条。`{image_url=…}` 的地址默认不许指向本机、内网和链路本地地址，要从内网取图时在设置页「消息图片 · 允许的内网网段」（`novabot.core.push.image-allowed-networks`）里放行；机器上配了系统代理或用了假地址解析时，按域名的判断不起作用，直接写内网地址的照样拦得住 |
 
 别的字段不看。发出了：
 

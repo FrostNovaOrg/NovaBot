@@ -156,6 +156,8 @@ class QqBotSender {
                 return fail(target, "图片超过 20 MB，没有发出", false);
             } catch (InvalidImage e) {
                 return fail(target, e.getMessage(), false);
+            } catch (QqBotImageDownloader.Blocked e) {
+                return fail(target, QqBotImageDownloader.BLOCKED, false);
             } catch (IOException e) {
                 return fail(target, "图片下载失败，请稍后再试", false);
             } catch (InterruptedException e) {
