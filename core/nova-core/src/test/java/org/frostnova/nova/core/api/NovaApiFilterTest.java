@@ -4,7 +4,6 @@ import com.alibaba.fastjson2.JSONObject;
 import jakarta.servlet.http.Cookie;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiSecurityFilter;
-import org.frostnova.nova.core.config.ui.ConsoleAllowList;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccountStore;
 import org.frostnova.nova.core.config.ui.auth.oidc.OidcClient;
@@ -126,9 +125,9 @@ class NovaApiFilterTest {
     }
 
     private void rebuild(NovaApiThrottle throttle) {
-        NovaApiFilter filter = new NovaApiFilter(new ConsoleAllowList(properties.getConfigUi()), tokens, accounts,
-                () -> membersCanSignIn, new NovaApiRegistry(List.of(new ProbeApi(), new OpsApi())), throttle,
-                () -> List.of("bilibili"), () -> List.copyOf(roster));
+        NovaApiRegistry registry = new NovaApiRegistry(List.of(new ProbeApi(), new OpsApi()));
+        NovaApiFilter filter = new NovaApiFilter(new NovaApiOpenGroups(properties.getConfigUi()::getApiAnySourceGroups, registry),
+                tokens, accounts, () -> membersCanSignIn, registry, throttle, () -> List.of("bilibili"), () -> List.copyOf(roster));
         mvc = MockMvcBuilders.standaloneSetup(new Probe())
                 .addFilters(new SecurityHeadersFilter(List.of("/config", "/nova")), filter).build();
     }
@@ -202,25 +201,20 @@ class NovaApiFilterTest {
 
     // ———— 来源 IP ————
 
-    // 抓的故障：控制台只放行本机，却能从别的机器调这个前缀；或者改了名单要重启才生效。
+    // 抓的故障：没打开任何一组，别的机器凭有效令牌就能调这个前缀；或者把那台机器加进控制台名单，它就调得了。
     @Test
-    void sourceOutsideTheConsoleAllowListIsRefusedTheSameWay() throws Exception {
+    void sourceOtherThanThisMachineIsRefused() throws Exception {
         String token = issue(ConfigUiAccount.LOCAL_ID, null);
         MockHttpServletResponse outside = mvc.perform(get("/nova/api/v1/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                 .with(request -> { request.setRemoteAddr("203.0.113.9"); return request; })).andReturn().getResponse();
         assertEquals(403, outside.getStatus());
         assertError(outside, "source_not_allowed");
 
-        // 与控制台同一段判法：同一个请求，控制台那边的判定也是拒
-        var probe = new org.springframework.mock.web.MockHttpServletRequest("GET", "/config");
-        probe.setRemoteAddr("203.0.113.9");
-        assertFalse(ConfigUiSecurityFilter.admits(new ConsoleAllowList(properties.getConfigUi()).get(), probe));
-
-        // 名单每个请求现读
+        // 控制台名单只管控制台：把那台机器加进去、把本机拿掉，接口这边都不变
         properties.getConfigUi().setAllowIps(List.of("203.0.113.0/24"));
-        assertEquals(200, mvc.perform(get("/nova/api/v1/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+        assertEquals(403, mvc.perform(get("/nova/api/v1/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
                 .with(request -> { request.setRemoteAddr("203.0.113.9"); return request; })).andReturn().getResponse().getStatus());
-        assertEquals(403, me(token).getStatus(), "名单改了之后本机不在里面，就该拒本机");
+        assertEquals(200, me(token).getStatus(), "本机照常");
     }
 
     // ———— 成员的令牌调 /me ————
@@ -347,7 +341,7 @@ class NovaApiFilterTest {
     // 抓的故障：同一个 IPv6 /64 里换着地址交无效令牌，每个地址各算各的，限速形同虚设。
     @Test
     void addressesInOneIpv6Slash64ShareTheInvalidTokenCount() throws Exception {
-        properties.getConfigUi().setAllowIps(List.of("2001:db8::/32"));
+        properties.getConfigUi().setApiAnySourceGroups(List.of("probe"));
         rebuild(new NovaApiThrottle(3, Duration.ofMinutes(1), clock));
         String valid = issue(ConfigUiAccount.LOCAL_ID, null);
         for (int i = 1; i <= 3; i++) {

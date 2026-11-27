@@ -33,8 +33,8 @@ novabot.core.config-ui.agreement.accepted-actor|java.lang.String||同意协议�
 novabot.core.config-ui.agreement.accepted-at|java.lang.String||同意协议的时间，ISO 格式，留空表示尚未同意；只作凭据，不参与任何判断。
 novabot.core.config-ui.agreement.accepted-by|java.lang.String||同意是从哪条通道点下的：password 是输过密码后同意，operator-token 是凭启动令牌进来后同意。留空表示说不出是谁点的，下次登录会再确认一次。
 novabot.core.config-ui.agreement.accepted-version|java.lang.Integer|0|已同意的协议版本号，0 表示尚未同意；协议改版后旧记录失效，会要求重新确认。
-novabot.core.config-ui.allow-ips|java.util.List<java.lang.String>|[127.0.0.1/32, ::1/128]|允许访问配置界面的来源 IP 白名单，支持精确 IP 与 CIDR 网段；默认仅放行本机回环地址。
-novabot.core.config-ui.api-any-source-groups|java.util.List<java.lang.String>|[]|对任何来源地址开放的程序接口组，每行一个组名（如 outbox）；默认为空，每组程序接口都只对「允许访问的来源 IP」里的地址开放。开放后仍须有效的访问令牌与范围。
+novabot.core.config-ui.allow-ips|java.util.List<java.lang.String>|[127.0.0.1/32, ::1/128]|允许访问配置界面的来源 IP 白名单，支持精确 IP 与 CIDR 网段；默认仅放行本机回环地址。只管控制台能从哪里打开，不影响程序接口。
+novabot.core.config-ui.api-any-source-groups|java.util.List<java.lang.String>|[]|对任何来源地址开放的程序接口组，每行一个组名（如 outbox）；默认为空，每组程序接口都只许本机上的程序调。开放后仍须有效的访问令牌与范围。
 novabot.core.config-ui.auth.idle-hours|java.lang.Integer|12|登录会话的闲置超时，单位：小时，多久没操作自动退出。
 novabot.core.config-ui.auth.lockout-minutes|java.lang.Integer|15|首次锁定的时长，单位：分钟，反复触发逐次翻倍。
 novabot.core.config-ui.auth.max-failures|java.lang.Integer|5|连续登录失败多少次后锁定该来源 IP，单位：次。

@@ -12,7 +12,7 @@ import {$, api, CONSOLE, esc, PREFIX} from './core.js';
 import {showLinkResult} from './link-feedback.js';
 import {bindPasswordReveal} from './password-reveal.js';
 import {DEFAULT_VALIDITY, expiryText, fmtDate, fmtTime, groupBadge, issueBody, lanStatus, localStatus, ownerText, publicHint,
-  remoteNotice, remoteRoutes, revocable, scopeSelectable, scopeText, sortTokens, stateText, unavailableText, VALIDITY}
+  remoteRoutes, revocable, scopeSelectable, scopeText, sortTokens, stateText, unavailableText, VALIDITY}
   from './api-tokens-model.js';
 
 /** 最近一次取到的清单回包 */
@@ -69,9 +69,8 @@ async function loadRemote() {
 function renderRemote(state) {
   const groups = state.groups || [];
   const ignored = state.ignored || 0;
-  const notice = remoteNotice(state);
   const pill = group => {
-    const badge = groupBadge(group, state);
+    const badge = groupBadge(group);
     return '<span class="nv-pill' + (badge.level ? ' ' + badge.level : '') + '">' + esc(badge.text) + '</span>';
   };
   const rows = groups.map(group => '<div class="at-group" data-segment="' + esc(group.segment) + '">'
@@ -81,10 +80,10 @@ function renderRemote(state) {
       + '</div><label class="switch"><input type="checkbox"' + (group.open ? ' checked' : '')
       + (toggling.has(group.segment) ? ' disabled' : '') + '><span>允许从任何地址访问（仍须访问令牌）</span></label></div>')
     .join('');
-  $('#at-remote-groups').innerHTML = (notice ? '<p class="notice at-admits-all" role="alert">' + esc(notice) + '</p>' : '')
-    + '<p class="hint">默认只有「允许访问的来源 IP」里的地址（默认只有本机）调得了接口。'
-    + '内网别的机器、经反向代理进来的公网访问要调哪一组，就在这里打开哪一组：开放只免去来源名单这一道，'
+  $('#at-remote-groups').innerHTML = '<p class="hint">默认只有这台机器上的程序调得了接口。'
+    + '内网别的机器、经反向代理进来的公网访问要调哪一组，就在这里打开哪一组：开放只免去「只许本机」这一道，'
     + '令牌、范围与无效令牌限速照旧。至少打开一组时，自查接口 <code>/me</code> 也随之对任何地址开放。</p>'
+    + '<p class="hint">「设置」里的「允许访问的来源 IP」只管控制台能从哪里打开，不影响接口。</p>'
     + '<p class="hint">事件输出 <code>/nova/events</code> 不在这里：它只接受本机连接，这里的开关都管不到它；'
     + '别的机器要读事件流，请用 SSH 隧道。</p>'
     + (groups.length ? '<div class="at-groups">' + rows + '</div>'
@@ -118,7 +117,7 @@ function renderRoutes(state) {
     + '</dd>'
     + '<dt>公网</dt><dd>经反向代理的加密地址，例如 ' + code(routes.internet.url)
     + '<br><span class="hint">反向代理要按<a href="' + esc(sample) + '" target="_blank" rel="noopener noreferrer">使用说明附录 C 的样板</a>'
-    + '转发 <code>/nova/api/v1/</code> 并带上转发头。' + esc(publicHint(state))
+    + '转发 <code>/nova/api/v1/</code> 并带上转发头。' + esc(publicHint())
     + '<b>不要没有反向代理就把端口直接放到公网</b>：那样令牌会明文经过网络。</span>'
     + (routes.internet.current ? '<br><span class="hint">你现在打开控制台用的是 ' + code(location.origin)
       + '。只有它前面的反向代理也转发了 <code>/nova/api/v1/</code>，' + code(routes.internet.current)

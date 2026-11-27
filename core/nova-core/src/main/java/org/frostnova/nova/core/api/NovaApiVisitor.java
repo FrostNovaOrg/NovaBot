@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
  *       <li>{@code Forwarded} 取最后一项里的 {@code for=}。</li>
  *     </ul>
  *     带了几种就几种都要解析得出、而且<b>指的是同一个地址</b>。有一种解析不出合法地址、
- *     或者几种说的不是同一个，都当作<b>未知来访者</b>：不是本机，也不在任何名单里。
+ *     或者几种说的不是同一个，都当作<b>未知来访者</b>：不是本机，也认不出是哪个地址。
  *     <p>
  *     🔴 <b>转发头里只要有一处写得不合规，整个就判未知来访者，绝不跳过那一处、退而采用别的一段。</b>
  *     {@code X-Forwarded-For} 里每一段（不只最右那一段）都得是合法地址，空段（末尾多了逗号、中间连着两个逗号）也算不合规；
@@ -49,7 +49,7 @@ import java.util.regex.Pattern;
  * 本机上的反向代理要把这几个头写好（样板见使用说明附录 C）。代理一个头也不写的话，
  * 经它进来的请求在这里与本机直连分不出来，都算本机来访。
  *
- * @param address 名单判定与日志用的地址；未知来访者为 null
+ * @param address 限速与日志用的地址；未知来访者为 null
  * @param kind    怎么判出来的
  */
 public record NovaApiVisitor(String address, Kind kind) {
@@ -74,7 +74,7 @@ public record NovaApiVisitor(String address, Kind kind) {
     /** 未知来访者在限速表里共用的那一格：解析不出地址的请求不该各占一格，也不该与本机同一格 */
     static final String UNKNOWN_KEY = "unknown-forwarded";
 
-    /** 严格的点分十进制 IPv4，四段、每段 0-255，与来源名单的判法同一条 */
+    /** 严格的点分十进制 IPv4，四段、每段 0-255，与 IpMatcher 的判法同一条 */
     private static final Pattern IPV4 = Pattern.compile(
             "(25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)(\\.(25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)){3}");
 
