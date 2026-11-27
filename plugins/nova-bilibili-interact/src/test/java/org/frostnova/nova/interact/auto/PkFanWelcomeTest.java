@@ -36,11 +36,15 @@ class PkFanWelcomeTest extends RoomInteractionFixture {
     }
 
     private void pk(int id, int status, Integer end, int... opponents) {
+        pkWithPlanEnd(id, status, end == null ? null : START.plusSeconds(end).getEpochSecond(), opponents);
+    }
+
+    private void pkWithPlanEnd(int id, int status, Long end, int... opponents) {
         var members = new java.util.ArrayList<JSONObject>();
         members.add(JSONObject.of("uid", 101, "room_id", 501));
         for (int opponent : opponents) members.add(JSONObject.of("uid", opponent, "room_id", opponent + 400));
         var basic = JSONObject.of("pk_id", id, "status", status, "type", 8);
-        if (end != null) basic.put("end_time", START.plusSeconds(end).getEpochSecond());
+        if (end != null) basic.put("end_time", end);
         raw("PK_INFO", JSONObject.of("pk_basic", basic, "members", members));
     }
 
@@ -104,14 +108,17 @@ class PkFanWelcomeTest extends RoomInteractionFixture {
         pk(1, 201, null, 102);
         fan(1, "改名");
         fan(2, "同名");
-        fan(0, "青*");
-        fan(0, "青*");
-        fan(0, "蓝*");
+        String prefix = "一二三四五六七八九*";
+        fan(0, prefix + "甲");
+        fan(0, prefix + "乙");
         for (int t : List.of(0, 3, 6, 9, 12)) tick(t);
-        pk(2, 201, null, 102);
-        fan(0, "青*");
+        fan(0, prefix + "乙");
         tick(15);
-        assertEquals(List.of("欢迎 同名 来串门", "欢迎 同名 来串门", "欢迎 青* 来串门", "欢迎 蓝* 来串门", "欢迎 青* 来串门"), sent);
+        pk(2, 201, null, 102);
+        fan(0, prefix + "甲");
+        tick(18);
+        String shortened = "欢迎 一二三四五六七八九*… 来串门";
+        assertEquals(List.of("欢迎 同名 来串门", "欢迎 同名 来串门", shortened, shortened, shortened), sent);
     }
 
     @ParameterizedTest
@@ -190,6 +197,120 @@ class PkFanWelcomeTest extends RoomInteractionFixture {
         assertEquals(List.of("欢迎 熟客 进入直播间", "欢迎总督 小红 进入直播间", "欢迎 邻居 来串门"), sent);
     }
 
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void maskedVisitorGetsOnlyListedWelcomeInEitherOrder(boolean effectFirst) {
+        var welcome = JSONObject.of("people", List.of(JSONObject.of("uid", "11", "alias", "熟客")));
+        configure(JSONObject.of("welcome", welcome), FEATURE, "listedWelcome");
+        pk(1, 201, null, 102);
+        var effect = new BilibiliGuardEntryEffectEvent(ROOM, 11L, GuardType.Captain);
+        if (effectFirst) events.publishEvent(effect);
+        else fan(0, "小*");
+        tick(0);
+        at(2);
+        if (effectFirst) fan(0, "小*");
+        else events.publishEvent(effect);
+        tick(3);
+        tick(6);
+        assertEquals(List.of("欢迎 熟客 进入直播间"), sent);
+    }
+
+    @Test
+    void maskedVisitorGetsOnlyGuardWelcomeWhenEffectSuppliesRank() {
+        configure(new JSONObject(), FEATURE, "guardWelcome");
+        pk(1, 201, null, 102);
+        fan(0, "小*");
+        tick(0);
+        at(2);
+        events.publishEvent(new BilibiliGuardEntryEffectEvent(ROOM, 11L, GuardType.Captain));
+        tick(3);
+        tick(6);
+        assertEquals(List.of("欢迎舰长 小* 进入直播间"), sent);
+    }
+
+    @Test
+    void unrankedVisitorLeavesMatchingEffectForRankedGuardEntry() {
+        configure(new JSONObject(), FEATURE, "guardWelcome");
+        pk(1, 201, null, 102);
+        fan(0, "南*");
+        enter(0, "东*", null, RoomGuardLevel.CAPTAIN);
+        events.publishEvent(new BilibiliGuardEntryEffectEvent(ROOM, 11L, GuardType.Captain));
+        tick(0);
+        tick(3);
+        assertEquals(List.of("欢迎舰长 东* 进入直播间", "欢迎 南* 来串门"), sent);
+    }
+
+    @Test
+    void maskedVisitorWaitsForEffectOrPairingDeadline() {
+        configure(new JSONObject(), FEATURE);
+        pk(1, 201, null, 102);
+        fan(0, "南*");
+        tick(2);
+        assertTrue(sent.isEmpty());
+        tick(3);
+        assertEquals(List.of("欢迎 南* 来串门"), sent);
+        events.publishEvent(new BilibiliGuardEntryEffectEvent(ROOM, SELF.getUid(), GuardType.Captain));
+        at(4);
+        fan(0, "自*");
+        tick(7);
+        assertEquals(List.of("欢迎 南* 来串门"), sent);
+    }
+
+    @Test
+    void pairedVisitorIsRecognizedByUidAndMaskedNameOnLaterVisits() {
+        configure(JSONObject.of("welcome", JSONObject.of("minimumLevel", "GOVERNOR")), FEATURE, "guardWelcome");
+        pk(1, 201, null, 102);
+        enter(0, "南*", MEDAL, RoomGuardLevel.CAPTAIN);
+        events.publishEvent(new BilibiliGuardEntryEffectEvent(ROOM, 11L, GuardType.Captain));
+        tick(0);
+        assertEquals(List.of("欢迎 南* 来串门"), sent);
+        at(4);
+        fan(0, "南*");
+        tick(7);
+        fan(11, "改名");
+        tick(10);
+        assertEquals(List.of("欢迎 南* 来串门"), sent);
+    }
+
+    @Test
+    void laterEffectAddsUidToAnAlreadyWelcomedMaskedName() {
+        configure(new JSONObject(), FEATURE);
+        pk(1, 201, null, 102);
+        fan(0, "南*");
+        tick(3);
+        at(4);
+        fan(0, "南*");
+        events.publishEvent(new BilibiliGuardEntryEffectEvent(ROOM, 11L, GuardType.Captain));
+        tick(7);
+        fan(11, "换名");
+        tick(10);
+        assertEquals(List.of("欢迎 南* 来串门"), sent);
+    }
+
+    @Test
+    void opponentAnnouncementSurvivesUnrepresentablePlanEndWithVisitorSwitchOff() {
+        configure(new JSONObject(), "pkOpponent");
+        var opponent = new Opponent(502L, 102L, null, null);
+        when(opponents.lookup(1L, opponent)).thenReturn(CompletableFuture.completedFuture(new Profile("青", null, null, null)));
+        pkWithPlanEnd(1, 201, Long.MAX_VALUE, 102);
+        tick(0);
+        assertEquals(List.of("本场PK对手：青"), sent);
+    }
+
+    @ParameterizedTest
+    @ValueSource(longs = {Long.MAX_VALUE, 1767226200000L})
+    void implausiblePlanEndUsesTenMinuteFallback(long planEnd) {
+        configure(new JSONObject(), FEATURE);
+        pkWithPlanEnd(1, 201, planEnd, 102);
+        at(597);
+        fan(1, "截止前");
+        queue.tick();
+        at(600);
+        fan(2, "截止后");
+        queue.tick();
+        assertEquals(List.of("欢迎 截止前 来串门"), sent);
+    }
+
     @Test
     void recognizesNewVisitWhileEarlierEntryIsWaitingForAGuardEffect() {
         configure(new JSONObject(), FEATURE, "guardWelcome");
@@ -255,19 +376,47 @@ class PkFanWelcomeTest extends RoomInteractionFixture {
     }
 
     @Test
-    void sharesWelcomePriorityAndRoomQuotaAndExpiresAtThirtySeconds() {
+    void sendsRegularAndVisitorWelcomesInQueueOrder() {
+        configure(JSONObject.of("welcome", JSONObject.of("minimumLevel", "GOVERNOR")), FEATURE, "guardWelcome");
+        pk(1, 201, null, 102);
+        enter(1, "甲", null, RoomGuardLevel.GOVERNOR);
+        enter(2, "乙", MEDAL, RoomGuardLevel.CAPTAIN);
+        enter(3, "丙", null, RoomGuardLevel.GOVERNOR);
+        tick(0);
+        tick(3);
+        tick(6);
+        assertEquals(List.of("欢迎总督 甲 进入直播间", "欢迎 乙 来串门", "欢迎总督 丙 进入直播间"), sent);
+    }
+
+    @Test
+    void visitorAndRegularWelcomesConsumeTheSameMinuteQuota() {
         configure(JSONObject.of("perMinute", 1), FEATURE, "guardWelcome");
         pk(1, 201, null, 102);
-        enter(1, "舰长甲", null, RoomGuardLevel.CAPTAIN);
-        fan(2, "超时");
+        enter(1, "甲", null, RoomGuardLevel.CAPTAIN);
         tick(0);
-        tick(30);
+        at(40);
+        fan(2, "乙");
+        tick(59);
+        assertEquals(List.of("欢迎舰长 甲 进入直播间"), sent);
         tick(60);
-        fan(3, "访客");
-        at(63);
-        enter(4, "舰长乙", null, RoomGuardLevel.CAPTAIN);
-        tick(63);
-        assertEquals(List.of("欢迎舰长 舰长甲 进入直播间", "欢迎 访客 来串门"), sent);
+        assertEquals(List.of("欢迎舰长 甲 进入直播间", "欢迎 乙 来串门"), sent);
+        at(100);
+        enter(3, "丙", null, RoomGuardLevel.CAPTAIN);
+        tick(119);
+        assertEquals(2, sent.size());
+        tick(120);
+        assertEquals(List.of("欢迎舰长 甲 进入直播间", "欢迎 乙 来串门", "欢迎舰长 丙 进入直播间"), sent);
+    }
+
+    @Test
+    void visitorExpiresExactlyThirtySecondsAfterEntry() {
+        configure(new JSONObject(), FEATURE);
+        pk(1, 201, null, 102);
+        fan(1, "及时");
+        tick(29);
+        fan(2, "超时");
+        tick(59);
+        assertEquals(List.of("欢迎 及时 来串门"), sent);
         assertTrue(store.history(101, InteractStore.Outcome.DROPPED, 1, now).rows().stream()
                 .anyMatch(r -> FEATURE.equals(r.getString("feature")) && r.getString("reason").contains("时限")));
     }

@@ -56,8 +56,7 @@ final class RoomWelcomes {
 
     void accept(Entry entry, boolean effect, Instant now, boolean paused, RoomSettings settings,
                 Predicate<Entry> welcome, Consumer<Long> visitor) {
-        if (entry.maskedName && (DanmakuTemplate.blank(entry.name) || !entry.hasRank())) {
-            if (visitor != null) visitor.accept(entry.uid);
+        if (entry.maskedName && (DanmakuTemplate.blank(entry.name) || (!entry.hasRank() && visitor == null))) {
             return;
         }
         if (paused) {
@@ -65,7 +64,7 @@ final class RoomWelcomes {
             return;
         }
         flush(now, welcome);
-        Pending other = counterpart(entry, effect);
+        Pending other = counterpart(entry, effect, visitor);
         if (other != null) {
             Entry paired = effect ? other.entry.withEffect(entry) : entry.withEffect(other.entry);
             Consumer<Long> fallback = effect ? other.visitor : visitor;
@@ -90,21 +89,26 @@ final class RoomWelcomes {
         }
     }
 
-    private Pending counterpart(Entry entry, boolean effect) {
+    private Pending counterpart(Entry entry, boolean effect, Consumer<Long> visitor) {
         if (!entry.maskedName) {
             Pending exact = waiting.remove(effect ? entry.identity() : "e:" + entry.uid);
             if (exact != null || !effect) return exact;
         }
-        // 普通进房缺 UID 时，只能按本房等级配对。
-        for (Iterator<Pending> it = waiting.values().iterator(); it.hasNext();) {
-            Pending candidate = it.next();
-            if (candidate.effect != effect && candidate.entry.level == entry.level
-                    && (entry.maskedName || candidate.entry.maskedName)) {
+        // 缺 UID 时优先配相同的本房等级。戴对手牌的观众可能没有本房等级，只能按到达顺序配特效。
+        String unrankedMatch = null;
+        for (var it = waiting.entrySet().iterator(); it.hasNext();) {
+            var item = it.next();
+            Pending candidate = item.getValue();
+            if (candidate.effect == effect || !(entry.maskedName || candidate.entry.maskedName)) continue;
+            if (candidate.entry.level == entry.level) {
                 it.remove();
                 return candidate;
             }
+            boolean unrankedVisitor = effect ? candidate.visitor != null && !candidate.entry.hasRank()
+                    : visitor != null && !entry.hasRank();
+            if (unrankedVisitor && unrankedMatch == null) unrankedMatch = item.getKey();
         }
-        return null;
+        return unrankedMatch == null ? null : waiting.remove(unrankedMatch);
     }
 
     void flush(Instant now, Predicate<Entry> welcome) {
@@ -123,7 +127,7 @@ final class RoomWelcomes {
         boolean visitors = settings.allows(PkFanWelcomes.FEATURE);
         waiting.replaceAll((key, p) -> new Pending(p.entry, p.effect, p.until, guards && p.welcomeOnTimeout,
                 p.greeted, visitors ? p.visitor : null));
-        if (!guards && !listed) waiting.values().removeIf(p -> p.visitor == null);
+        if (!guards && !listed) waiting.values().removeIf(p -> p.visitor == null && !(visitors && p.effect));
     }
 
     record Greeting(String feature, String text) {}

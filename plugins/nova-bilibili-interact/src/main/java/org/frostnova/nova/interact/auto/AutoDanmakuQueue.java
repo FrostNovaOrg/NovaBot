@@ -315,8 +315,7 @@ public class AutoDanmakuQueue {
             if (planStart != null && planStart > 0 && planStart < start.getEpochSecond()) start = Instant.ofEpochSecond(planStart);
             battle = new PkBattle(new PkProgress(start.plusSeconds(60), new HashSet<>()));
             room.pkBattles.put(id, battle);
-            Long planEnd = event.getPlanEnd();
-            Instant ends = planEnd != null && planEnd > 0 ? Instant.ofEpochSecond(planEnd) : start.plusSeconds(600);
+            Instant ends = PkFanWelcomes.deadline(start, event.getPlanEnd());
             room.activePk = living && now.isBefore(ends) ? new PkFanWelcomes(event.getPkId(), ends, lookup) : null;
         }
 
@@ -376,13 +375,15 @@ public class AutoDanmakuQueue {
     synchronized void welcome(NovaBaseLiveEvent event, Long viewerUid, String viewerName, RoomGuardLevel level) {
         RoomState room = eventRoom(event);
         if (room == null) return;
-        Consumer<Long> visitor = visitorWelcome(room, event);
+        PkFanWelcomes battle = activeVisitorBattle(room);
+        boolean effect = event instanceof BilibiliGuardEntryEffectEvent;
+        Consumer<Long> visitor = battle == null ? null : visitorWelcome(room, battle, event);
         boolean regular = room.settings.allows(WelcomeSettings.GUARD) || room.settings.allows(WelcomeSettings.LISTED);
-        if (!regular && visitor == null) return;
+        if (!regular && visitor == null && !(effect && battle != null)) return;
         Instant now = clock.get();
         syncLive(room, now);
         if (room.session == null) return;
-        if (!regular) {
+        if (!regular && visitor != null && viewerUid != null && viewerUid > 0) {
             visitor.accept(viewerUid);
             return;
         }
@@ -392,7 +393,7 @@ public class AutoDanmakuQueue {
         }
         boolean paused = room.pause != null && now.isBefore(room.pause.until());
         var entry = new RoomWelcomes.Entry(viewerUid, viewerName, level, eventTime(event, now));
-        room.welcomes.accept(entry, event instanceof BilibiliGuardEntryEffectEvent, now, paused, room.settings,
+        room.welcomes.accept(entry, effect, now, paused, room.settings,
                 ready -> offerWelcome(room, ready), visitor);
     }
 
@@ -408,7 +409,7 @@ public class AutoDanmakuQueue {
         return true;
     }
 
-    private Consumer<Long> visitorWelcome(RoomState room, NovaBaseLiveEvent event) {
+    private PkFanWelcomes activeVisitorBattle(RoomState room) {
         PkFanWelcomes battle = room.activePk;
         if (battle == null || !room.settings.allows(PkFanWelcomes.FEATURE)) return null;
         Instant now = clock.get();
@@ -416,6 +417,10 @@ public class AutoDanmakuQueue {
             room.activePk = null;
             return null;
         }
+        return battle;
+    }
+
+    private Consumer<Long> visitorWelcome(RoomState room, PkFanWelcomes battle, NovaBaseLiveEvent event) {
         if (!(event instanceof BilibiliEnterRoomEvent enter) || !(enter.getSender() instanceof BilibiliUserInfo viewer)) return null;
         var medal = viewer.getFansMedal();
         if (medal == null || Objects.equals(medal.getUid(), room.streamer.uid())
@@ -424,13 +429,13 @@ public class AutoDanmakuQueue {
         if (opponent == null) return null;
         String name = viewer.getUname();
         String medalName = medal.getName();
-        Instant entered = eventTime(enter, now);
+        Instant entered = eventTime(enter, clock.get());
         return uid -> offerVisitor(room, battle, opponent, medalName, new RoomWelcomes.Entry(uid, name, null, entered));
     }
 
     private void offerVisitor(RoomState room, PkFanWelcomes battle, Opponent opponent, String medal, RoomWelcomes.Entry entry) {
         if (room.activePk != battle || !room.settings.allows(PkFanWelcomes.FEATURE) || DanmakuTemplate.blank(entry.name())
-                || !battle.hasSlot(entry.identity(), room.settings.pkFanWelcomeLimit())) return;
+                || !battle.hasSlot(entry, room.settings.pkFanWelcomeLimit())) return;
         AccountStatus account = sender.automaticAccountStatus();
         if (entry.identified() && entry.uid().equals(account.uid())) return;
         String template = room.settings.pkFanWelcomeTemplate();
