@@ -492,37 +492,51 @@ if should publish && [ "$TRIAL" = 0 ]; then
   case "$VER" in *-beta.*) RELEASE_FLAG=--prerelease; RELEASE_KIND=Pre-release;; esac
   say "── publish gh release ${TAG}"
   DL="$SCRATCH/dl-${VER}.tar.gz"
+  release_draft=false
   if [ "$SANDBOX" = 1 ]; then
-    say "〔沙盘〕gh release view ${TAG} --json assets"
+    say "〔沙盘〕gh release view ${TAG} --json assets,isDraft,databaseId"
     if [ "$FROM" = publish ]; then
-      say "〔沙盘〕发布页及 ${ASSET} 模拟为已存在，接手上一趟"
+      release_draft=true
+      release_id='{release_id}'
+      say "〔沙盘〕草稿发布页及 ${ASSET} 模拟为已存在，接手上一趟"
     else
       say "〔沙盘〕发布页模拟为不存在"
       say "〔沙盘〕gh release create ${TAG} ${TB} --title \"NovaBot ${VER}\" --notes-file ${NOTES} ${RELEASE_FLAG} --verify-tag"
     fi
-  elif release_assets=$(gh release view "$TAG" --json assets --jq '.assets[].name' 2>&1); then
-    if printf '%s\n' "$release_assets" | grep -qxF "$ASSET"; then
+  elif release_state=$(gh release view "$TAG" --json assets,isDraft,databaseId \
+      --jq "[.isDraft, .databaseId, any(.assets[]?; .name == \"${ASSET}\")] | @tsv" 2>&1); then
+    IFS=$'\t' read -r release_draft release_id release_has_asset <<< "$release_state"
+    case "$release_draft:$release_has_asset" in
+      true:true|true:false|false:true|false:false) ;;
+      *) stop publish "gh release view 未返回有效的草稿和资产状态" ;;
+    esac
+    if [ "$release_has_asset" = true ]; then
       say "发布页及 ${ASSET} 已在，接手上一趟的回下载核对"
     else
       [ -f "$TB" ] || stop publish "发布页 ${TAG} 缺少安装包资产 ${ASSET}，本地也没有 ${TB} 可补传"
       say "发布页 ${TAG} 缺少 ${ASSET}，从本地补传"
       gh release upload "$TAG" "$TB" || stop publish "gh release upload 补传失败"
     fi
-  elif [ "$release_assets" = 'release not found' ]; then
+  elif [ "$release_state" = 'release not found' ]; then
     [ -f "$TB" ] || stop publish "发布页 ${TAG} 不存在，本地也没有安装包 ${TB}"
     [ "$FROM" != publish ] || push_release_tag
     [ -s "$NOTES" ] || prepare_notes
     gh release create "$TAG" "$TB" --title "NovaBot ${VER}" --notes-file "$NOTES" "$RELEASE_FLAG" --verify-tag >/dev/null || stop publish "gh release create 失败"
     say "release ${TAG} 已建（${RELEASE_KIND}）"
   else
-    stop publish "gh release view 失败：${release_assets}"
+    stop publish "gh release view 失败：${release_state}"
   fi
   download_release_asset "$DL" || stop publish "回下载失败，可用 \`tools/release/release.sh --publish-only --from publish\` 接手"
+  digest_endpoint="repos/{owner}/{repo}/releases/tags/${TAG}"
+  if [ "$release_draft" = true ]; then
+    # 按标签查询的接口只返回已公开的发布页，草稿按发布页 ID 查询。
+    digest_endpoint="repos/{owner}/{repo}/releases/${release_id}"
+  fi
   if [ "$SANDBOX" = 1 ]; then
     if [ -f "$TB" ]; then
       say "〔沙盘〕回下包与本地包比 sha256"
     else
-      say "〔沙盘〕取远端标签 ${TAG}，核回下包 BUILD-INFO。gh api repos/{owner}/{repo}/releases/tags/${TAG} 有资产 digest 时再比 sha256"
+      say "〔沙盘〕取远端标签 ${TAG}，核回下包 BUILD-INFO。gh api ${digest_endpoint} 有资产 digest 时再比 sha256"
     fi
   else
     dl_sha=$(shasum -a 256 "$DL") || stop publish "算不了回下包 sha256"
@@ -533,7 +547,7 @@ if should publish && [ "$TRIAL" = 0 ]; then
     else
       git fetch -q --no-tags origin "refs/tags/${TAG}:refs/tags/${TAG}" || stop publish "取不到远端标签 ${TAG}（若本地已有同名标签，核对两边所指）"
       check_downloaded_buildinfo publish "$DL"
-      digest=$(gh api "repos/{owner}/{repo}/releases/tags/${TAG}" \
+      digest=$(gh api "$digest_endpoint" \
         --jq ".assets[] | select(.name == \"${ASSET}\") | (.digest // empty)") || stop publish "查不了 GitHub 资产 digest"
       if [ -n "$digest" ]; then
         [ "$digest" = "sha256:${dl_sha}" ] || stop publish "回下 sha 与 GitHub 资产 digest 不一致"
@@ -542,6 +556,24 @@ if should publish && [ "$TRIAL" = 0 ]; then
         say "release ${TAG} 的 GitHub 资产未提供 digest，回下包仅核 BUILD-INFO，已与标签对上"
       fi
     fi
+  fi
+  publish_resume='可用 `tools/release/release.sh --publish-only --from publish` 接手'
+  if [ "$release_draft" = true ]; then
+    if [ "$SANDBOX" = 1 ]; then
+      say "〔沙盘〕回下载核对通过后转公开：gh release edit ${TAG} --draft=false"
+    else
+      gh release edit "$TAG" --draft=false >/dev/null ||
+        stop publish "发布页 ${TAG} 还没确认公开（gh release edit 失败），${publish_resume}"
+    fi
+  fi
+  if [ "$SANDBOX" = 1 ]; then
+    say "〔沙盘〕gh release view ${TAG} --json isDraft --jq .isDraft（确认已公开）"
+  else
+    final_draft=$(gh release view "$TAG" --json isDraft --jq '.isDraft') ||
+      stop publish "发布页 ${TAG} 还没确认公开（gh release view 失败），${publish_resume}"
+    [ "$final_draft" = false ] ||
+      stop publish "发布页 ${TAG} 还没确认公开（isDraft=${final_draft}），${publish_resume}"
+    [ "$release_draft" != true ] || say "发布页 ${TAG} 已从草稿转为公开"
   fi
 fi
 if [ "$PUBLISH_ONLY" = 1 ]; then
