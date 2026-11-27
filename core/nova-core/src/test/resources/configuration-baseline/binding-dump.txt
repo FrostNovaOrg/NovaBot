@@ -7,6 +7,7 @@ novabot.assistant.enabled=true
 novabot.assistant.excluded-uids[0]=900000001
 novabot.assistant.hard-thinking=max
 novabot.assistant.hard-timeout-seconds=240
+novabot.assistant.max-concurrent-questions=4
 novabot.assistant.max-tool-calls=4
 novabot.assistant.model=sample-model
 novabot.assistant.price-cached-input-yuan-per-million=0.1

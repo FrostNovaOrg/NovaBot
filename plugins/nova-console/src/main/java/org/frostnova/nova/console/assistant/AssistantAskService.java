@@ -143,6 +143,7 @@ public class AssistantAskService {
     private final AssistantClient client;
     private final AssistantProperties properties;
     private final AssistantLocalStore local;
+    private final AssistantQuestionQueue questionQueue;
     private final Clock clock;
     private final Supplier<AssistantChartRenderer> chartRenderer;
     private final AssistantLiveReports liveReports;
@@ -198,6 +199,7 @@ public class AssistantAskService {
         this.queries = queries;
         this.client = client;
         this.properties = properties;
+        this.questionQueue = new AssistantQuestionQueue(properties, System::nanoTime);
         this.local = local;
         this.clock = clock;
         this.chartRenderer = chartRenderer;
@@ -207,6 +209,7 @@ public class AssistantAskService {
     }
 
     @PreDestroy public void close() {
+        questionQueue.close();
         audienceCleanup.shutdownNow();
         audienceExecutor.shutdownNow();
         audienceLoads.values().forEach(task -> task.cancel(true));
@@ -230,10 +233,17 @@ public class AssistantAskService {
     }
 
     public JSONObject ask(String platform, List<Long> streamers, String account, JSONObject request, AssistantQueryContext context) {
-        return ask(platform, streamers, account, request, context, null, Map.of(), List.of(), null, ignored -> { }, ignored -> { }).response();
+        return ask(platform, streamers, account, request, context, AssistantQuestionQueue.Progress.SILENT);
+    }
+
+    JSONObject ask(String platform, List<Long> streamers, String account, JSONObject request, AssistantQueryContext context,
+                   AssistantQuestionQueue.Progress progress) {
+        return ask(platform, streamers, account, request, context, null, Map.of(), List.of(), null,
+                ignored -> {}, ignored -> {}, progress).response();
     }
 
     static void logQuestion(Logger logger, String account, String platform, long uid, JSONObject result) {
+        if ("queue_busy".equals(result.getString("reason"))) return;
         String difficulty = result.getString("difficulty");
         String suffix = difficulty == null ? "" : "，判为" + ("analysis".equals(difficulty) ? "分析" : "简单")
                 + "，调模型 " + result.getIntValue("modelCalls") + " 次";
@@ -252,14 +262,15 @@ public class AssistantAskService {
                      boolean amountVisible, List<AssistantChartResults.Result> previousResults,
                      String previousQqQuestion, Consumer<Boolean> onAccepted, Consumer<QuestionTiming> difficultyResolved) {
         return askFromQq(platform, streamers, source, request, amountVisible, Map.of(),
-                previousResults, previousQqQuestion, onAccepted, difficultyResolved);
+                previousResults, previousQqQuestion, onAccepted, difficultyResolved, AssistantQuestionQueue.Progress.SILENT);
     }
 
     Answer askFromQq(String platform, List<Long> streamers, AssistantLocalStore.QqSource source, JSONObject request,
                      boolean amountVisible, Map<Long, PushTarget> channels, List<AssistantChartResults.Result> previousResults,
-                     String previousQqQuestion, Consumer<Boolean> onAccepted, Consumer<QuestionTiming> difficultyResolved) {
-        return ask(platform, streamers, source.account(), request, new AssistantQueryContext(amountVisible), source, channels,
-                previousResults, previousQqQuestion, onAccepted, difficultyResolved);
+                     String previousQqQuestion, Consumer<Boolean> onAccepted, Consumer<QuestionTiming> difficultyResolved,
+                     AssistantQuestionQueue.Progress progress) {
+        return ask(platform, streamers, source.account(), request, new AssistantQueryContext(amountVisible), source,
+                channels, previousResults, previousQqQuestion, onAccepted, difficultyResolved, progress);
     }
 
     record QuestionTiming(boolean analysis, Duration remaining) { }
@@ -269,12 +280,26 @@ public class AssistantAskService {
 
     private Answer ask(String platform, List<Long> requestedStreamers, String account, JSONObject request, AssistantQueryContext context,
                        AssistantLocalStore.QqSource qq, Map<Long, PushTarget> channels, List<AssistantChartResults.Result> previousResults,
-                       String previousQqQuestion, Consumer<Boolean> onAccepted, Consumer<QuestionTiming> difficultyResolved) {
+                       String previousQqQuestion, Consumer<Boolean> onAccepted, Consumer<QuestionTiming> difficultyResolved,
+                       AssistantQuestionQueue.Progress progress) {
         var streamers = validateStreamers(requestedStreamers);
+        validate(request);
+        try {
+            return questionQueue.answer(progress, () -> answer(platform, streamers, account, request, context, qq,
+                    channels, previousResults, previousQqQuestion, onAccepted, difficultyResolved));
+        } catch (AssistantException refused) {
+            if (!"queue_busy".equals(refused.reason())) throw refused;
+            return new Answer(JSONObject.of("answered", false, "reason", refused.reason(), "answer", refused.getMessage()),
+                    List.of(), List.of(), List.of());
+        }
+    }
+
+    private Answer answer(String platform, List<Long> streamers, String account, JSONObject request, AssistantQueryContext context,
+                          AssistantLocalStore.QqSource qq, Map<Long, PushTarget> channels, List<AssistantChartResults.Result> previousResults,
+                          String previousQqQuestion, Consumer<Boolean> onAccepted, Consumer<QuestionTiming> difficultyResolved) {
         Long uid = streamers.get(0);
         boolean comparison = streamers.size() > 1;
         evictExpiredAudience();
-        validate(request);
         var budget = new Budget();
         AssistantClient.Question question = null;
         AssistantException admissionFailure = null;

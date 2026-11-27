@@ -129,6 +129,8 @@ class AssistantSettingsSaveTest {
             adaptive-thinking | maybe | 开关
             thinking | unknown | 思考强度
             hard-thinking | off | 思考强度
+            max-concurrent-questions | 0 | 1 至 8
+            max-concurrent-questions | 9 | 1 至 8
             hard-timeout-seconds | 0 | 难题限时
             answer-limit | 0 | 上限
             max-tool-calls | 0 | 上限
@@ -275,7 +277,7 @@ class AssistantSettingsSaveTest {
                 Map.entry("model", "fixture-new-model"), Map.entry("api-format", "responses"),
                 Map.entry("difficulty-model", "fixture-classifier"), Map.entry("thinking", "low"),
                 Map.entry("hard-thinking", "max"), Map.entry("adaptive-thinking", "true"),
-                Map.entry("hard-timeout-seconds", "125"), Map.entry("answer-limit", "600"),
+                Map.entry("hard-timeout-seconds", "125"), Map.entry("max-concurrent-questions", "3"), Map.entry("answer-limit", "600"),
                 Map.entry("max-tool-calls", "4"), Map.entry("question-input-limit", "24000"),
                 Map.entry("price-input-yuan-per-million", "3"), Map.entry("price-cached-input-yuan-per-million", "0.4"),
                 Map.entry("price-output-yuan-per-million", "12"), Map.entry("weekly-budget-yuan", "11"),
@@ -287,6 +289,8 @@ class AssistantSettingsSaveTest {
         assertEquals(keyed.size(), saved.getIntValue("changed"));
         var assistant = context.getBean(AssistantProperties.class);
         assertEquals(readSavedProperties().snapshot(), assistant.snapshot());
+        assertEquals(3, readSavedProperties().getMaxConcurrentQuestions());
+        assertEquals(3, assistant.getMaxConcurrentQuestions());
         assertFalse(client.status().enabled());
 
         var group = settings.schema().getList("groups", JSONObject.class).stream()

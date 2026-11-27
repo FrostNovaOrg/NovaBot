@@ -3,6 +3,7 @@ package org.frostnova.nova.console.assistant;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.core.assistant.AssistantClient;
 import org.frostnova.nova.core.assistant.AssistantException;
@@ -24,6 +25,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashSet;
@@ -63,7 +67,8 @@ public class AssistantAskController {
     }
 
     @PostMapping("/ask")
-    public JSONObject ask(@PathVariable String platform, @PathVariable Long uid, HttpServletRequest request) {
+    public JSONObject ask(@PathVariable String platform, @PathVariable Long uid, HttpServletRequest request,
+                          HttpServletResponse response) {
         if (!(request.getAttribute(ConfigUiAccess.ACCOUNT) instanceof ConfigUiAccount account))
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "尚未登录");
         JSONObject body;
@@ -74,14 +79,51 @@ public class AssistantAskController {
         } catch (AssistantException error) { throw error; }
         catch (Exception error) { throw new AssistantException("提问格式不正确"); }
         List<Long> streamers = selectStreamers(platform, uid, account, body);
-        JSONObject result = service.ask(platform, streamers, account.id(), body);
-        result.put("streamers", streamers.stream().map(String::valueOf).toList());
-        AssistantAskService.logQuestion(log, ConfigUiAccess.actor(), platform, uid, result);
-        if (account.role() != ConfigUiAccount.Role.ADMIN) {
-            result.remove("costYuan");
-            result.remove("remaining");
+        var progress = new QueueResponse(response, "1".equals(request.getHeader("X-Assistant-Progress")));
+        JSONObject result;
+        try {
+            result = service.ask(platform, streamers, account.id(), body, AssistantQueryContext.CONSOLE, progress);
+            result.put("streamers", streamers.stream().map(String::valueOf).toList());
+            AssistantAskService.logQuestion(log, ConfigUiAccess.actor(), platform, uid, result);
+            if (account.role() != ConfigUiAccount.Role.ADMIN) {
+                result.remove("costYuan");
+                result.remove("remaining");
+            }
+        } catch (AssistantException error) {
+            if (!response.isCommitted()) throw error;
+            result = error(error).getBody();
         }
-        return result;
+        if (!response.isCommitted()) return result;
+        progress.finish(result);
+        return null;
+    }
+
+    /** 排队时才开始分段写回。普通 JSON 调用方只收到合法的前导空白和最终结果。 */
+    private record QueueResponse(HttpServletResponse response, boolean showProgress) implements AssistantQuestionQueue.Progress {
+        @Override public void queued(int ahead) {
+            response.setContentType(showProgress ? "application/x-ndjson" : "application/json");
+            response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+            response.setHeader("Cache-Control", "no-store");
+            response.setHeader("X-Accel-Buffering", "no");
+            write(showProgress ? JSONObject.of("ahead", ahead) : null);
+        }
+
+        @Override public void heartbeat() { write(null); }
+
+        @Override public void started() { write(showProgress ? JSONObject.of("started", true) : null); }
+
+        void finish(JSONObject result) { write(showProgress ? JSONObject.of("result", result) : result); }
+
+        private void write(JSONObject frame) {
+            try {
+                var output = response.getOutputStream();
+                if (frame != null) output.write(JSON.toJSONBytes(frame));
+                output.write('\n');
+                response.flushBuffer();
+            } catch (IOException disconnected) {
+                throw new UncheckedIOException(disconnected);
+            }
+        }
     }
 
     private List<Long> selectStreamers(String platform, Long uid, ConfigUiAccount account, JSONObject body) {

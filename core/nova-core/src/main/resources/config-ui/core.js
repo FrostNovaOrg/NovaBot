@@ -32,7 +32,7 @@ function readPrefix() {
  *
  * 会话过期时后端返回 401，此时整页重载会落到登录页，比在每个调用点各自处理要可靠。
  */
-export const api = (p, o) => {
+export const api = (p, o, readBody = response => response.json()) => {
   const opt = Object.assign({}, o);
   if (opt.method && opt.method.toUpperCase() !== 'GET' && store.csrfToken) {
     opt.headers = Object.assign({}, opt.headers, {'X-CSRF-Token': store.csrfToken});
@@ -44,7 +44,7 @@ export const api = (p, o) => {
     }
     // 回的不是 JSON（多见于前面挡着的反向代理回了一张错误页）时，解析器那句英文不往外露。
     // 只换解析失败这一种（SyntaxError）：读正文时被中止的 AbortError 等照原样抛，调用方要靠 name 认它
-    return r.json().catch(e => {
+    return readBody(r).catch(e => {
       throw e instanceof SyntaxError ? new Error('服务器返回的内容无法识别（HTTP ' + r.status + '）') : e;
     });
   }).then(adoptCsrfToken);

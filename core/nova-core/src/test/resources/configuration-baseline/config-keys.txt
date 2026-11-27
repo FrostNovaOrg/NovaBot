@@ -7,6 +7,7 @@ novabot.assistant.enabled|java.lang.Boolean|false|是否启用智能助手，默
 novabot.assistant.excluded-uids|java.util.List<java.lang.Long>|[]|拒绝名单中的观众编号；这些观众的原话、代号与占比不会发送给模型。
 novabot.assistant.hard-thinking|java.lang.String|high|默认高。难题取这一档和「思考强度」中较高的一档。
 novabot.assistant.hard-timeout-seconds|java.lang.Integer|180|难题整问的限时，默认 180 秒。普通问题限时 55 秒。
+novabot.assistant.max-concurrent-questions|java.lang.Integer|2|控制台和聊天共用，默认同时回答 2 个问题，可设为 1 至 8。其余问题按提问顺序排队。
 novabot.assistant.max-tool-calls|java.lang.Integer|6|一问最多执行的只读查数次数。
 novabot.assistant.model|java.lang.String|deepseek-flash|模型名称，默认 deepseek-flash。
 novabot.assistant.price-cached-input-yuan-per-million|java.math.BigDecimal|0.05|命中缓存的输入单价，单位：元／百万 token。默认值按默认服务商 2026-10 公布的高峰价折人民币取整；换服务商或服务商调价时请改。

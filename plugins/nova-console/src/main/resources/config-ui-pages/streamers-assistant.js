@@ -308,12 +308,40 @@ async function copyAnswer(host, answer) {
   }
 }
 
+async function readAnswer(response, onPosition) {
+  if (!response.headers?.get('Content-Type')?.startsWith('application/x-ndjson')) return response.json();
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  // 大图可能跨多个网络分块，收齐一行再解析。
+  let partial = [];
+  try {
+    while (true) {
+      const {value, done} = await reader.read();
+      if (done) throw new Error('与智能助手的连接已断开，请重新提问');
+      const lines = value.split('\n');
+      const tail = lines.pop();
+      for (const line of lines) {
+        partial.push(line);
+        const complete = partial.join('');
+        partial = [];
+        if (!complete) continue;
+        const frame = JSON.parse(complete);
+        if (frame.result) return frame.result;
+        if (frame.started) onPosition(null);
+        else if (frame.ahead > 0) onPosition(frame.ahead);
+      }
+      partial.push(tail);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 function renderTurn(host, turn, openChart, askFollowUp) {
   const box = el('section', 'sa-turn');
   host.appendChild(box);
   line(box, turn.label ?? turn.question, 'sa-question');
   if (turn.pending) {
-    line(box, '正在查数并回答，最长约一分钟…', 'hint');
+    line(box, turn.ahead ? `前面还有 ${turn.ahead} 个问题在答，排队中…` : '正在查数并回答，最长约一分钟…', 'hint');
     return;
   }
   const result = turn.result;
@@ -490,11 +518,17 @@ export function mountAssistant(host, identity) {
     const turn = {question, label, pending: true};
     context.turns.push(turn); context.pending = true; context.draft = ''; input.value = '';
     notify(context);
+    const connection = new AbortController();
+    const disconnect = () => connection.abort();
+    window.addEventListener('pagehide', disconnect);
     try {
       const result = await api(context.path + '/ask', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
+        method: 'POST', signal: connection.signal, headers: {'Content-Type': 'application/json', 'X-Assistant-Progress': '1'},
         body: JSON.stringify({question, history, streamers: context.streamers}),
-      });
+      }, response => readAnswer(response, ahead => {
+        turn.ahead = ahead;
+        notify(context);
+      }));
       if (result.success === false) turn.error = result.message;
       else {
         turn.result = result;
@@ -506,8 +540,10 @@ export function mountAssistant(host, identity) {
         if (result.answered === false && stateReasons.has(result.reason)) await readState(context);
       }
     } catch (error) {
-      turn.error = error.message;
+      turn.error = connection.signal.aborted ? '提问已取消' : error.message;
     } finally {
+      window.removeEventListener('pagehide', disconnect);
+      disconnect();
       turn.pending = false; context.pending = false;
       notify(context);
     }
