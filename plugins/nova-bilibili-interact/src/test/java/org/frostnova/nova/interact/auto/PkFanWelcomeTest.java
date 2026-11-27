@@ -16,11 +16,13 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -479,7 +481,37 @@ class PkFanWelcomeTest extends RoomInteractionFixture {
         assertEquals(List.of("本场PK对手：小蓝", "示例主播欢迎小蓝家的小青（蓝星）", "示例主播欢迎小蓝家的小红（蓝星）",
                 "示例主播欢迎对面主播家的访客（绿叶）"), sent);
         verify(opponents).lookup(1L, blue);
-        verify(opponents).lookup(1L, green);
+        verify(opponents, times(2)).lookup(1L, green);
+    }
+
+    @Test
+    void announcesOpponentInSameBattleAfterVisitorLookupTimesOut() {
+        events.close();
+        start(Duration.ofMillis(250));
+        var opponent = new Opponent(502L, 102L, null, null);
+        var pending = new CompletableFuture<Profile>();
+        when(opponents.lookup(1L, opponent)).thenAnswer(call -> pending.copy());
+        var options = JSONObject.of("pkFanWelcomeTemplate", "欢迎{对手}家的{用户}");
+        configure(options, FEATURE);
+        pk(1, 201, null, 102);
+        fan(1, "小青");
+
+        at(10);
+        await().pollInSameThread().atMost(Duration.ofSeconds(5)).until(() -> {
+            queue.tick();
+            return !sent.isEmpty();
+        });
+        assertTrue(sent.get(0).contains("对面主播"), sent::toString);
+        at(11);
+        pending.complete(new Profile("小蓝", null, null, null));
+
+        at(12);
+        configure(options, FEATURE, "pkOpponent");
+        pk(1, 201, null, 102);
+        tick(13);
+        assertEquals(2, sent.size(), sent::toString);
+        assertTrue(sent.get(1).startsWith("本场PK对手") && sent.get(1).contains("小蓝"), sent::toString);
+        verify(opponents, times(2)).lookup(1L, opponent);
     }
 
     @Test
