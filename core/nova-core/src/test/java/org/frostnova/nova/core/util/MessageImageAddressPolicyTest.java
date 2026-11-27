@@ -112,6 +112,30 @@ class MessageImageAddressPolicyTest {
         }
     }
 
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', textBlock = """
+            http://203.0.113.10/a/../b.png                 | INVALID
+            http://203.0.113.10/../../../../etc/x.png      | INVALID
+            http://203.0.113.10/a/..                       | INVALID
+            http://203.0.113.10/a.png?next=/../../x        | INVALID
+            http://203.0.113.10/a/%2e%2e/b.png             | INVALID
+            http://203.0.113.10/a/.%2E/b.png               | INVALID
+            https://cdn.example/a/../b.png                 | INVALID
+            http://203.0.113.10/a..b.png                   | ALLOWED
+            http://203.0.113.10/a/..b/c.png                | ALLOWED
+            http://203.0.113.10/a/.../b.png                | ALLOWED
+            http://203.0.113.10/a.png?v=1..2               | ALLOWED
+            http://203.0.113.10/a/./b.png                  | ALLOWED
+            """)
+    @DisplayName("路径、查询串或片段里有一段（百分号解码之后）恰好是 .. 的算写法不对，不拿去解析；.. 只是段里的一部分时照收")
+    void refusesDotDotSegmentsThatCouldBeReadAsALocalPath(String url, Verdict expected) {
+        var policy = new MessageImageAddressPolicy(List.of(), this::resolve);
+        assertEquals(expected, policy.check(url), url);
+        if (expected == Verdict.INVALID) {
+            assertEquals(List.of(), resolved, "写法不对的地址不该拿去解析");
+        }
+    }
+
     @Test
     @DisplayName("写进「消息图片 · 允许的内网网段」的网段可以取，写错的那条忽略并告警")
     @ExtendWith(OutputCaptureExtension.class)

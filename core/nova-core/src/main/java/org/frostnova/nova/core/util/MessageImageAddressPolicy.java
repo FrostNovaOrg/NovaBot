@@ -22,6 +22,8 @@ import java.util.Locale;
  * <h2>怎么判</h2>
  * <ul>
  *   <li>协议只收 http、https；带账号密码、没有主机名、端口不在 1 至 65535 的不收（{@link Verdict#INVALID}）。</li>
+ *   <li>路径、查询串或片段按 {@code /} 切开，有一段百分号解码一次之后恰好是 {@code ..} 的不收（{@link Verdict#INVALID}）：
+ *       有的机器人程序可能先把地址当本机路径试一次，规整之后就成了本机上的某个文件。</li>
  *   <li>主机名先解析，<b>解析出的任意一个地址</b>落在 {@link #BLOCKED} 里就不收（{@link Verdict#BLOCKED}）；
  *       解析不出来也不收（{@link Verdict#UNRESOLVED}）：拿不准的往挡的方向走。</li>
  *   <li>IPv4 映射或内嵌在 IPv6 里的地址，取出里面的 IPv4 再判。</li>
@@ -69,7 +71,7 @@ public class MessageImageAddressPolicy {
     public enum Verdict {
         /** 可以取 */
         ALLOWED,
-        /** 地址写得不对：不是 http、https，带账号密码，没有主机名，端口不对 */
+        /** 地址写得不对：不是 http、https，带账号密码，没有主机名，端口不对，带 {@code ..} 段 */
         INVALID,
         /** 主机名解析不出来 */
         UNRESOLVED,
@@ -172,6 +174,10 @@ public class MessageImageAddressPolicy {
         if (port != -1 && (port < 1 || port > 65535)) {
             return Verdict.INVALID;
         }
+        if (hasDotDotSegment(uri.getRawPath()) || hasDotDotSegment(uri.getRawQuery())
+                || hasDotDotSegment(uri.getRawFragment())) {
+            return Verdict.INVALID;
+        }
 
         InetAddress[] addresses;
         try {
@@ -192,6 +198,43 @@ public class MessageImageAddressPolicy {
             }
         }
         return Verdict.ALLOWED;
+    }
+
+    /**
+     * 按 {@code /} 切开的各段里，有没有一段（百分号解码一次之后）恰好是 {@code ..}
+     * <p>
+     * 有的机器人程序收到地址后可能先当本机路径试一次，规整之后
+     * {@code http://主机/../../某路径} 就成了一个本机相对路径。正常的图片地址不会带这样的段，
+     * 往不收的方向走。{@code a..b}、{@code ...}、{@code .} 不算。编码过的斜杠（{@code %2f}）不拆开判。
+     * @param raw 路径、查询串或片段的原文，没有时为 null
+     */
+    private static boolean hasDotDotSegment(String raw) {
+        if (raw == null || raw.indexOf('.') < 0 && raw.indexOf('%') < 0) {
+            return false;
+        }
+        for (String segment : raw.split("/", -1)) {
+            if (isDotDot(segment)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 一段原文解码一次之后是不是恰好两个点：每个点要么是原样的点，要么是 %2e（不分大小写） */
+    private static boolean isDotDot(String segment) {
+        int dots = 0;
+        int i = 0;
+        while (i < segment.length()) {
+            if (segment.charAt(i) == '.') {
+                i++;
+            } else if (segment.regionMatches(true, i, "%2e", 0, 3)) {
+                i += 3;
+            } else {
+                return false;
+            }
+            dots++;
+        }
+        return dots == 2;
     }
 
     /**

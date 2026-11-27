@@ -248,6 +248,29 @@ public class RuntimeConfigurationApplier {
     private static final Set<String> CHECKED_ON_WRITE = Set.of("novabot.core.command.admins");
 
     /**
+     * 重启才生效、但保存前同样要过 {@link #validateValues} 的核心设置：配置项名 → 设置页上的名字与读懂取值的那一步
+     * <p>
+     * 不在「保存之后不需要重启」的名单里（{@link #supportedKeys()} 不含它们），保存之后照旧记作待重启。
+     * 写错的整批不收并指出是哪一条：这几项的读取方启动时遇到写错的那条只记一笔日志、跳过它，
+     * 保存时也放过去的话，管理员以为改好了，重启之后其实没生效，而他看不到那一笔日志。
+     * 手改配置文件写错的，启动时照旧跳过并记警告。
+     */
+    private static final Map<String, RestartValidated> VALIDATED_FOR_RESTART = new LinkedHashMap<>();
+
+    /**
+     * @param label 设置页上的名字，拒收时那句话里用
+     * @param parse 读懂取值，读不懂时抛 {@link IllegalArgumentException}，消息是给人看的半句
+     */
+    private record RestartValidated(String label, Function<String, ?> parse) {
+    }
+
+    static {
+        // ---- 消息图片允许的内网网段：MessageImageAddressPolicy 启动时读这一次 ----
+        VALIDATED_FOR_RESTART.put("novabot.core.push.image-allowed-networks",
+                new RestartValidated("消息图片 · 允许的内网网段", RuntimeConfigurationApplier::ipEntries));
+    }
+
+    /**
      * 一项带校验的核心设置：怎么读懂取值、读懂之后怎么写回
      * @param label 设置页上的名字，拒收时那句话里用
      * @param fallback 删键时回到的默认值
@@ -387,16 +410,24 @@ public class RuntimeConfigurationApplier {
     }
 
     /**
-     * 来源 IP 名单：每行一条精确 IP 或 CIDR 网段，写错一条整份不收，并指出是哪一条
+     * 来源 IP 名单：每行一条精确 IP 或 CIDR 网段，写错一条整份不收，并指出是哪一条（见 {@link #ipEntries}）；不收空名单
+     */
+    private static List<String> allowIps(String value) {
+        List<String> entries = ipEntries(value);
+        if (entries.isEmpty()) {
+            throw new IllegalArgumentException("名单不能为空，空名单会把所有人挡在控制台外面");
+        }
+        return entries;
+    }
+
+    /**
+     * IP 名单：每行一条精确 IP 或 CIDR 网段，空行跳过，写错一条整份不收，并指出是哪一条；可以为空
      * <p>
      * 启动时匹配器遇到写错的那条只是记一笔日志、跳过它；保存时若也这么放过去，
      * 管理员以为放行了的地址其实进不来，而他看不到那一笔日志。
      */
-    private static List<String> allowIps(String value) {
+    private static List<String> ipEntries(String value) {
         List<String> entries = lines(value);
-        if (entries.isEmpty()) {
-            throw new IllegalArgumentException("名单不能为空，空名单会把所有人挡在控制台外面");
-        }
         for (String entry : entries) {
             String problem = IpMatcher.problemOf(entry);
             if (problem != null) {
@@ -895,6 +926,17 @@ public class RuntimeConfigurationApplier {
                 if (ALLOW_IPS.equals(change.getKey())) {
                     rejectSelfLockout(parsed);
                 }
+            } catch (IllegalArgumentException e) {
+                problems.add(change.getKey() + "（" + setting.label() + "）：" + e.getMessage());
+            }
+        }
+        for (Map.Entry<String, String> change : changes.entrySet()) {
+            RestartValidated setting = VALIDATED_FOR_RESTART.get(change.getKey());
+            if (setting == null || change.getValue() == null) {
+                continue;
+            }
+            try {
+                setting.parse().apply(change.getValue());
             } catch (IllegalArgumentException e) {
                 problems.add(change.getKey() + "（" + setting.label() + "）：" + e.getMessage());
             }
