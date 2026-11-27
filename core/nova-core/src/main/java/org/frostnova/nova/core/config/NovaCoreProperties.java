@@ -311,6 +311,17 @@ public class NovaCoreProperties {
         @ConfigSummary("支持跨零点。")
         @ConfigFormat(ConfigFormat.Format.TIME_OF_DAY)
         private String quietEnd = "";
+
+        /**
+         * 消息图片另外允许的内网网段，每行一个 IP 或 CIDR 网段；默认为空。消息里的图片地址默认不许指向本机、内网和链路本地地址；确实要从内网取图（例如局域网里的图床）时把网段写在这里，例如 192.168.1.0/24。
+         */
+        // 机器人自己下载图片前、把图片地址交给机器人程序前都按它判（MessageImageAddressPolicy）。
+        // 启动时读这一次；写错的那条启动时跳过并记一条警告，往不放行的方向走
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("消息图片 · 允许的内网网段")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("消息里的图片地址默认不许指向本机、内网和链路本地地址；确实要从内网取图（例如局域网里的图床）时把网段写在这里，例如 192.168.1.0/24。")
+        private List<String> imageAllowedNetworks = new ArrayList<>();
     }
 
     /**

@@ -12,10 +12,12 @@ import org.frostnova.nova.core.model.PushTarget;
 import org.frostnova.nova.core.sender.NovaMessageSender;
 import org.frostnova.nova.core.service.AtSubscriptionService;
 import org.frostnova.nova.core.service.LiveDataService;
+import org.frostnova.nova.core.util.MessageImageAddressPolicy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.net.InetAddress;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -61,7 +63,10 @@ class BilibiliLiveOnPushHandlerTest {
         assertEquals(10001L, captor.getValue().deliveryOrigin().uid());
         String content = captor.getValue().getContent();
         assertEquals("｛title｝｛at=all｝|｛at=all｝｛at=123｝｛cover｝｛at｝｛next｝｛image_path=/opt/a.png｝|{image_url=https://example.com/cover.png}", content);
-        var segments = new OneBotMessageConverter().convert(content);
+        // 封面主机不联网解析，当它是一个公网地址
+        var segments = new OneBotMessageConverter(new MessageImageAddressPolicy(List.of(), host ->
+                new InetAddress[]{InetAddress.getByAddress(host, new byte[]{(byte) 203, 0, 113, 10})}))
+                .convert(content);
         assertEquals(2, segments.size());
         assertEquals("text", segments.getJSONObject(0).getString("type"));
         assertEquals("image", segments.getJSONObject(1).getString("type"));

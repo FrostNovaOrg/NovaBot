@@ -109,6 +109,7 @@ novabot.core.push.at-all-daily-limit=91
 novabot.core.push.at-all-session-daily-limit=92
 novabot.core.push.enabled=false
 novabot.core.push.first-push-tip=false
+novabot.core.push.image-allowed-networks[0]=192.168.50.0/24
 novabot.core.push.quiet-end=07:45
 novabot.core.push.quiet-start=23:30
 novabot.core.sender[0].delay=121

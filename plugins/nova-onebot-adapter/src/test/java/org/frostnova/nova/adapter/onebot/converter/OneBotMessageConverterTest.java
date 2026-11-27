@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  */
 @DisplayName("OneBot 消息转换器")
 class OneBotMessageConverterTest {
-    private final OneBotMessageConverter converter = new OneBotMessageConverter();
+    private final OneBotMessageConverter converter = PublicImageHosts.converter();
 
     private String convert(String content) {
         JSONArray elements = converter.convert(content);
@@ -47,6 +47,20 @@ class OneBotMessageConverterTest {
     })
     @DisplayName("非 HTTP 图片网址与非法图片路径保留为文字，不交给机器人读取")
     void unsafeImageStaysText(String placeholder) {
+        assertEquals("[{\"type\":\"text\",\"data\":{\"text\":\"" + placeholder + "\"}}]", convert(placeholder));
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "http://127.0.0.1/a.png", "http://localhost:8080/a.png", "http://2130706433/a.png", "http://0/a.png",
+            "http://10.0.0.8/a.png", "http://172.16.5.4/a.png", "https://192.168.1.10/a.png",
+            "http://169.254.169.254/latest/meta-data/", "http://100.64.0.1/a.png", "http://[::1]/a.png",
+            "http://[fe80::1]/a.png", "http://[fd00::1]/a.png", "http://[::ffff:127.0.0.1]/a.png",
+            "http://[64:ff9b::a9fe:a9fe]/a.png"
+    })
+    @DisplayName("指向本机、内网或链路本地的图片地址保留为文字，不交给机器人程序去取")
+    void doesNotHandInternalImageAddressesToTheBotProgram(String url) {
+        String placeholder = "{image_url=" + url + "}";
         assertEquals("[{\"type\":\"text\",\"data\":{\"text\":\"" + placeholder + "\"}}]", convert(placeholder));
     }
 
