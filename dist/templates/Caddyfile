@@ -8,7 +8,8 @@
 # Caddy 与 NovaBot 在同一台机器上，**只要这份配置按下面那样剥掉 X-Forwarded-\***，
 # 它转发过来的连接源地址就是回环。
 # ⚠️ 反过来：**若把 X-Forwarded-* 送下去**，而 NovaBot 开着
-# server.forward-headers-strategy=framework，回环判据看到的就是真实客户端 IP，
+# server.forward-headers-strategy（framework 与 native 都一样：native 下 Tomcat
+# 同样按 X-Forwarded-For 改写来源），回环判据看到的就是真实客户端 IP，
 # 于是**把反代自己挡在门外**（症状是一个空的 200）。这两种情形结论相反，别混用。
 #
 # 开着 framework 时，NovaBot 只认可信代理（本机回环、私有网段，
