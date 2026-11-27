@@ -53,7 +53,9 @@ const welcomeKinds = {
 const templateKinds = {...thanksKinds, ...welcomeKinds};
 const keywordKind = {label: '关键词回复', fields: ['{用户}', '{主播}']};
 const pkKind = {label: 'PK 对手信息播报', fields: ['{对手}', '{粉丝}', '{舰队}', '{高能}', '{主播}']};
-const messageKinds = {...templateKinds, keywordReply: keywordKind, pkOpponent: pkKind};
+const pkFanKind = {label: 'PK 串门欢迎', title: 'PK 时欢迎对方粉丝来串门', fields: ['{用户}', '{对手}', '{牌子}', '{主播}']};
+const pkKinds = {pkOpponent: pkKind, pkFanWelcome: pkFanKind};
+const messageKinds = {...templateKinds, keywordReply: keywordKind, ...pkKinds};
 const blankText = text => /^[\p{White_Space}\x1C-\x1F\uFEFF]*$/u.test(text);
 
 const part = id => root && root.querySelector('#' + id);
@@ -171,7 +173,7 @@ export function render(section) {
                 <div class="li-people" id="li-rules"></div>
                 <button type="button" id="li-rule-add">添加规则</button> <small class="li-count">最多 30 条规则</small>
               </fieldset>
-              <div id="li-pk"></div>
+              <div class="li-fields" id="li-pk"></div>
               <fieldset class="li-thanks"><legend><label class="li-check">
                 <input id="li-pauseActivities" type="checkbox">天选、红包期间暂停自动弹幕</label></legend>
                 <p class="hint">本房天选期间或红包开启后 60 秒内跳过自动弹幕，活动重叠时等到全部结束，试发照常。</p>
@@ -532,7 +534,8 @@ async function readSettings(uid) {
     if (mine !== settingsRequest) return;
     if (!res?.success) throw new Error(res?.message || '读取失败');
     draft = res.settings;
-    defaultTemplates = {...res.defaultThanksTemplates, ...res.defaultWelcomeTemplates, pkOpponent: res.defaultPkTemplate};
+    defaultTemplates = {...res.defaultThanksTemplates, ...res.defaultWelcomeTemplates, pkOpponent: res.defaultPkTemplate,
+      pkFanWelcome: res.defaultPkFanWelcomeTemplate};
     part('li-pauseActivities').checked = !!draft.features.pauseActivities;
     part('li-enabled').checked = draft.enabled;
     part('li-per-minute').value = draft.perMinute;
@@ -588,7 +591,7 @@ function templateEditor(key, kind) {
 
 function featureCard(key, kind, options = '', after = '') {
   return `<fieldset class="li-thanks">
-    <legend><label class="li-check"><input id="li-${key}" type="checkbox">${kind.label}</label></legend>
+    <legend><label class="li-check"><input id="li-${key}" type="checkbox">${kind.title || kind.label}</label></legend>
     ${options}${templateEditor(key, kind)}${after}</fieldset>`;
 }
 
@@ -630,12 +633,17 @@ function drawFeatures() {
     if (kind.window) part('li-' + kind.window).value = draft.thanks[kind.window];
   }
   part('li-keywordReply').checked = !!draft.features.keywordReply;
-  part('li-pk').innerHTML = featureCard('pkOpponent', pkKind);
-  part('li-pkOpponent').checked = !!draft.features.pkOpponent;
-  const pkTemplate = part('li-pkOpponent-template');
-  pkTemplate.value = draft.pkTemplate;
-  pkTemplate.placeholder = defaultTemplates.pkOpponent;
-  pkTemplate.addEventListener('input', () => drawPreview('pkOpponent'));
+  const visitorLimit = `<div class="li-row"><label>每场最多欢迎几位（1–20）
+    <input id="li-pkFanWelcomeLimit" type="number" min="1" max="20"></label></div>`;
+  part('li-pk').innerHTML = featureCard('pkOpponent', pkKind) + featureCard('pkFanWelcome', pkFanKind, visitorLimit);
+  part('li-pkFanWelcomeLimit').value = draft.pkFanWelcomeLimit;
+  for (const key of Object.keys(pkKinds)) {
+    part('li-' + key).checked = !!draft.features[key];
+    const template = part('li-' + key + '-template');
+    template.value = key === 'pkOpponent' ? draft.pkTemplate : draft.pkFanWelcomeTemplate;
+    template.placeholder = defaultTemplates[key];
+    template.addEventListener('input', () => drawPreview(key));
+  }
   part('li-giftMinYuan').value = draft.thanks.giftMinYuan;
   part('li-giftIncludeFree').checked = draft.thanks.giftIncludeFree;
   drawPeople();
@@ -768,7 +776,7 @@ function collectPeople() {
 function drawPreviews() {
   if (!draft) return;
   for (const key of Object.keys(templateKinds)) drawPreview(key);
-  drawPreview('pkOpponent');
+  for (const key of Object.keys(pkKinds)) drawPreview(key);
   part('li-rules').querySelectorAll('.li-reply-row').forEach(drawReplyPreview);
   drawPeoplePreviews();
   if (!limits[settingsUid]) askLimit(settingsUid);
@@ -797,8 +805,8 @@ function showPreview(key, override, viewer, output, counter) {
   const ranks = {CAPTAIN: '舰长', COMMANDER: '提督', GOVERNOR: '总督'};
   const streamer = state.rooms.find(room => room.uid === settingsUid)?.name || '';
   const shortStreamer = [...streamer].length > 10 ? [...streamer].slice(0, 10).join('') + '…' : streamer;
-  const fields = {'用户': viewer, '主播': key === 'keywordReply' || key === 'pkOpponent' ? shortStreamer : streamer,
-    '对手': '小蓝', '粉丝': '12.3万', '舰队': '68', '高能': '320',
+  const fields = {'用户': viewer, '主播': key === 'keywordReply' || pkKinds[key] ? shortStreamer : streamer,
+    '对手': '小蓝', '牌子': '蓝星', '粉丝': '12.3万', '舰队': '68', '高能': '320',
     '礼物': '小花花x3', '等级': key === 'guardWelcome' ? ranks[part('li-minimumLevel').value] : '舰长', '人数': '3'};
   let invalid = '';
   const preview = template.replace(/\{([^{}]*)}/g, (token, field) => {
@@ -839,6 +847,9 @@ function collectDraft() {
   draft.features.keywordReply = !!part('li-keywordReply').checked;
   draft.features.pkOpponent = !!part('li-pkOpponent').checked;
   draft.pkTemplate = part('li-pkOpponent-template').value;
+  draft.features.pkFanWelcome = !!part('li-pkFanWelcome').checked;
+  draft.pkFanWelcomeTemplate = part('li-pkFanWelcome-template').value;
+  draft.pkFanWelcomeLimit = Number(part('li-pkFanWelcomeLimit').value);
   collectRules();
   draft.welcome.minimumLevel = part('li-minimumLevel').value;
   draft.features.pauseActivities = !!part('li-pauseActivities').checked;

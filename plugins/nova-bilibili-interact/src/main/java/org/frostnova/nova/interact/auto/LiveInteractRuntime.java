@@ -136,11 +136,12 @@ public class LiveInteractRuntime {
 
     @EventListener
     public void pk(BilibiliPkBattleEvent event) {
-        if (event.getStage() != Stage.OPEN || event.getPkId() == null || event.getPkId() <= 0) return;
-        for (var lookup : queue.beginPk(event)) {
-            opponents.lookup(event.getPkId(), lookup.opponent())
-                    .completeOnTimeout(null, pkLookupTimeout.toMillis(), TimeUnit.MILLISECONDS)
-                    .whenComplete((profile, failure) -> lookup.complete().accept(profile));
+        if (event.getPkId() == null || event.getPkId() <= 0) return;
+        if (event.getStage() == Stage.SETTLE) queue.endPk(event);
+        if (event.getStage() == Stage.OPEN) {
+            long id = event.getPkId();
+            queue.beginPk(event, opponent -> opponents.lookup(id, opponent)
+                    .completeOnTimeout(null, pkLookupTimeout.toMillis(), TimeUnit.MILLISECONDS));
         }
     }
 
