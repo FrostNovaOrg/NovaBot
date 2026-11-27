@@ -278,6 +278,11 @@ class SwitchVersionToolTest {
                 sys.exit(0)
             unit = last_unit(args)
             if verb == "is-active":
+                if (os.environ.get("NOVABOT_STUB_OLD_STOP_QUERY_FAILS") == "true"
+                        and normalize(unit) == normalize(os.environ["NOVABOT_STUB_ACTIVE"])
+                        and os.path.exists(os.path.join(state_dir, "old-stop-attempts"))):
+                    print("Failed to connect to bus", file=sys.stderr)
+                    sys.exit(1)
                 st = get_state(unit)
                 if "--quiet" not in args and "-q" not in args:
                     print(st)
@@ -401,6 +406,27 @@ class SwitchVersionToolTest {
         assertTrue(run.stdout.lines().anyMatch(line -> line.contains("报错") && line.contains("已停")),
                 run.stdout);
         assertEquals("failed", unitState(world, OLD));
+        assertEquals("active", unitState(world, NEW));
+    }
+
+    @Test
+    @DisplayName("普通重启停旧成功，查不到旧版状态时继续换版")
+    void ordinarySwitchContinuesWhenStopSucceedsButStateIsUnavailable(@TempDir Path dir) throws Exception {
+        World world = lay(dir, false, true, true, "ordinary", OLD);
+        world.oldStopResults = "0 inactive";
+        world.oldStopQueryFails = true;
+        Run run = run(world);
+
+        assertEquals(0, run.code, run.stdout + run.stderr);
+        assertEquals(List.of(
+                "stop novabot@" + OLD,
+                "start novabot@" + NEW,
+                "disable novabot@" + OLD,
+                "enable novabot@" + NEW), mutations(world));
+        assertTrue(before(world, "stop novabot@" + OLD, "is-active novabot@" + OLD), calls(world).toString());
+        assertTrue(run.stdout.lines().anyMatch(line -> line.contains("查不到旧版") && line.contains("停止命令成功")),
+                run.stdout);
+        assertEquals("inactive", unitState(world, OLD));
         assertEquals("active", unitState(world, NEW));
     }
 
@@ -1230,6 +1256,7 @@ class SwitchVersionToolTest {
         builder.environment().put("NOVABOT_STUB_USER", "starbot");
         builder.environment().put("NOVABOT_STUB_SLOW_STOP", world.slowStop);
         builder.environment().put("NOVABOT_STUB_OLD_STOP_RESULTS", world.oldStopResults);
+        builder.environment().put("NOVABOT_STUB_OLD_STOP_QUERY_FAILS", Boolean.toString(world.oldStopQueryFails));
         builder.environment().put("NOVABOT_STUB_FAIL", world.fail);
         builder.environment().put("NOVABOT_STUB_SLOW_QUERY", world.slowQuery);
         builder.redirectOutput(world.logs.resolve("stdout.txt").toFile());
@@ -1416,6 +1443,7 @@ class SwitchVersionToolTest {
         String target;
         String slowStop;
         String oldStopResults = "";
+        boolean oldStopQueryFails;
         String fail;
         String slowQuery;
         String enabled;

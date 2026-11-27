@@ -769,9 +769,23 @@ stop_old() {
                 fi
                 return 0
                 ;;
+            "")
+                if [ "$stop_failed" = 0 ]; then
+                    say "查不到旧版状态，按停止命令成功处理。"
+                    return 0
+                fi
+                ;;
         esac
     done
     return 1
+}
+
+old_stop_failure_message() {
+    if [ -z "$OLD_STOP_STATE" ]; then
+        say "停掉 $OLD 失败。查不到旧版状态。"
+    else
+        say "停掉 $OLD 失败。旧版最后状态为 ${OLD_STOP_STATE}。"
+    fi
 }
 
 do_hot() {
@@ -811,7 +825,7 @@ do_hot() {
     say "${TARGET} 已在门口等锁，停掉 ${OLD}。"
     GAP_START=$(date +%s)
     if ! stop_old; then
-        fail_out "停掉 $OLD 失败。旧版最后状态为 ${OLD_STOP_STATE}。"
+        fail_out "$(old_stop_failure_message)"
     fi
     wait_rc=0
     wait_phase_ready "$unit" "$file" "$READY_TIMEOUT_SECONDS" || wait_rc=$?
@@ -845,7 +859,7 @@ do_ordinary() {
     say "不走热交接：${1}改走普通重启。"
     say "先停 ${OLD}，再起 ${TARGET}。"
     if ! stop_old; then
-        say "停掉 $OLD 失败。旧版最后状态为 ${OLD_STOP_STATE}。"
+        old_stop_failure_message
         report_running
         exit 1
     fi
