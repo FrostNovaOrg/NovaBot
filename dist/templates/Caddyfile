@@ -8,8 +8,12 @@
 # Caddy 与 NovaBot 在同一台机器上，**只要这份配置按下面那样剥掉 X-Forwarded-\***，
 # 它转发过来的连接源地址就是回环。
 # ⚠️ 反过来：**若把 X-Forwarded-* 送下去**，而 NovaBot 开着
-# server.forward-headers-strategy，回环判据看到的就是真实客户端 IP，
+# server.forward-headers-strategy=framework，回环判据看到的就是真实客户端 IP，
 # 于是**把反代自己挡在门外**（症状是一个空的 200）。这两种情形结论相反，别混用。
+#
+# 开着 framework 时，NovaBot 只认可信代理（本机回环、私有网段，
+# 以及 novabot.core.config-ui.trusted-proxies 里追加的网段）送来的 X-Forwarded-*，
+# Forwarded 头一律不认。下面每一条都去掉客户端自带的 Forwarded。
 #
 # NovaBot 事件输出始终要求只读口令，客户端在连接后的首帧发送。
 # 浏览器面板还须在 application.yml 中填写页面来源并重启，例如：
@@ -90,6 +94,10 @@ events.example.com {
 			header_up -X-Forwarded-For
 			header_up -X-Forwarded-Proto
 			header_up -X-Forwarded-Host
+
+			# 客户端自己带来的 Forwarded 头 Caddy 默认原样转发，这里一并去掉。
+			# NovaBot 不拿它改写来源地址，去掉是为了后端看到的请求里没有一个由客户端说了算的转发头
+			header_up -Forwarded
 		}
 	}
 
@@ -118,6 +126,11 @@ events.example.com {
 			# 「只接受本机连接」是挂在**事件流的握手拦截器**上的，
 			# **不是 /nova 前缀级的过滤器**，这个端点不受它影响。
 			header_up X-Real-IP {remote_host}
+
+			# 🔴 客户端自己带来的 Forwarded 头要去掉：Caddy 只换 X-Forwarded-For，Forwarded 默认原样转发。
+			# NovaBot 开着 forwarded 策略时已不拿 Forwarded 改写来源地址，
+			# 这一行留着是为了旧版或别的后端也不会被它带偏（伪造成主人的地址把主人锁在外面）。
+			header_up -Forwarded
 		}
 	}
 

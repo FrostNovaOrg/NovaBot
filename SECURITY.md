@@ -230,34 +230,57 @@ proxy_set_header Host $http_host;
 这也是它能当默认取法的理由。这种部署请在最外层用
 `proxy_set_header X-Forwarded-For $remote_addr;` 覆写该头。
 
-**⚠️ 还有一处取的是最左侧，它不在本程序里，在 Spring 中。**
-开启 `server.forward-headers-strategy` 后，Spring 的 `ForwardedHeaderFilter` 会用
-`X-Forwarded-For` **改写 `getRemoteAddr()`**，而它取的是**最左侧**。
-配置控制台的登录锁定与只读口令代签发的来源 IP 都来自这个方法。
+**⚠️ 还有一处取的是最左侧：开着 `server.forward-headers-strategy: framework` 时的来源地址。**
+开着它时，本程序用自己的转发头过滤器顶替 Spring 装的 `ForwardedHeaderFilter`，按转发头**改写 `getRemoteAddr()`**、
+主机名与协议。配置控制台的来源名单、按来源的登录锁定、通行密钥的登录挑战与只读口令代签发的来源 IP 都来自这个方法。
+它这样认转发头：
 
-于是在「**开着 forwarded 策略 + 反代是追加式**」这个组合下，
+- **`Forwarded` 头一律不认**：不拿它改写地址、主机名或协议，排在后面的各环也看不到它。
+  Spring 那一道原本优先认这个头、而且不看是谁送来的——反代只覆写了 `X-Forwarded-For` 而没清 `Forwarded` 时，
+  客户端自带一个 `Forwarded: for=<任意地址>`，程序就把那个地址当成来源。现在这条路不通了。
+- **只认可信代理送来的 `X-Forwarded-*`**：直接连进来的那一端在可信网段里，才按它送来的 `X-Forwarded-For`、
+  `X-Forwarded-Proto`、`X-Forwarded-Host`、`X-Forwarded-Prefix` 改写，取法与 Spring 一样；不在的，这几个头不认，
+  也从请求里去掉。能直接连到后端端口的人自带什么转发头都改不了来源。
+  可信网段默认是本机回环与私有网段，与 Tomcat `RemoteIpValve` 默认的 internal-proxies 同一套
+  （`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、`169.254.0.0/16`、`100.64.0.0/10`、`127.0.0.0/8`、`::1`、`fe80::/10`、`fc00::/7`）；
+  另外的网段写在 `novabot.core.config-ui.trusted-proxies`（每行一个 IP 或 CIDR 网段，重启生效，写错的那条启动时跳过）。
+- 可信代理送来的 `X-Forwarded-For` 取的是**最左侧**。
+
+于是在「**开着 framework + 反代是追加式**」这个组合下，
 **按来源 IP 的登录锁定不可依赖**：攻击者换着伪造最左侧那一段，一次锁定也触发不了。
 
 这个组合下的兜底是**密码校验的全局速率上限**（每分钟 20 次，见 `LoginThrottle`）——
 它按 IP 计数管不着的那条路，正是全局桶存在的理由。
 
-**本仓库提供的反代模板（`dist/templates/Caddyfile`）不让客户端自带的 `X-Forwarded-For` 送到本程序**：
-事件流那条把该头删掉，代签发与程序接口那两条由 Caddy 换成真实对端。自己写 Nginx 配置时，
-用 `proxy_set_header X-Forwarded-For $remote_addr;` 覆写，不用 `$proxy_add_x_forwarded_for`。
-覆写之后头里只有一段，最左＝最右＝真实对端，上面那个组合就不成立——
-**模板这么写不是随手写的，改它之前请先读完这一段**。
+**本仓库提供的反代模板（`dist/templates/Caddyfile`）不让客户端自带的 `X-Forwarded-For` 与 `Forwarded` 送到本程序**：
+事件流那条把 `X-Forwarded-*` 与 `Forwarded` 都删掉，代签发与程序接口那两条由 Caddy 把 `X-Forwarded-For` 换成真实对端、
+删掉 `Forwarded`。自己写 Nginx 配置时，用 `proxy_set_header X-Forwarded-For $remote_addr;` 覆写，
+不用 `$proxy_add_x_forwarded_for`，再用 `proxy_set_header Forwarded "";` 清掉客户端带来的 `Forwarded`。
+覆写之后 `X-Forwarded-For` 里只有一段，最左＝最右＝真实对端；`Forwarded` 本程序不认，客户端带了也改不了来源——
+上面那个组合就不成立。**模板这么写不是随手写的，改它之前请先读完这一段**。
 
-本程序没有自己解析并覆盖 `getRemoteAddr()`：那样做的失败方向是把正常用户挡在门外，
+`X-Forwarded-For` 取最左一段是 Spring 的取法，本程序没有改成取最右：前面多一层代理的部署那样会被挡在门外，
 代价大于收益。若你的部署确实是追加式反代，请改成覆写，或不要开 `forward-headers-strategy`。
+
+**从旧版升级、开着 framework 的部署要核两件事**：反代只发 `Forwarded`、不发 `X-Forwarded-*` 的，要改成发 `X-Forwarded-*`，
+否则程序看到的来源一律是反代自己；反代不在本机回环或私有网段里的，要把它的网段写进 `novabot.core.config-ui.trusted-proxies`，
+否则它送来的 `X-Forwarded-*` 不被采信。`native`（交给 Tomcat 处理）与不开这一项时，行为不变。
 
 **程序接口 `/nova/api/v1/` 自己认转发头，不靠 `forward-headers-strategy`。** 只在直接连进来的那一端是本机回环、
 请求又带了转发头时才看它们：`X-Forwarded-For` 取最右一段，`X-Real-IP` 只认一行、一个值，`Forwarded` 取最后一项的 `for=`；
 带了几种就要几种都解析得出、而且是同一个地址，否则当作未知来访者（不是本机，也认不出地址）。
 转发头里只要有一处写得不合规（空段、任何一段不是合法地址、端口越界、`Forwarded` 读不干净或引号里藏分隔符），
 整个就当作未知来访者，不跳过那一处去用别的一段。
-直接连进来的不是本机时转发头一概不看。无效令牌限速与日志按这样认出的来访者算；
+直接连进来的不是本机时转发头一概不看，外面直连进来的人写什么头都冒充不了本机。无效令牌限速与日志按这样认出的来访者算；
 控制台、事件流、推送接口的判法不随之改变。来源这一道只分本机与别的机器：直接连进来的是本机回环、
 请求又不带转发头的才算本机；经反向代理进来的一律不算（转发头写着回环地址也一样）。
+
+开着 `framework` 时，转发头过滤器排在程序接口之前，已经改写了对端、删掉了转发头；程序接口按它记下的**请求到达时的原样**判本机：
+直接连进来的是本机回环、请求原本不带 `Forwarded`、`X-Forwarded-For`、`X-Real-IP` 中任何一种，才算本机；原本带过的一律不算，
+转发头写着回环地址也一样，直连进来的人自带 `Forwarded: for=127.0.0.1` 也冒充不了本机。这时来访地址取转发头过滤器按可信代理送来的
+`X-Forwarded-For` 改写出的那个（与控制台看到的是同一个），`Forwarded`、`X-Real-IP` 不拿来定地址；
+直接连进来的是本机回环、却没有能采信的地址，或改写出的不是 IP 地址时，当作未知来访者。
+
 控制台的 `allow-ips` 不参与这一道，放行所有地址也不会让接口对外开放。本机以外的来访者能不能调某一组接口，
 由设置项 `novabot.core.config-ui.api-any-source-groups`（控制台「访问令牌」页的开关）决定，默认一组也不开放，
 开放之后仍须有效的访问令牌。本机的反向代理一个转发头也不写时，经它进来的请求与本机直连分不出来，

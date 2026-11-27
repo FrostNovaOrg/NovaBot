@@ -64,6 +64,8 @@ class PasskeyChallenges {
      * 来源地址与 {@code ConfigUiSecurityFilter} 认白名单用的是同一个（{@code getRemoteAddr()}）。
      * 按来源分人就分在它上：放在反向代理后面时，按文档要开 {@code server.forward-headers-strategy}
      * （SECURITY.md），开了以后 {@code getRemoteAddr()} 取到的就是代理传来的真实地址，各人分得开；
+     * 只认可信代理送来的 {@code X-Forwarded-For}，客户端自带的 {@code Forwarded} 改不了它，
+     * 外面的人就没法轮换伪造地址、把主人刚要到的那条挤掉（{@code TrustedProxyForwardedHeaderFilter}）。
      * 没开时所有人看起来都是代理那一个地址，这些人共用这 8 条、彼此仍挤得掉。
      * IPv6 地址按 /64 前缀算一个来源，见 {@link #sourceKey}。
      */

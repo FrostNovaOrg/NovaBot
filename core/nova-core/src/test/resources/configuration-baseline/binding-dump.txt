@@ -55,6 +55,7 @@ novabot.core.config-ui.oidc.management-uri=https://accounts.example.com/members
 novabot.core.config-ui.oidc.redirect-uri=https://console.example.com/config/api/oidc/callback
 novabot.core.config-ui.oidc.scopes=openid profile
 novabot.core.config-ui.token=coverage-console-token
+novabot.core.config-ui.trusted-proxies[0]=203.0.113.0/24
 novabot.core.config-ui.update.enabled=false
 novabot.core.config-ui.update.source=http://127.0.0.1:1/coverage-release
 novabot.core.datasource.json-auto-reload=false

@@ -378,6 +378,10 @@ curl -X POST http://127.0.0.1:7827/nova/api/v1/push/messages \
   例如 `X-Forwarded-For` 末尾多了一个逗号、中间有一段不是 IP、端口不在 1–65535；`Forwarded` 的引号里藏了逗号或分号、
   某一项没有 `for=`、带端口或 IPv6 的地址没加引号；几种头说的不是同一个地址。完整的规矩见
   [程序接口约定「来源地址」](https://github.com/FrostNovaOrg/NovaBot/blob/main/docs/api.md#来源地址)。
+- 若为了控制台开了 `server.forward-headers-strategy: framework`，判法照样：直接连进来的是本机、请求原本不带任何转发头，才算本机直连；
+  原本带过 `Forwarded`、`X-Forwarded-For`、`X-Real-IP` 中任何一种的都不算本机，外面的人自带 `Forwarded: for=127.0.0.1` 也冒充不了。
+  这时来源取可信代理送来的 `X-Forwarded-For`（与控制台看到的是同一个，见附录 C「控制台的来源地址」），
+  `Forwarded`、`X-Real-IP` 不拿来定地址；直接连进来的是本机、却没有能采信的地址时，当作认不出地址的未知来访者。
 
 所以按样板写的反向代理（带上 `X-Real-IP` 与 `X-Forwarded-For`、去掉客户端带来的 `Forwarded`）后面，
 外面的人与直连的外面的人一样：那组没打开就是 403；无效令牌的限速也是各算各的，
