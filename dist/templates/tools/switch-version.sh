@@ -17,6 +17,8 @@
 #   NOVABOT_SYSTEMD_RUN_DIR     缺省 /run/systemd/system
 #   NOVABOT_STATE_DIR           缺省 <安装目录>/.novabot-switch
 #
+#   NOVABOT_HANDOVER_MIN_AVAIL  缺省 512M，新版启动到等锁所需的可用内存
+#
 # 可改时长的环境变量（缺省就是原来写死的秒数；只认正整数，给错了照缺省并在标准错误说一句）：
 #   NOVABOT_STAY_ACTIVE_SECONDS           缺省 10  就绪后稳住的秒数
 #   NOVABOT_STAY_ACTIVE_RESTART_SECONDS   缺省 60  没有 handover=1 时普通启动后稳住的秒数
@@ -523,32 +525,14 @@ lock_state() {
     return 0
 }
 
-# 内存上限已是 1.2G、900M 这样时照原样印；否则按字节折成同样的形。
-format_high() {
-    LC_ALL=C awk -v high="$1" 'BEGIN {
-        if (high ~ /^[0-9]+(\.[0-9]+)?[KMGT]$/) {
-            printf "%s", high
-            exit
-        }
-        n = high + 0
-        u = high
-        gsub(/[0-9.]/, "", u)
-        if (u == "G" || u == "g") bytes = n * 1024 * 1024 * 1024
-        else if (u == "M" || u == "m") bytes = n * 1024 * 1024
-        else if (u == "K" || u == "k") bytes = n * 1024
-        else if (u == "T" || u == "t") bytes = n * 1024 * 1024 * 1024 * 1024
-        else bytes = n + 0
-        gb = 1024 * 1024 * 1024
-        mb = 1024 * 1024
-        if (bytes >= gb) {
-            s = sprintf("%.1f", bytes / gb)
-            sub(/\.0$/, "", s)
-            printf "%sG", s
-        } else if (bytes >= mb) {
-            printf "%dM", int(bytes / mb + 0.5)
-        } else {
-            printf "%dK", int(bytes / 1024 + 0.5)
-        }
+parse_memory_bytes() {
+    local size="$1"
+    [[ "$size" =~ ^[0-9]+(\.[0-9]+)?[KMGTkmgt]?$ ]] || return 1
+    LC_ALL=C awk -v size="$size" 'BEGIN {
+        power = index("KMGT", toupper(substr(size, length(size))))
+        bytes = sprintf("%.17g", (size + 0) * (1024 ^ power))
+        if (bytes !~ /^[0-9]/) exit 1
+        printf "%s", bytes
     }'
 }
 
@@ -570,42 +554,21 @@ format_kib() {
     }'
 }
 
-# MemAvailable 不少于目标的 MemoryHigh。infinity 或取不到按 1.2G。
+# MemAvailable 不少于新版启动到等锁所需的可用内存。
 memory_state() {
-    local high avail
+    local avail
     MEM_KIND=unread
     AVAIL_TEXT=读不到
-    HIGH_TEXT=1.2G
-    high=$(systemctl show -p MemoryHigh --value "$(unit_of "$TARGET")" 2>/dev/null || true)
-    high=$(printf '%s' "$high" | tr -d '[:space:]')
-    if [ -z "$high" ] || [ "$high" = "infinity" ]; then
-        high=1.2G
-    fi
-    HIGH_TEXT=$(format_high "$high")
     if [ ! -r "$PROC_MEMINFO" ]; then
-        MEM_KIND=unread
         return 0
     fi
     avail=$(awk '/^MemAvailable:/ { print $2; exit }' "$PROC_MEMINFO" 2>/dev/null || true)
     if [ -z "$avail" ]; then
-        MEM_KIND=unread
         return 0
     fi
     AVAIL_TEXT=$(format_kib "$avail")
-    if awk -v kb="$avail" -v high="$high" 'BEGIN {
-        if (high == "" || high == "infinity") need = 1.2 * 1024 * 1024 * 1024
-        else {
-            n = high + 0
-            u = high
-            gsub(/[0-9.]/, "", u)
-            if (u == "G" || u == "g") need = n * 1024 * 1024 * 1024
-            else if (u == "M" || u == "m") need = n * 1024 * 1024
-            else if (u == "K" || u == "k") need = n * 1024
-            else if (u == "T" || u == "t") need = n * 1024 * 1024 * 1024 * 1024
-            else need = n + 0
-        }
-        if ((kb + 0) * 1024 >= need) exit 0
-        exit 1
+    if LC_ALL=C awk -v kb="$avail" -v need="$HANDOVER_MIN_BYTES" 'BEGIN {
+        exit !((kb + 0) * 1024 >= (need + 0))
     }'; then
         MEM_KIND=enough
     else
@@ -903,14 +866,23 @@ collect_handover_reasons() {
     memory_state
     case "$MEM_KIND" in
         enough) ;;
-        short) reasons="${reasons}内存不够。" ;;
+        short) reasons="${reasons}内存不够（可用 ${AVAIL_TEXT}，要 ${MIN_AVAIL_TEXT}）。" ;;
         *) reasons="${reasons}读不到可用内存。" ;;
     esac
     HANDOVER_REASONS=$reasons
 }
 
-show_plan() {
+show_memory_condition() {
     local verdict
+    case "$MEM_KIND" in
+        enough) verdict="是" ;;
+        short) verdict="否" ;;
+        *) verdict="读不到" ;;
+    esac
+    say "可用内存不少于新版起步要的量（可用 ${AVAIL_TEXT}，要 ${MIN_AVAIL_TEXT}）：${verdict}"
+}
+
+show_plan() {
     if [ "$count" -eq 0 ]; then
         say "现在没有分目录实例在跑，这次会普通启动 ${TARGET}。"
         return 0
@@ -927,18 +899,24 @@ show_plan() {
         unread) say "旧版拿着单实例锁：读不到" ;;
         *) say "旧版拿着单实例锁：否" ;;
     esac
-    case "$MEM_KIND" in
-        enough) verdict="是" ;;
-        short) verdict="否" ;;
-        *) verdict="读不到" ;;
-    esac
-    say "可用内存不少于目标的内存上限（可用 ${AVAIL_TEXT}，上限 ${HIGH_TEXT}）：${verdict}"
+    show_memory_condition
     if [ -z "$HANDOVER_REASONS" ]; then
         say "这次会走热交接：先起 ${TARGET}，等它到门口再停 ${OLD}。"
     else
         say "这次会走普通重启：${HANDOVER_REASONS}先停 ${OLD}，再起 ${TARGET}。"
     fi
 }
+
+handover_min_avail=${NOVABOT_HANDOVER_MIN_AVAIL-512M}
+if ! HANDOVER_MIN_BYTES=$(parse_memory_bytes "$handover_min_avail"); then
+    printf 'NOVABOT_HANDOVER_MIN_AVAIL 的值 %q 无效，请写字节数或带 K、M、G、T 后缀的大小，例如 512M。\n' \
+        "$handover_min_avail" >&2
+    exit 1
+fi
+case "$handover_min_avail" in
+    *[KMGTkmgt]) MIN_AVAIL_TEXT=$handover_min_avail ;;
+    *) MIN_AVAIL_TEXT=${handover_min_avail}B ;;
+esac
 
 if [ "$PLAN" != yes ]; then
     say "把正在跑的实例换成 ${TARGET}。"
@@ -1022,6 +1000,7 @@ fi
 
 OLD=$ONLY
 collect_handover_reasons
+show_memory_condition
 if [ -n "$HANDOVER_REASONS" ]; then
     do_ordinary "$HANDOVER_REASONS"
 fi

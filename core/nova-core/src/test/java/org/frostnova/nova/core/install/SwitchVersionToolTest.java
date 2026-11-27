@@ -3,6 +3,9 @@ package org.frostnova.nova.core.install;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -356,6 +359,7 @@ class SwitchVersionToolTest {
     void hotHandoverSucceeds(@TempDir Path dir) throws Exception {
         // 故障：升级时两份一起连直播间，或停旧之后新版没接上。这一格要先起新、等到门口再停旧，成了才切自启。
         World world = lay(dir, true, true, true, "hot-ok", OLD);
+        setAvailableMib(world, 600);
         Run run = run(world);
 
         assertTrue(run.stdout.matches("(?s).*中间断了约 \\d+ 秒.*"),
@@ -366,6 +370,7 @@ class SwitchVersionToolTest {
                 "stop novabot@" + OLD,
                 "disable novabot@" + OLD,
                 "enable novabot@" + NEW), mutations(world), "a 调用顺序");
+        assertMemoryCondition(run, "600M", "512M", "是");
         assertFalse(Files.exists(world.runDir.resolve("novabot@" + NEW + ".service.d")),
                 "a 运行时覆盖设置最后应删掉");
     }
@@ -455,12 +460,14 @@ class SwitchVersionToolTest {
     @Test
     @DisplayName("b 内存不够就普通重启")
     void lowMemoryRestarts(@TempDir Path dir) throws Exception {
-        // 故障：内存紧的机器上两份同时起，被内核杀掉。可用内存小于目标的 MemoryHigh 时先停旧再起新。
         World world = lay(dir, true, false, true, "ordinary", OLD);
+        setAvailableMib(world, 400);
         Run run = run(world);
 
-        assertTrue(run.stdout.contains("内存不够"), "b 输出应说明内存不够，实际：" + run.stdout);
-        assertEquals(0, run.code, "b 普通重启应退 0");
+        assertEquals(0, run.code, run.stdout + run.stderr);
+        assertMemoryCondition(run, "400M", "512M", "否");
+        assertTrue(run.stdout.lines().anyMatch(line -> line.contains("内存不够")
+                && line.contains("可用 400M") && line.contains("要 512M")), run.stdout);
         assertTrue(before(world, "stop novabot@" + OLD, "start novabot@" + NEW),
                 "b 应先停旧再起新，实际：" + calls(world));
     }
@@ -894,21 +901,21 @@ class SwitchVersionToolTest {
     }
 
     @Test
-    @DisplayName("预演：三样都成立时只看，末行是热交接")
+    @DisplayName("预演：可用 600M 时满足缺省门槛，目标单元的 MemoryHigh 不参与判断")
     void planHotHandoverLooksOnly(@TempDir Path dir) throws Exception {
         // 故障：只看这次怎么走，却把服务起停了，或状态目录、覆盖设置被写出来。
         World world = lay(dir, true, true, true, "hot-ok", OLD);
+        setAvailableMib(world, 600);
         Run run = runPlan(world);
 
         assertEquals(0, run.code, "预演应退 0，实际输出：" + run.stdout + run.stderr);
+        assertTrue(lastLine(run.stdout).startsWith("这次会走热交接"), run.stdout);
         assertEquals("只看不动：把正在跑的实例换成 " + NEW + " 会怎么走。", firstLine(run.stdout),
                 "首行应是只看不动，实际：" + run.stdout);
         assertTrue(run.stdout.contains("目标版本带 handover=1：是"), run.stdout);
         assertTrue(run.stdout.contains("旧版拿着单实例锁：是"), run.stdout);
-        assertTrue(run.stdout.contains("可用内存不少于目标的内存上限（可用 7.6G，上限 1.2G）：是"),
-                run.stdout);
-        assertEquals("这次会走热交接：先起 " + NEW + "，等它到门口再停 " + OLD + "。", lastLine(run.stdout),
-                "末行应是热交接，实际：" + lastLine(run.stdout));
+        assertMemoryCondition(run, "600M", "512M", "是");
+        assertFalse(calledPrefix(world, "show -p MemoryHigh "), calls(world).toString());
         assertLookOnly(world);
     }
 
@@ -942,13 +949,59 @@ class SwitchVersionToolTest {
     @DisplayName("预演：内存不够就普通重启")
     void planOrdinaryBecauseMemoryShort(@TempDir Path dir) throws Exception {
         World world = lay(dir, true, false, true, "ordinary", OLD);
+        setAvailableMib(world, 400);
         Run run = runPlan(world);
 
-        assertEquals(0, run.code, "预演应退 0，实际输出：" + run.stdout + run.stderr);
-        assertTrue(run.stdout.contains("可用内存不少于目标的内存上限（可用 98M，上限 1.2G）：否"),
-                run.stdout);
-        assertEquals("这次会走普通重启：内存不够。先停 " + OLD + "，再起 " + NEW + "。",
-                lastLine(run.stdout), "末行应带上内存不够，实际：" + lastLine(run.stdout));
+        assertEquals(0, run.code, run.stdout + run.stderr);
+        assertMemoryCondition(run, "400M", "512M", "否");
+        String last = lastLine(run.stdout);
+        assertTrue(last.startsWith("这次会走普通重启") && last.contains("内存不够")
+                && last.contains("可用 400M") && last.contains("要 512M"), run.stdout);
+        assertLookOnly(world);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"1G, 1G, 否", "600m, 600m, 是", "0.5859375G, 0.5859375G, 是",
+            "629145600, 629145600B, 是", "629145601, 629145601B, 否"})
+    @DisplayName("预演：按配置的起步内存判断，达到门槛就允许热交接")
+    void planUsesConfiguredMinimum(String minimum, String need, String verdict, @TempDir Path dir) throws Exception {
+        World world = lay(dir, true, true, true, "hot-ok", OLD);
+        setAvailableMib(world, 600);
+        world.handoverMinAvail = minimum;
+        Run run = runPlan(world);
+
+        assertEquals(0, run.code, run.stdout + run.stderr);
+        assertMemoryCondition(run, "600M", need, verdict);
+        String route = verdict.equals("是") ? "这次会走热交接" : "这次会走普通重启";
+        assertTrue(lastLine(run.stdout).startsWith(route), run.stdout);
+        assertLookOnly(world);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @DisplayName("起步内存设置无效时，预演和换版都报错且不改机器")
+    void invalidMinimumRefusesSwitch(boolean plan, @TempDir Path dir) throws Exception {
+        World world = lay(dir, true, true, true, "hot-ok", OLD);
+        world.handoverMinAvail = "abc";
+        Run run = run(world, world.target, plan);
+
+        assertNotEquals(0, run.code, run.stdout + run.stderr);
+        assertTrue(run.stderr.lines().anyMatch(line -> line.contains("NOVABOT_HANDOVER_MIN_AVAIL")
+                && line.contains("abc") && line.contains("无效")), run.stderr);
+        assertLookOnly(world);
+    }
+
+    @Test
+    @DisplayName("预演：缺少 MemAvailable 时仍因读不到可用内存走普通重启")
+    void planOrdinaryBecauseMemoryUnavailable(@TempDir Path dir) throws Exception {
+        World world = lay(dir, true, true, true, "ordinary", OLD);
+        write(world.meminfo, "MemTotal: 2097152 kB\n");
+        Run run = runPlan(world);
+
+        assertEquals(0, run.code, run.stdout + run.stderr);
+        assertMemoryCondition(run, "读不到", "512M", "读不到");
+        String last = lastLine(run.stdout);
+        assertTrue(last.startsWith("这次会走普通重启") && last.contains("读不到可用内存"), run.stdout);
         assertLookOnly(world);
     }
 
@@ -1152,6 +1205,10 @@ class SwitchVersionToolTest {
         Files.createDirectories(world.install.resolve("releases/" + version));
     }
 
+    private static void setAvailableMib(World world, int mib) throws IOException {
+        write(world.meminfo, "MemTotal: 2097152 kB\nMemAvailable: " + (mib * 1024) + " kB\n");
+    }
+
     private static Run run(World world) throws Exception {
         return run(world, world.target, false);
     }
@@ -1253,6 +1310,10 @@ class SwitchVersionToolTest {
         builder.environment().put("NOVABOT_STUB_ENABLED", enabled);
         builder.environment().put("NOVABOT_STUB_SCENE", world.scene);
         builder.environment().put("NOVABOT_STUB_MEMORY_HIGH", "1.2G");
+        builder.environment().remove("NOVABOT_HANDOVER_MIN_AVAIL");
+        if (world.handoverMinAvail != null) {
+            builder.environment().put("NOVABOT_HANDOVER_MIN_AVAIL", world.handoverMinAvail);
+        }
         builder.environment().put("NOVABOT_STUB_USER", "starbot");
         builder.environment().put("NOVABOT_STUB_SLOW_STOP", world.slowStop);
         builder.environment().put("NOVABOT_STUB_OLD_STOP_RESULTS", world.oldStopResults);
@@ -1381,6 +1442,12 @@ class SwitchVersionToolTest {
                 "只看不动不该改状态目录的属主，实际：" + read(world.logs.resolve("chown.log")));
     }
 
+    private static void assertMemoryCondition(Run run, String available, String need, String verdict) {
+        assertTrue(run.stdout.lines().anyMatch(line -> line.startsWith("可用内存不少于新版起步要的量")
+                && line.contains("可用 " + available + "，要 " + need + "）") && line.endsWith("：" + verdict)),
+                run.stdout);
+    }
+
     private static String lastLine(String text) {
         String trimmed = text.strip();
         if (trimmed.isEmpty()) {
@@ -1441,6 +1508,7 @@ class SwitchVersionToolTest {
         String scene;
         String active;
         String target;
+        String handoverMinAvail;
         String slowStop;
         String oldStopResults = "";
         boolean oldStopQueryFails;
