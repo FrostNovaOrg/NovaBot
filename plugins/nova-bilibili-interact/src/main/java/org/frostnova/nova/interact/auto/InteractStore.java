@@ -10,14 +10,17 @@ import org.frostnova.nova.interact.danmaku.LiveDanmakuService.Room;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** 设置立即存盘，发送记录随核心的运行状态定期存盘。 */
 @NovaComponent
 public class InteractStore {
     private static final String THANKED = "LiveInteractThanked";
+    private static final String PK_BATTLES = "pkBattles";
     private static final String SETTINGS = "LiveInteractSettings";
     private static final String HISTORY = "LiveInteractHistory";
     private static final int LIMIT = 2000;
@@ -60,16 +63,57 @@ public class InteractStore {
     }
 
     void rememberThanked(long uid, long start, String feature, Set<String> viewers) {
-        String key = String.valueOf(uid);
         store.write(THANKED, root -> {
-            JSONObject session = root.getJSONObject(key);
-            if (session == null || session.getLongValue("start") != start) {
-                session = JSONObject.of("start", start);
-                root.put(key, session);
-            }
+            JSONObject session = broadcast(root, uid, start);
             session.putIfAbsent(feature, new JSONArray());
             session.getJSONArray(feature).addAll(viewers);
         });
+    }
+
+    record PkProgress(Instant expires, Set<Long> opponents) {}
+
+    Map<String, PkProgress> pkBattles(long uid, long start) {
+        String key = String.valueOf(uid);
+        return store.read(THANKED, key, root -> {
+            Map<String, PkProgress> battles = new HashMap<>();
+            JSONObject session = root.getJSONObject(key);
+            if (session.getLongValue("start") != start) return battles;
+            PkProgress alreadyAnnounced = new PkProgress(Instant.MIN, Set.of());
+            JSONObject saved = session.getJSONObject(PK_BATTLES);
+            if (saved != null) {
+                for (String id : saved.keySet()) {
+                    JSONObject battle = saved.getJSONObject(id);
+                    JSONArray opponents = battle == null ? null : battle.getJSONArray("opponents");
+                    battles.put(id, opponents == null ? alreadyAnnounced : new PkProgress(
+                            Instant.ofEpochMilli(battle.getLongValue("expires")), new HashSet<>(opponents.toList(Long.class))));
+                }
+            }
+            // 旧记录只记场次号，整场都已经处理过。
+            JSONArray legacy = session.getJSONArray(PkAnnouncement.FEATURE);
+            if (legacy != null) {
+                for (String id : legacy.toList(String.class)) battles.put(id, alreadyAnnounced);
+            }
+            return battles;
+        }).orElseGet(HashMap::new);
+    }
+
+    void rememberPk(long uid, long start, String id, PkProgress battle) {
+        store.write(THANKED, root -> {
+            JSONObject session = broadcast(root, uid, start);
+            session.putIfAbsent(PK_BATTLES, new JSONObject());
+            session.getJSONObject(PK_BATTLES).put(id, JSONObject.of("expires", battle.expires().toEpochMilli(),
+                    "opponents", new JSONArray(battle.opponents())));
+        });
+    }
+
+    private static JSONObject broadcast(JSONObject root, long uid, long start) {
+        String key = String.valueOf(uid);
+        JSONObject session = root.getJSONObject(key);
+        if (session == null || session.getLongValue("start") != start) {
+            session = JSONObject.of("start", start);
+            root.put(key, session);
+        }
+        return session;
     }
 
     void forgetThanked(long uid) {

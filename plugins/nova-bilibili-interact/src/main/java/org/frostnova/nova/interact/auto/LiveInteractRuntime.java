@@ -33,11 +33,13 @@ import org.frostnova.nova.core.event.live.common.MembershipEvent;
 import org.frostnova.nova.core.model.PushUser;
 import org.frostnova.nova.core.plugin.NovaComponent;
 import org.frostnova.nova.interact.danmaku.LiveDanmakuService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -46,22 +48,32 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 @NovaComponent
 public class LiveInteractRuntime {
+    static final Duration DEFAULT_PK_LOOKUP_TIMEOUT = Duration.ofSeconds(10);
+
     private final AutoDanmakuQueue queue;
     private final InteractStore store;
     private final LiveDanmakuService sender;
     private final BilibiliPkOpponentService opponents;
+    private final Duration pkLookupTimeout;
     private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread thread = new Thread(r, "live-interact-send");
         thread.setDaemon(true);
         return thread;
     });
 
+    @Autowired
     public LiveInteractRuntime(AutoDanmakuQueue queue, InteractStore store, LiveDanmakuService sender,
                                BilibiliPkOpponentService opponents) {
+        this(queue, store, sender, opponents, DEFAULT_PK_LOOKUP_TIMEOUT);
+    }
+
+    LiveInteractRuntime(AutoDanmakuQueue queue, InteractStore store, LiveDanmakuService sender,
+                        BilibiliPkOpponentService opponents, Duration pkLookupTimeout) {
         this.opponents = opponents;
         this.queue = queue;
         this.store = store;
         this.sender = sender;
+        this.pkLookupTimeout = pkLookupTimeout;
     }
 
     @Order(2)
@@ -124,12 +136,11 @@ public class LiveInteractRuntime {
 
     @EventListener
     public void pk(BilibiliPkBattleEvent event) {
-        if (event.getStage() != Stage.OPEN || event.getPkId() == null || event.getPkId() <= 0
-                || event.getOpponents() == null || event.getOpponents().isEmpty()) return;
-        var announce = queue.beginPk(event);
-        if (announce != null) {
-            opponents.lookup(event.getPkId(), event.getOpponents().get(0))
-                    .completeOnTimeout(null, 10, TimeUnit.SECONDS).thenAccept(announce);
+        if (event.getStage() != Stage.OPEN || event.getPkId() == null || event.getPkId() <= 0) return;
+        for (var lookup : queue.beginPk(event)) {
+            opponents.lookup(event.getPkId(), lookup.opponent())
+                    .completeOnTimeout(null, pkLookupTimeout.toMillis(), TimeUnit.MILLISECONDS)
+                    .whenComplete((profile, failure) -> lookup.complete().accept(profile));
         }
     }
 

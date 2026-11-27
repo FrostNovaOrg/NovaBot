@@ -25,6 +25,7 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -58,6 +59,10 @@ abstract class RoomInteractionFixture {
 
     @BeforeEach
     void start() {
+        start(LiveInteractRuntime.DEFAULT_PK_LOOKUP_TIMEOUT);
+    }
+
+    void start(Duration pkLookupTimeout) {
         core.getLive().setLiveDataPath(dir.resolve("live.json").toString());
         var live = mock(LiveDataService.class);
         when(live.getLiveStartTime("bilibili", 101L)).thenAnswer(i -> Optional.of(broadcastStart));
@@ -83,7 +88,8 @@ abstract class RoomInteractionFixture {
         queue = new AutoDanmakuQueue(sender, live, store, () -> now);
         sender.rooms().forEach(queue::register);
         events = new AnnotationConfigApplicationContext();
-        events.registerBean(LiveInteractRuntime.class, () -> new LiveInteractRuntime(queue, store, sender, opponents));
+        events.registerBean(LiveInteractRuntime.class,
+                () -> new LiveInteractRuntime(queue, store, sender, opponents, pkLookupTimeout));
         events.refresh();
     }
 
