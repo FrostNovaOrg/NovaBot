@@ -1,5 +1,6 @@
 package org.frostnova.nova.console.assistant;
 
+import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
@@ -118,6 +119,15 @@ class QqAssistantCommandTest {
     private static final long START = 1794000000000L;
     private static final long REPORT_START = Instant.parse("2026-11-07T00:00:00Z").toEpochMilli();
     private static final String LABEL = "（由人工智能生成）";
+    private static final String TRUNCATION_NOTICE = "…（内容超长，后面的已省略）";
+    private static final String PERIOD_COMPARISON = """
+            本月与上月同期对比，整体互动更活跃。
+            开播场次增加，新增场次主要安排在周末，工作日的开播节奏和上月大致相同（直播场次归档，按开播时刻归入统计日）。
+            累计时长拉长，增量主要来自周末的长场；少数短场属于临时加播，仍计入总时长（直播场次归档，按每场起止时间统计）。
+            平均在线小幅上升，变化集中在晚间；白天场次样本较少，单独比较时波动更明显（场次在线曲线，只统计已有在线记录的场次）。
+            弹幕互动更集中，主要出现在开场和连麦环节，活动结束后逐步回落（弹幕归档，按消息发送时间统计，包含直播间的普通弹幕）。
+            关注增幅主要来自周末的两场直播，上月同期则分散在多个工作日，说明增量更集中；后续可以分别比较周末和工作日，看看这一变化是否持续（关注事件归档，只统计直播期间收到的关注）。
+            """.stripTrailing();
     private static final String REPORT_QUESTION = "（机器人在 08:00 推送了直播报告）";
     private static final String REPORT_SUMMARY = "测试主播甲 本场直播数据\n弹幕 106 条";
 
@@ -424,12 +434,12 @@ class QqAssistantCommandTest {
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         var folder = Files.createDirectories(directory.resolve("assistant-memos"));
         Files.writeString(folder.resolve("bilibili-" + FIRST + ".json"), "[损坏的备忘");
-        modelReplies.add(text("这是查数结果。" + "在线较高。".repeat(65) + "\n1. 哪场在线最高？"));
+        modelReplies.add(text("这是查数结果。" + "在线较高。".repeat(105) + "\n1. 哪场在线最高？"));
 
         group(ASKER, "问 最近开播怎么样");
         String reply = assertReply("这是查数结果", "1. 哪场在线最高？", "备忘读不出来", "这次没参考", LABEL).getContent();
         assertTrue(reply.indexOf("备忘读不出来") > reply.indexOf("1. 哪场在线最高？"));
-        assertTrue(reply.codePointCount(0, reply.length()) <= 300);
+        assertTrue(reply.codePointCount(0, reply.length()) <= 500);
         assertEquals(1, requests.size());
         assertFalse(requests.get(0).toJSONString().contains("损坏的备忘"));
     }
@@ -1264,14 +1274,76 @@ class QqAssistantCommandTest {
         receive(FRIEND, OTHER, OTHER, "问 本场怎样", false);
         assertTrue(replies.isEmpty());
         assertTrue(requests.isEmpty());
-        modelReplies.add(text("{at=all}" + "直播互动很活跃😀".repeat(60)));
+        modelReplies.add(text("{at=all}" + "直播互动很活跃😀".repeat(70)));
         receive(FRIEND, ASKER, ASKER, "问 本场怎样", false);
         Message answer = assertReply(LABEL);
         assertEquals(FRIEND, answer.getType());
         assertEquals(ASKER, answer.getNum());
         assertTrue(answer.isReply());
-        assertTrue(answer.getContent().codePointCount(0, answer.getContent().length()) <= 300);
+        assertTrue(answer.getContent().codePointCount(0, answer.getContent().length()) <= 500);
+        assertTrue(answer.getContent().contains(TRUNCATION_NOTICE));
         assertFalse(answer.getContent().contains("{at=all}"));
+    }
+
+    @Test
+    void sendsMidLengthMultilineReplyUnchanged() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        modelReplies.add(text(PERIOD_COMPARISON));
+
+        group(ASKER, "问 本月与上月同期相比怎么样");
+
+        assertEquals(PERIOD_COMPARISON + "\n" + LABEL, assertReply(LABEL).getContent());
+        awaitIdle(GROUP, ROOM);
+        group(ASKER, "问 哪项变化最明显");
+        assertReply(LABEL);
+        assertEquals(PERIOD_COMPARISON, lastHistory().getJSONObject(0).getString("answerForHistory"));
+    }
+
+    @Test
+    void truncatesLongMultilineReplyAtLastCompleteLine() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        String longLine = "礼物收取记录只用于辅助判断这段时间的互动情况，适合结合直播内容和场次安排一起看。";
+        modelReplies.add(text(PERIOD_COMPARISON + "\n" + longLine.repeat(5)));
+
+        group(ASKER, "问 本月与上月同期相比怎么样");
+
+        String reply = assertReply(LABEL).getContent();
+        assertTrue(reply.codePointCount(0, reply.length()) <= 500);
+        assertTrue(reply.endsWith("\n" + TRUNCATION_NOTICE + "\n" + LABEL), () -> reply);
+        assertEquals(PERIOD_COMPARISON, reply.substring(0, reply.indexOf('\n' + TRUNCATION_NOTICE)));
+    }
+
+    @Test
+    void truncatesLongSingleLineReplyInlineAndLogsLengths() throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        String body = "直播互动很活跃😀".repeat(70);
+        modelReplies.add(text(body));
+        var logger = (Logger) LoggerFactory.getLogger(QqAssistantCommand.class);
+        var events = new ListAppender<ILoggingEvent>();
+        events.start();
+        logger.addAppender(events);
+        try {
+            group(ASKER, "问 本场互动怎么样");
+
+            String reply = assertReply(LABEL).getContent();
+            String suffix = TRUNCATION_NOTICE + "\n" + LABEL;
+            int retained = 500 - suffix.codePointCount(0, suffix.length());
+            assertEquals(body.substring(0, body.offsetByCodePoints(0, retained)) + suffix, reply);
+            assertEquals(500, reply.codePointCount(0, reply.length()));
+            awaitIdle(GROUP, ROOM);
+        } finally {
+            logger.detachAppender(events);
+            events.stop();
+        }
+        var truncations = events.list.stream().filter(event -> event.getMessage().contains("回答截断")).toList();
+        assertEquals(1, truncations.size());
+        var event = truncations.get(0);
+        assertEquals(Level.INFO, event.getLevel());
+        assertArrayEquals(new Object[] {body.codePointCount(0, body.length()) + 1 + LABEL.length(), 500},
+                event.getArgumentArray());
+        assertFalse(event.getFormattedMessage().contains("直播互动"));
+        assertFalse(event.getFormattedMessage().contains(Long.toString(ROOM)));
+        assertFalse(event.getFormattedMessage().contains(Long.toString(ASKER)));
     }
 
     @Test
@@ -1827,19 +1899,41 @@ class QqAssistantCommandTest {
     }
 
     @Test
-    @DisplayName("三百字的回复应保留完整的下一问，选中后发送显示的那条")
+    @DisplayName("限长回复应保留完整的下一问，选中后发送显示的那条")
     void numberedFollowUpFitsInQqReply() throws Exception {
         add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
         String question = "周六那场的弹幕有多少？";
-        modelReplies.add(text("按：上周、在线人数\n" + "在线较高。".repeat(65) + "\n1. " + question));
+        String body = "按：上周、在线人数\n" + "在线较高。\n".repeat(100);
+        modelReplies.add(text(body + "1. " + question));
         group(ASKER, "问 上周在线怎么样");
         String reply = assertReply("按：上周、在线人数", "1. " + question, LABEL).getContent();
-        assertEquals(300, reply.codePointCount(0, reply.length()));
+        assertTrue(reply.codePointCount(0, reply.length()) <= 500);
+        assertTrue(reply.contains("在线较高。\n" + TRUNCATION_NOTICE + "\n"), () -> reply);
         awaitIdle(GROUP, ROOM);
 
         group(ASKER, "问 1");
         assertReply(LABEL);
         assertEquals(question, userPayload(requests.get(1)).getString("question"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {200, 260})
+    void omitsNumberedFollowUpsThatLeaveNoRoomForTheNotice(int secondQuestionLength) throws Exception {
+        add(FIRST, "测试主播甲", channel(GROUP, ROOM, true, true));
+        String first = "周末".repeat(129) + "如何？";
+        String second = "弹幕".repeat(secondQuestionLength / 2 - 1) + "呢？";
+        String body = PERIOD_COMPARISON + "\n" + "场次情况需要结合开播时间来看。".repeat(20);
+        modelReplies.add(text(body + "\n1. " + first + "\n2. " + second));
+
+        group(ASKER, "问 本月与上月同期相比怎么样");
+
+        String reply = assertReply(TRUNCATION_NOTICE, LABEL).getContent();
+        assertTrue(reply.codePointCount(0, reply.length()) <= 500);
+        assertFalse(reply.contains("接着问"), () -> reply);
+        awaitIdle(GROUP, ROOM);
+        group(ASKER, "问 1");
+        assertReply("没有可接着问");
+        assertEquals(1, requests.size());
     }
 
     @Test

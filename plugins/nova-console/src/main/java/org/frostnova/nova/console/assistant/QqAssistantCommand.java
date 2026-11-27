@@ -59,13 +59,15 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
     private static final String BUSY = "上一个问题还在查，稍等";
     private static final String UNAVAILABLE = "智能助手暂时无法回答，请稍后再试";
     private static final String LABEL = "\n（由人工智能生成）";
+    private static final String TRUNCATION_NOTICE = "…（内容超长，后面的已省略）";
+    private static final int TRUNCATION_NOTICE_LENGTH = TRUNCATION_NOTICE.codePointCount(0, TRUNCATION_NOTICE.length());
     private static final String NO_FOLLOW_UP = "没有可接着问的这个编号，请用「问 〈问题〉」提问";
     private static final String ANALYSIS_NOTICE = "这个问题要多想一会儿，大约半分钟到一分钟";
     private static final String USAGE = "请用「问 〈问题〉」发送 1–300 字的问题";
     private static final String MORE_EXAMPLES = """
             问 最近 30 天各钟点平均在线
             问 上周送礼榜前十""";
-    private static final int ANSWER_LIMIT = 300;
+    private static final int ANSWER_LIMIT = 500;
     private static final int COMPARISON_LIMIT = 5;
     private static final int ACK_SECONDS = 8;
     private static final Duration CHOICE_TTL = Duration.ofMinutes(2);
@@ -384,16 +386,22 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
             String budgetNotice = result.getString("budgetNotice");
             if (budgetNotice != null) tail = "\n" + budgetNotice + tail;
             var images = result.getJSONArray("images");
-            int limit = ANSWER_LIMIT - tail.codePointCount(0, tail.length());
+            int tailLength = tail.codePointCount(0, tail.length());
+            int textLength = text.codePointCount(0, text.length());
             var followUps = answer.followUps();
             String guidance = numberedGuidance(context, followUps);
             int guidanceLength = guidance.codePointCount(0, guidance.length());
-            if (guidanceLength >= limit) {
+            int bodyLimit = ANSWER_LIMIT - tailLength - guidanceLength;
+            if (bodyLimit <= 0 || bodyLimit < Math.min(textLength, TRUNCATION_NOTICE_LENGTH)) {
                 guidance = "";
-                guidanceLength = 0;
                 followUps = List.of();
+                bodyLimit = ANSWER_LIMIT - tailLength;
             }
-            return new QqAnswer(clip(text, limit - guidanceLength) + guidance + tail,
+            if (textLength > bodyLimit) {
+                log.info("QQ 智能助手回答截断，原字数 {}，上限 {}", textLength + guidanceLength + tailLength, ANSWER_LIMIT);
+                text = clipReplyBody(text, bodyLimit);
+            }
+            return new QqAnswer(text + guidance + tail,
                     images == null ? List.of() : images.toJavaList(String.class), answer.reportImages(), amountVisible,
                     followUps.stream().map(AssistantAskService.FollowUp::question).toList());
         } catch (AssistantException error) {
@@ -568,6 +576,13 @@ public class QqAssistantCommand implements CommandFallback, CommandFollowUp, Rep
     private static String clip(String text, int limit) {
         if (text.codePointCount(0, text.length()) <= limit) return text;
         return text.substring(0, text.offsetByCodePoints(0, limit - 1)).stripTrailing() + "…";
+    }
+
+    private static String clipReplyBody(String text, int limit) {
+        int end = text.offsetByCodePoints(0, limit - TRUNCATION_NOTICE_LENGTH);
+        int newline = text.lastIndexOf('\n', end - 1);
+        if (newline >= 0) return text.substring(0, newline + 1) + TRUNCATION_NOTICE;
+        return text.substring(0, end).stripTrailing() + TRUNCATION_NOTICE;
     }
 
     private static Thread daemon(Runnable task, String name) {
