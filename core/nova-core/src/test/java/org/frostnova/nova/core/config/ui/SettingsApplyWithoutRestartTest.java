@@ -45,7 +45,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.web.filter.ForwardedHeaderFilter;
+import org.frostnova.nova.core.web.TrustedProxyForwardedHeaderFilter;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -118,7 +118,7 @@ class SettingsApplyWithoutRestartTest {
         // 两样与运行中相同：代理头过滤器排在最前；读请求体时把机密项交给日志遮蔽
         mvc = MockMvcBuilders.standaloneSetup(settings)
                 .setControllerAdvice(new ConsoleCredentialLogAdvice(new ConfigurationMetadataService()))
-                .addFilters(new ForwardedHeaderFilter()).build();
+                .addFilters(new TrustedProxyForwardedHeaderFilter(List.of())).build();
     }
 
     private JSONObject save(Map<String, String> changes, int status) throws Exception {
@@ -524,7 +524,7 @@ class SettingsApplyWithoutRestartTest {
             }
             MockHttpServletResponse response = new MockHttpServletResponse();
             List<Object> reasons = new ArrayList<>();
-            new ForwardedHeaderFilter().doFilter(request, response, (rewritten, out) -> {
+            new TrustedProxyForwardedHeaderFilter(List.of()).doFilter(request, response, (rewritten, out) -> {
                 filter.doFilter(rewritten, out, (passed, ignored) -> { });
                 reasons.add(rewritten.getAttribute(ConfigUiOperationFilter.REASON));
             });

@@ -1,6 +1,7 @@
 package org.frostnova.nova.core.api;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.frostnova.nova.core.web.TrustedProxyForwardedHeaderFilter;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -19,9 +20,18 @@ import java.util.regex.Pattern;
  * （推送接口另有自己的「信任反向代理」开关）。全局的 {@code server.forward-headers-strategy} 也不靠它——
  * 打开那一项会把事件流「只认本机回环」的判据一并改写。
  *
+ * <h2>开着 {@code server.forward-headers-strategy=framework} 时</h2>
+ * 转发头过滤器（{@link TrustedProxyForwardedHeaderFilter}）排在最前，先改写了对端、删掉了转发头。
+ * 它经手过的请求按它记下的到达原样判：直接对端是回环、请求原本不带任何一种转发头，才算本机；
+ * 原本带过的不算本机，来访地址取它按可信代理送来的 {@code X-Forwarded-For} 改写出来的那个，
+ * 对端是回环而没有这样的地址时当作未知来访者。下面的判法是它没经手过的请求（没开这一项、用 {@code native}，
+ * 或请求不带任何转发头）的判法。
+ *
  * <h2>判法</h2>
  * <ol>
- *   <li>对端不是本机回环：来访者就是对端，转发头一概不看。外面直连进来的人写什么头都冒充不了本机。</li>
+ *   <li>对端不是本机回环：来访者就是对端，转发头一概不看。外面直连进来的人写什么头都冒充不了本机
+ *       （开着 {@code framework} 时这一条照样成立：直连进来的人自带的转发头不会把对端改写成回环，
+ *       请求原本带过转发头也就不算本机）。</li>
  *   <li>对端是本机回环、请求里没有转发头（{@code X-Forwarded-For}、{@code X-Real-IP}、{@code Forwarded}
  *       三种都没有）：本机来访。</li>
  *   <li>对端是本机回环、带了转发头：当作经本机上的反向代理进来，来访者取转发头里离 NovaBot 最近的那一段：
@@ -59,9 +69,9 @@ public record NovaApiVisitor(String address, Kind kind) {
         DIRECT,
         /** 本机直连：对端是回环，没带转发头 */
         LOCAL,
-        /** 经本机的反向代理进来，取自转发头 */
+        /** 经反向代理进来，取自转发头（开着 framework 时取自可信代理送来的 X-Forwarded-For） */
         PROXIED,
-        /** 经本机的反向代理进来，但转发头解析不出合法地址，或几种头说的不是同一个 */
+        /** 经反向代理进来，但转发头解析不出合法地址、几种头说的不是同一个，或没有能采信的地址 */
         UNKNOWN
     }
 
@@ -93,6 +103,10 @@ public record NovaApiVisitor(String address, Kind kind) {
      * @return 来访者
      */
     public static NovaApiVisitor of(HttpServletRequest request) {
+        TrustedProxyForwardedHeaderFilter.Arrival arrival = TrustedProxyForwardedHeaderFilter.arrival(request);
+        if (arrival != null) {
+            return behindForwardedHeaderFilter(request, arrival);
+        }
         String peer = request.getRemoteAddr();
         if (!loopback(peer)) {
             return new NovaApiVisitor(peer, Kind.DIRECT);
@@ -123,6 +137,29 @@ public record NovaApiVisitor(String address, Kind kind) {
     }
 
     /**
+     * 开着 {@code server.forward-headers-strategy=framework}、转发头过滤器经手过这个请求时
+     * <p>
+     * 那一道排在最前，已经改写了对端地址、删掉了转发头，这里看到的不是原样。「本机」按它记下的到达原样判：
+     * 直接对端是回环、请求原本不带任何一种转发头，才算本机。原本带过的，转发头写着什么都不算本机；
+     * 来访地址只取那一道按可信代理送来的 {@code X-Forwarded-For} 改写出来的那个（与控制台看到的是同一个），
+     * {@code Forwarded}、{@code X-Real-IP} 不拿来定地址。
+     * 对端是回环、转发头里又没有能采信的地址，或改写出来的不是 IP 字面量，都当作未知来访者。
+     */
+    private static NovaApiVisitor behindForwardedHeaderFilter(HttpServletRequest request,
+                                                              TrustedProxyForwardedHeaderFilter.Arrival arrival) {
+        String peer = arrival.peer();
+        if (!arrival.forwarded()) {
+            return new NovaApiVisitor(peer, loopback(peer) ? Kind.LOCAL : Kind.DIRECT);
+        }
+        if (arrival.rewritten()) {
+            InetAddress address = literal(request.getRemoteAddr());
+            return address == null ? new NovaApiVisitor(null, Kind.UNKNOWN)
+                    : new NovaApiVisitor(address.getHostAddress(), Kind.PROXIED);
+        }
+        return loopback(peer) ? new NovaApiVisitor(null, Kind.UNKNOWN) : new NovaApiVisitor(peer, Kind.DIRECT);
+    }
+
+    /**
      * 无效令牌限速按哪一格记
      * <p>
      * 能判出地址的按地址（IPv6 再由限速那边归成 /64）；未知来访者共用一格，
@@ -142,8 +179,8 @@ public record NovaApiVisitor(String address, Kind kind) {
     public String describe() {
         return switch (kind) {
             case DIRECT, LOCAL -> address;
-            case PROXIED -> address + "（经本机反向代理）";
-            case UNKNOWN -> "未知来访者（经本机反向代理，转发头里认不出来访地址）";
+            case PROXIED -> address + "（经反向代理）";
+            case UNKNOWN -> "未知来访者（经反向代理，转发头里认不出来访地址）";
         };
     }
 

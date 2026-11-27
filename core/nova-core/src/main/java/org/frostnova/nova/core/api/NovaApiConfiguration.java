@@ -31,7 +31,8 @@ public class NovaApiConfiguration {
     /**
      * 与控制台安全过滤器同一档：安全响应头那道仍排在前面。
      * 来访者由这道过滤器自己判（{@link NovaApiVisitor}），不靠 {@code server.forward-headers-strategy}；
-     * 若有人开了那一项，框架改写来源地址的那一步照样排在前面，这里看到的对端就是改写之后的那个
+     * 若有人开了 {@code framework}，转发头过滤器（{@code TrustedProxyForwardedHeaderFilter}）照样排在前面，
+     * 这里看到的对端是改写之后的那个，「本机」则按那一道记下的到达原样判
      */
     public static final int FILTER_ORDER = ConfigUiRegistrar.FILTER_ORDER;
 

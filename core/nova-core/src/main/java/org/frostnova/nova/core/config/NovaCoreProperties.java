@@ -497,6 +497,17 @@ public class NovaCoreProperties {
         private volatile List<String> apiAnySourceGroups = new ArrayList<>();
 
         /**
+         * 另外信任的反向代理网段，每行一个 IP 或 CIDR 网段；默认为空。只在 server.forward-headers-strategy 设为 framework 时起作用：本机回环与私有网段已默认信任，只有从可信网段直接连进来的请求，X-Forwarded-* 才会被采信；Forwarded 头一律不认。
+         */
+        // 缺省网段与 Tomcat RemoteIpValve 缺省的 internal-proxies 同一套（TrustedProxyForwardedHeaderFilter）。
+        // 转发头过滤器启动时装配、读这一次；写错的那条启动时跳过并记一条警告，往不信任的方向走
+        @ConfigEffect(ConfigEffect.Effect.RESTART)
+        @ConfigLabel("可信反向代理 · 追加网段")
+        @ConfigLevel(ConfigLevel.Level.ADVANCED)
+        @ConfigSummary("每行一个 IP 或网段；本机与私有网段已默认信任。只在转发头策略设为 framework 时起作用。")
+        private List<String> trustedProxies = new ArrayList<>();
+
+        /**
          * 配置文件备份保留份数，单位：份，默认 10，可填 1 到 100；保存配置时自动另留带时间的备份，超出份数删最旧的。改完立即生效。
          */
         @ConfigEffect(ConfigEffect.Effect.IMMEDIATE)

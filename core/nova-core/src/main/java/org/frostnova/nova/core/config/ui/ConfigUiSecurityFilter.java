@@ -215,9 +215,11 @@ public class ConfigUiSecurityFilter extends OncePerRequestFilter {
      * 这个请求按哪个来源地址判名单
      * <p>
      * 保存名单时「会不会把自己挡在外面」那一问用的也是这里：两边必须是同一段代码。
-     * 开了 {@code server.forward-headers-strategy} 时，框架在本过滤器之前已按代理头改写了它，
-     * 两边看到的是同一个改写后的地址。统一接口面 {@code /nova/api/v1/} 不走这里，它自己判来访者
-     * （{@code NovaApiVisitor}：经本机反向代理进来的认转发头），控制台这边的判法不随之改变。
+     * 开了 {@code server.forward-headers-strategy=framework} 时，转发头过滤器在本过滤器之前已改写了它，
+     * 两边看到的是同一个改写后的地址：只有直接对端是可信代理（本机回环、私有网段与
+     * {@code novabot.core.config-ui.trusted-proxies} 里的网段）时才按它送来的 {@code X-Forwarded-For} 改写，
+     * {@code Forwarded} 一律不认（{@code TrustedProxyForwardedHeaderFilter}）。统一接口面 {@code /nova/api/v1/}
+     * 不走这里，它自己判来访者（{@code NovaApiVisitor}），控制台这边的判法不随之改变。
      * @param request 请求
      * @return 来源地址
      */

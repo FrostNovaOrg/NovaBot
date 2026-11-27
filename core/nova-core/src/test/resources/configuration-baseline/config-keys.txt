@@ -54,6 +54,7 @@ novabot.core.config-ui.oidc.management-uri|java.lang.String||账户中心管理�
 novabot.core.config-ui.oidc.redirect-uri|java.lang.String||回调地址，须与账户中心登记的值一致；留空时只在用本机地址打开控制台时按请求推导。
 novabot.core.config-ui.oidc.scopes|java.lang.String|openid profile email offline_access|空格分隔的授权范围，必须包含 openid。
 novabot.core.config-ui.token|java.lang.String||配置界面访问令牌。留空时每次启动自动生成一个随机令牌；没设登录密码时，带令牌的访问地址打在启动日志里。需要从其他机器访问时在这里填一个随机串。
+novabot.core.config-ui.trusted-proxies|java.util.List<java.lang.String>|[]|另外信任的反向代理网段，每行一个 IP 或 CIDR 网段；默认为空。只在 server.forward-headers-strategy 设为 framework 时起作用：本机回环与私有网段已默认信任，只有从可信网段直接连进来的请求，X-Forwarded-* 才会被采信；Forwarded 头一律不认。
 novabot.core.config-ui.update.enabled|java.lang.Boolean|true|是否检查新版。关掉后侧栏与首页的新版提醒都不再出现；程序不会自己更新，这是得知该换新版了的唯一入口。
 novabot.core.config-ui.update.source|java.lang.String|https://api.github.com/repos/FrostNovaOrg/NovaBot/releases/latest|新版信息的来源地址，默认指向发布仓的 latest release 接口；自建镜像时改这里。取不到时静默跳过，不变成控制台故障。
 novabot.core.datasource.json-auto-reload|java.lang.Boolean|true|JSON 文件发生变化时是否自动重载，仅使用 JSON 数据源时生效。

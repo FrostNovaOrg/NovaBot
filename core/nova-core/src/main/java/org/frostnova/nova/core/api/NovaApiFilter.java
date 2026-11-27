@@ -40,8 +40,9 @@ import java.util.function.Supplier;
  *   <li>路径写法：带分号、反斜杠、编码过的斜杠、{@code .}／{@code ..} 段的一律 400，与控制台同一组判据；
  *       各段解码之后再查一遍，是 {@code .}、{@code ..}，或含斜杠、反斜杠、控制字符的，也是 400；</li>
  *   <li>来源地址：先判出来访者（{@link NovaApiVisitor}：对端不是本机回环就是对端；是本机回环又带了转发头的，
- *       取转发头里离 NovaBot 最近的那一段）。只分两种：<b>本机</b>（对端是回环、请求不带任何转发头，
- *       {@link NovaApiVisitor.Kind#LOCAL}）直接过；别的来访者——直连的别的机器、经本机反向代理进来的，
+ *       取转发头里离 NovaBot 最近的那一段）。只分两种：<b>本机</b>（对端是回环、请求原本不带任何转发头，
+ *       {@link NovaApiVisitor.Kind#LOCAL}；开着 {@code server.forward-headers-strategy=framework} 时按转发头过滤器
+ *       记下的到达原样判）直接过；别的来访者——直连的别的机器、经反向代理进来的，
  *       转发头里写的是回环地址也一样——只有请求的这组接口在「对任何地址开放的接口组」里
  *       （{@link NovaApiOpenGroups}，每个请求现读）才接着往下走，否则 403。
  *       控制台「允许访问的来源 IP」名单不参与：那份名单只管控制台能从哪里打开。
@@ -205,7 +206,7 @@ public class NovaApiFilter extends OncePerRequestFilter {
         String which = group != null && !NovaApiRegistry.RESERVED.contains(group)
                 && registry.segments().contains(group) ? "这组接口（" + group + "）" : "这组接口";
         String who = visitor.kind() == NovaApiVisitor.Kind.UNKNOWN
-                ? "经本机反向代理进来、但转发头里认不出来访地址的请求，当作本机以外的来源。"
+                ? "经反向代理进来、但转发头里认不出来访地址的请求，当作本机以外的来源。"
                 : "这个请求不是从本机直接发来的（别的机器直连，或经反向代理转发进来）。";
         return who + which + "没有对本机以外的地址开放；管理员可在控制台「访问令牌」页的「从别的机器访问」里打开";
     }

@@ -19,7 +19,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockServletContext;
-import org.springframework.web.filter.ForwardedHeaderFilter;
+import org.frostnova.nova.core.web.TrustedProxyForwardedHeaderFilter;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -27,6 +27,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.Base64;
+import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -201,7 +202,7 @@ class ConfigUiOidcRedirectTest extends OidcTestSupport {
 
     private void assertResult(MockHttpServletRequest request, String prefix, String result) throws Exception {
         var response = new MockHttpServletResponse();
-        new ForwardedHeaderFilter().doFilter(request, response, (incoming, outgoing) ->
+        new TrustedProxyForwardedHeaderFilter(List.of()).doFilter(request, response, (incoming, outgoing) ->
                 controller.callback((HttpServletRequest) incoming, (HttpServletResponse) outgoing));
         String location = response.getHeader(HttpHeaders.LOCATION);
         System.out.printf("OIDC result=%s, configuredPrefix=%s, Location: %s%n", result, prefix, location);

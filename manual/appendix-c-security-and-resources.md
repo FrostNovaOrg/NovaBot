@@ -140,6 +140,23 @@ novabot:
 [SECURITY.md](https://github.com/FrostNovaOrg/NovaBot/blob/main/SECURITY.md) 的
 「关于反向代理」一节。
 
+### 控制台的来源地址
+
+控制台放在反向代理后面、要按真实来访地址判来源名单、登录锁定与 https 时，
+在 `application.yml` 里设 `server.forward-headers-strategy: framework`。开着它时，NovaBot 这样认转发头：
+
+- **只认可信代理送来的 `X-Forwarded-*`。** 直接连进来的那一端是可信代理时，才按它送来的 `X-Forwarded-For`、
+  `X-Forwarded-Proto`、`X-Forwarded-Host`、`X-Forwarded-Prefix` 认来访地址、协议与主机名（`X-Forwarded-For` 取最左一段）。
+  别的机器直接连到 NovaBot 的端口、自己带上这几个头，一概不认，这几个头也从请求里去掉。
+- **`Forwarded` 头一律不认**，谁送来的都一样。只发 `Forwarded`、不发 `X-Forwarded-*` 的反向代理，要改成发 `X-Forwarded-*`。
+- **可信代理默认是本机回环与私有网段**：`127.0.0.0/8`、`::1`、`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、
+  `169.254.0.0/16`、`100.64.0.0/10`、`fe80::/10`、`fc00::/7`，与 Tomcat 默认信任的是同一套。
+  反向代理不在这些网段里时，把它的地址或网段写进设置页的「可信反向代理 · 追加网段」
+  （`novabot.core.config-ui.trusted-proxies`，在高级设置里），每行一个，重启后生效；写错的那一条启动时跳过，日志里记一条警告。
+- **反向代理要覆写 `X-Forwarded-For`、清掉 `Forwarded`**：`proxy_set_header X-Forwarded-For $remote_addr;` 与
+  `proxy_set_header Forwarded "";`，下文的样板都这样写了。追加式的写法（`$proxy_add_x_forwarded_for`）会把客户端自己写的那一段
+  留在最左边，原因见 SECURITY.md 的「关于反向代理」一节。
+
 ### 让代理服务使用控制台会话
 
 代理可用 `GET /config/api/session-check` 检查会话是否有效；该接口接受所有有效角色。
@@ -161,6 +178,8 @@ location = /config/_admin-check {
     proxy_set_header Content-Length "";
     proxy_set_header Host $http_host;
     proxy_set_header Cookie $http_cookie;
+    proxy_set_header X-Forwarded-For $remote_addr;
+    proxy_set_header Forwarded "";
 }
 
 location /config/admin/ {
@@ -199,6 +218,7 @@ server {
     ssl_certificate_key /path/to/privkey.pem;
 
     # 控制台照原路径转发，登录与来源检查需要原样的 Host 和代理写入的来源头。
+    # X-Forwarded-For 只写 $remote_addr 一个地址（覆写，不追加）；客户端自己带来的 Forwarded 头清掉。
     location /config {
         proxy_pass http://127.0.0.1:7827;
         proxy_read_timeout 190s;
@@ -206,6 +226,7 @@ server {
         proxy_set_header X-Forwarded-Host $http_host;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Forwarded "";
     }
 
     # 程序接口：只转发 /nova/api/v1/，带上真实来访地址，NovaBot 才认得出是谁在调。
@@ -244,6 +265,7 @@ server {
         proxy_set_header X-Forwarded-Host $http_host;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Forwarded "";
     }
 
     # 直接访问不带尾斜杠的入口时，转到 WebUI 首页。
@@ -320,7 +342,8 @@ server {
 - **只转发 `/nova/api/v1/`。** 事件流 `/nova/events` 与只读口令代签发 `/nova/readonly-token` 不在这个前缀下，
   它们另有自己的转发写法（见发行包里的 Caddy 模板），不要顺手把整个 `/nova` 转出去。
 - **一定走 https。** 没有反向代理、直接把 NovaBot 的端口放到公网，令牌会明文经过网络。
-- 控制台 `/config` 的来源判断不随这一段改变：它看的仍是直接连进来的那一端，也就是本机的 nginx。
+- 控制台 `/config` 的来源判断不随这一段改变：没开 `server.forward-headers-strategy` 时它看的是直接连进来的那一端，
+  也就是本机的 nginx；开着 `framework` 时看的是 nginx 送来的 `X-Forwarded-For`（见上文「控制台的来源地址」）。
 
 只想让内网的机器调、或者用 SSH 隧道，不需要这一段，见[附录 B「从另一台机器连」](appendix-b-advanced.md#从另一台机器连)。
 
