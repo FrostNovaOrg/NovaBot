@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 /** 一场直播内配对进房消息与进场特效，并记录已经排过欢迎的观众。 */
 final class RoomWelcomes {
@@ -50,28 +51,43 @@ final class RoomWelcomes {
         }
     }
 
-    private record Pending(Entry entry, boolean effect, Instant until, boolean welcomeOnTimeout) {}
+    private record Pending(Entry entry, boolean effect, Instant until, boolean welcomeOnTimeout,
+                           boolean greeted, Consumer<Long> visitor) {}
 
-    void accept(Entry entry, boolean effect, Instant now, boolean paused, RoomSettings settings, Consumer<Entry> ready) {
-        if (entry.maskedName && (DanmakuTemplate.blank(entry.name) || !entry.hasRank())) return;
-        if (paused) {
-            ready.accept(entry);
+    void accept(Entry entry, boolean effect, Instant now, boolean paused, RoomSettings settings,
+                Predicate<Entry> welcome, Consumer<Long> visitor) {
+        if (entry.maskedName && (DanmakuTemplate.blank(entry.name) || !entry.hasRank())) {
+            if (visitor != null) visitor.accept(entry.uid);
             return;
         }
-        flush(now, ready);
+        if (paused) {
+            welcome.test(entry);
+            return;
+        }
+        flush(now, welcome);
         Pending other = counterpart(entry, effect);
         if (other != null) {
-            ready.accept(effect ? other.entry.withEffect(entry) : entry.withEffect(other.entry));
+            Entry paired = effect ? other.entry.withEffect(entry) : entry.withEffect(other.entry);
+            Consumer<Long> fallback = effect ? other.visitor : visitor;
+            if (!welcome.test(paired) && !other.greeted && fallback != null) fallback.accept(paired.uid);
             return;
         }
-        if (!entry.maskedName) {
-            ready.accept(entry);
-            // 名单称呼可直接用于特效。有名字但未知等级的进房消息则留给特效补齐。
-            if (!effect && (entry.hasRank() || seen.contains(entry.identity()))) return;
+        boolean greeted = !entry.maskedName && welcome.test(entry);
+        if (greeted) visitor = null;
+        // 等特效期间把串门欢迎留作后备，名单或大航海欢迎优先。
+        if (!effect && !entry.maskedName && (entry.hasRank() || seen.contains(entry.identity()))) {
+            if (visitor != null) visitor.accept(entry.uid);
+            return;
         }
         String key = effect ? "e:" + entry.uid : entry.identity();
         boolean welcomeOnTimeout = entry.maskedName && settings.allows(WelcomeSettings.GUARD);
-        waiting.putIfAbsent(key, new Pending(entry, effect, now.plusSeconds(PAIR_SECONDS), welcomeOnTimeout));
+        Pending previous = waiting.putIfAbsent(key,
+                new Pending(entry, effect, now.plusSeconds(PAIR_SECONDS), welcomeOnTimeout, greeted, visitor));
+        if (previous != null && !previous.greeted && visitor != null) {
+            // 仍用第一条进房消息配对特效，串门资格取自后来确实戴牌进房的那一次。
+            waiting.put(key, new Pending(previous.entry, previous.effect, previous.until,
+                    previous.welcomeOnTimeout, false, visitor));
+        }
     }
 
     private Pending counterpart(Entry entry, boolean effect) {
@@ -91,23 +107,23 @@ final class RoomWelcomes {
         return null;
     }
 
-    void flush(Instant now, Consumer<Entry> ready) {
+    void flush(Instant now, Predicate<Entry> welcome) {
         for (Iterator<Pending> it = waiting.values().iterator(); it.hasNext();) {
             Pending pending = it.next();
             if (pending.until.isAfter(now)) break;
             it.remove();
-            if (pending.welcomeOnTimeout) ready.accept(pending.entry);
+            boolean greeted = pending.welcomeOnTimeout && welcome.test(pending.entry);
+            if (!greeted && pending.visitor != null) pending.visitor.accept(pending.entry.uid);
         }
     }
 
     void configure(RoomSettings settings) {
-        if (settings.allows(WelcomeSettings.GUARD)) return;
-        if (settings.allows(WelcomeSettings.LISTED)) {
-            // 打码名字仍能与名单 UID 配对，但这条消息不能再单独发大航海欢迎。
-            waiting.replaceAll((key, p) -> p.welcomeOnTimeout ? new Pending(p.entry, p.effect, p.until, false) : p);
-        } else {
-            waiting.clear();
-        }
+        boolean guards = settings.allows(WelcomeSettings.GUARD);
+        boolean listed = settings.allows(WelcomeSettings.LISTED);
+        boolean visitors = settings.allows(PkFanWelcomes.FEATURE);
+        waiting.replaceAll((key, p) -> new Pending(p.entry, p.effect, p.until, guards && p.welcomeOnTimeout,
+                p.greeted, visitors ? p.visitor : null));
+        if (!guards && !listed) waiting.values().removeIf(p -> p.visitor == null);
     }
 
     record Greeting(String feature, String text) {}

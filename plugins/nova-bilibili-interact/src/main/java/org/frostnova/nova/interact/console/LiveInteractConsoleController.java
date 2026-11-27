@@ -130,6 +130,7 @@ public class LiveInteractConsoleController {
         var room = room(uid).orElseThrow(() -> new IllegalArgumentException("没有这位主播"));
         return response(HttpStatus.OK, JSONObject.of("success", true, "settings", store.settings(room.uid()),
                 "defaultPkTemplate", RoomSettings.defaultPkTemplate(), "defaultThanksTemplates", ThanksKind.defaultTemplates(),
+                "defaultPkFanWelcomeTemplate", RoomSettings.defaultPkFanWelcomeTemplate(),
                 "defaultWelcomeTemplates", WelcomeSettings.defaultTemplates()));
     }
 

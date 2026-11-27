@@ -11,7 +11,8 @@ import java.util.Map;
 
 /** 一位主播的自动弹幕设置。未列入 features 的功能默认关闭。 */
 public record RoomSettings(boolean enabled, int perMinute, Map<String, Boolean> features, List<Plan> plans,
-                           ThanksSettings thanks, WelcomeSettings welcome, List<KeywordRule> keywordRules, String pkTemplate) {
+                           ThanksSettings thanks, WelcomeSettings welcome, List<KeywordRule> keywordRules, String pkTemplate,
+                           String pkFanWelcomeTemplate, int pkFanWelcomeLimit) {
     public static final String TIMED = "timed";
     static final String PAUSE_ACTIVITIES = "pauseActivities";
     public static final RoomSettings DEFAULT = new RoomSettings(false, 6, Map.of(), List.of());
@@ -29,6 +30,15 @@ public record RoomSettings(boolean enabled, int perMinute, Map<String, Boolean> 
         this(enabled, perMinute, features, plans, thanks, welcome, List.of(), "");
     }
 
+    public RoomSettings(boolean enabled, int perMinute, Map<String, Boolean> features, List<Plan> plans,
+                        ThanksSettings thanks, WelcomeSettings welcome, List<KeywordRule> keywordRules, String pkTemplate) {
+        this(enabled, perMinute, features, plans, thanks, welcome, keywordRules, pkTemplate, "", PkFanWelcomes.DEFAULT_LIMIT);
+    }
+
+    public static String defaultPkFanWelcomeTemplate() {
+        return PkFanWelcomes.TEXT.defaultText();
+    }
+
     public static String defaultPkTemplate() {
         return PkAnnouncement.TEXT.defaultText();
     }
@@ -37,6 +47,8 @@ public record RoomSettings(boolean enabled, int perMinute, Map<String, Boolean> 
         keywordRules = List.copyOf(keywordRules);
         if (keywordRules.size() > 30) throw new IllegalArgumentException("关键词规则第 31 条超出上限，每位主播最多 30 条");
         pkTemplate = PkAnnouncement.TEXT.override(pkTemplate);
+        pkFanWelcomeTemplate = PkFanWelcomes.TEXT.override(pkFanWelcomeTemplate);
+        if (pkFanWelcomeLimit < 1 || pkFanWelcomeLimit > 20) throw new IllegalArgumentException("每场最多欢迎 1 至 20 位");
         if (perMinute < 1 || perMinute > 20) throw new IllegalArgumentException("每分钟上限应为 1 至 20 条");
         features = Map.copyOf(features);
         plans = List.copyOf(plans);
@@ -87,8 +99,11 @@ public record RoomSettings(boolean enabled, int perMinute, Map<String, Boolean> 
         }
         Object pkTemplate = json.get("pkTemplate");
         if (pkTemplate != null && !(pkTemplate instanceof String)) throw new IllegalArgumentException("PK 对手话术必须是文字");
+        Object visitorTemplate = json.get("pkFanWelcomeTemplate");
+        if (visitorTemplate != null && !(visitorTemplate instanceof String)) throw new IllegalArgumentException("PK 串门欢迎话术必须是文字");
         return new RoomSettings(flag(json, "enabled", false), number(json, "perMinute", 6), switches, plans,
-                ThanksSettings.parse(json), WelcomeSettings.parse(json), KeywordRule.parse(json), (String) pkTemplate);
+                ThanksSettings.parse(json), WelcomeSettings.parse(json), KeywordRule.parse(json), (String) pkTemplate,
+                (String) visitorTemplate, number(json, "pkFanWelcomeLimit", PkFanWelcomes.DEFAULT_LIMIT));
     }
 
     static boolean flag(JSONObject json, String key, boolean fallback) {

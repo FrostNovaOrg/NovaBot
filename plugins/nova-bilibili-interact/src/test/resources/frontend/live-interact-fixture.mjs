@@ -54,7 +54,8 @@ const defaultThanksTemplates = {gift: '感谢 {用户} 赠送的 {礼物}', memb
   superChat: '感谢 {用户} 的醒目留言', follow: '感谢 {用户} 的关注', share: '感谢 {用户} 的分享直播间'};
 const defaultWelcomeTemplates = {guardWelcome: '欢迎{等级} {用户} 进入直播间', listedWelcome: '欢迎 {用户} 进入直播间'};
 const defaultPkTemplate = '本场PK对手：{对手}，粉丝 {粉丝}，大航海 {舰队}，高能 {高能}';
-const blankSettings = {keywordRules: [], pkTemplate: '', welcome: {minimumLevel: 'CAPTAIN', guardTemplate: '', listedTemplate: '', people: []},enabled: false, perMinute: 6, features: {}, plans: [], thanks: {
+const defaultPkFanWelcomeTemplate = '欢迎 {用户} 来串门';
+const blankSettings = {pkFanWelcomeLimit: 5, pkFanWelcomeTemplate: '', keywordRules: [], pkTemplate: '', welcome: {minimumLevel: 'CAPTAIN', guardTemplate: '', listedTemplate: '', people: []},enabled: false, perMinute: 6, features: {}, plans: [], thanks: {
   giftWindowSeconds: 8, giftIncludeFree: false, giftMinYuan: 0, followWindowSeconds: 30, shareWindowSeconds: 30, templates: {},
 }};
 const settingsByRoom = {};
@@ -68,7 +69,7 @@ globalThis.__api = async (path, options) => {
   if (path === '/interact/danmaku/state') return state;
   if (path.startsWith('/interact/danmaku/settings?uid=')) {
     const uid = path.split('=').pop();
-    return {success: true, defaultThanksTemplates, defaultWelcomeTemplates, defaultPkTemplate, settings: structuredClone(settingsByRoom[uid] || blankSettings)};
+    return {success: true, defaultThanksTemplates, defaultWelcomeTemplates, defaultPkTemplate, defaultPkFanWelcomeTemplate, settings: structuredClone(settingsByRoom[uid] || blankSettings)};
   }
   if (path === '/interact/danmaku/settings') {
     const {uid, settings} = JSON.parse(options.body);
@@ -79,7 +80,7 @@ globalThis.__api = async (path, options) => {
   if (path.startsWith('/interact/danmaku/history?')) {
     const params = new URLSearchParams(path.split('?')[1]);
     if (thanksHistory) {
-      const rows = Object.keys({...defaultThanksTemplates, ...defaultWelcomeTemplates, keywordReply: true, pkOpponent: true}).map(feature => ({
+      const rows = Object.keys({...defaultThanksTemplates, ...defaultWelcomeTemplates, keywordReply: true, pkOpponent: true, pkFanWelcome: true}).map(feature => ({
         time: 1795680000000, text: '示例记录', feature, outcome: 'SENT', reason: '已发出',
       }));
       return {success: true, rows, total: rows.length, pageSize: 20};
@@ -361,6 +362,32 @@ if (byId('li-rule-add')) {
   byId('li-save').click();
   await flush();
   check('删除只影响当前主播的所选规则', settingsByRoom['502'].keywordRules.length === 1 && !settingsByRoom['501'].keywordRules.length);
+}
+
+const visitorSwitch = byId('li-pkFanWelcome');
+check('PK 串门欢迎默认关闭，每场五位', visitorSwitch && !visitorSwitch.checked
+  && Number(byId('li-pkFanWelcomeLimit').value) === 5
+  && byId('li-pkFanWelcome-preview').textContent === '欢迎 小明 来串门');
+check('记录显示 PK 串门欢迎', byId('li-history').textContent.includes('PK 串门欢迎'));
+if (visitorSwitch) {
+  const template = '{主播}欢迎{对手}家的{用户}（{牌子}）';
+  visitorSwitch.checked = true;
+  byId('li-pkFanWelcomeLimit').value = '12';
+  byId('li-pkFanWelcome-template').value = template;
+  byId('li-pkFanWelcome-template').dispatchEvent({type: 'input'});
+  check('串门话术预览展开四个占位符', byId('li-pkFanWelcome-preview').textContent === '另一位欢迎小蓝家的小明（蓝星）');
+  byId('li-save').click();
+  await flush();
+  byId('li-settings-room').value = '501';
+  byId('li-settings-room').dispatchEvent({type: 'change'});
+  await flush();
+  check('另一位主播保留默认串门设置', !byId('li-pkFanWelcome').checked
+    && Number(byId('li-pkFanWelcomeLimit').value) === 5 && !byId('li-pkFanWelcome-template').value);
+  byId('li-settings-room').value = '502';
+  byId('li-settings-room').dispatchEvent({type: 'change'});
+  await flush();
+  check('换回主播读到保存的开关、上限和话术', byId('li-pkFanWelcome').checked
+    && Number(byId('li-pkFanWelcomeLimit').value) === 12 && byId('li-pkFanWelcome-template').value === template);
 }
 
 if (failures.length) {

@@ -4,8 +4,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.frostnova.nova.bilibili.BilibiliPlatform;
 import org.frostnova.nova.bilibili.enums.RoomGuardLevel;
 import org.frostnova.nova.bilibili.event.live.BilibiliDanmuEvent;
+import org.frostnova.nova.bilibili.event.live.BilibiliEnterRoomEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliGuardEntryEffectEvent;
 import org.frostnova.nova.bilibili.event.live.BilibiliPkBattleEvent;
+import org.frostnova.nova.bilibili.model.BilibiliUserInfo;
 import org.frostnova.nova.bilibili.service.BilibiliPkOpponentService.Profile;
 import org.frostnova.nova.core.event.live.NovaBaseLiveEvent;
 import org.frostnova.nova.core.event.live.base.NovaLiveMessageEvent;
@@ -36,6 +38,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 /** 自动发送按房间限量，所有房间共用一个出队线程。查询字数上限和平台发送都在队列锁外进行。 */
@@ -73,6 +76,7 @@ public class AutoDanmakuQueue {
         final RoomKeywordReplies keywordReplies = new RoomKeywordReplies();
         Map<String, PkBattle> pkBattles;
         long pkGeneration;
+        PkFanWelcomes activePk;
 
         RoomState(Room room, RoomSettings settings) {
             this.streamer = room;
@@ -86,7 +90,7 @@ public class AutoDanmakuQueue {
         }
     }
 
-    record PkLookup(Opponent opponent, Consumer<Profile> complete) {}
+    private record PkLookup(Opponent opponent, Consumer<Profile> complete) {}
 
     private static final class PkBattle {
         final PkProgress progress;
@@ -107,6 +111,7 @@ public class AutoDanmakuQueue {
         final Instant expires;
         final TimedDanmakuPlans.Timer timer;
         KeywordRule keywordRule;
+        PkFanWelcomes.Visit visitor;
         List<String> parts;
         int part;
         TimedDanmakuPlans sendingSession;
@@ -123,6 +128,14 @@ public class AutoDanmakuQueue {
             this.sequence = sequence;
             this.expires = expires;
             this.timer = timer;
+        }
+
+        String message() {
+            return visitor == null ? text : visitor.text().getNow(text);
+        }
+
+        boolean ready() {
+            return visitor == null || visitor.text().isDone();
         }
     }
 
@@ -196,6 +209,7 @@ public class AutoDanmakuQueue {
             room.awaitingOfflineStatus = false;
             if (!reconnect) {
                 room.pkBattles = null;
+                room.activePk = null;
                 room.thanks = null;
                 room.welcomes = null;
                 store.forgetThanked(uid);
@@ -216,19 +230,22 @@ public class AutoDanmakuQueue {
         }
     }
 
-    private void syncLive(RoomState room, Instant now) {
+    private boolean syncLive(RoomState room, Instant now) {
         boolean living = live.getLiveStatus(BilibiliPlatform.BILIBILI.id(), room.streamer.uid()).orElse(false);
         if (!living) {
             room.awaitingOfflineStatus = false;
-            if (room.session != null || room.thanks != null || room.welcomes != null || !room.pending.isEmpty()) endSession(room);
+            if (room.session != null || room.thanks != null || room.welcomes != null || room.activePk != null
+                    || !room.pending.isEmpty()) endSession(room);
         } else if (room.session == null && !room.awaitingOfflineStatus && room.settings.enabled()) {
             room.session = new TimedDanmakuPlans();
             room.session.configure(room.settings, now);
         }
+        return living && !room.awaitingOfflineStatus;
     }
 
     private void endSession(RoomState room) {
         room.pkBattles = null;
+        room.activePk = null;
         room.welcomes = null;
         room.thanks = null;
         clear(room, "主播未开播");
@@ -277,11 +294,11 @@ public class AutoDanmakuQueue {
     }
 
     /** 请求资料前按平台顺序认领对手，后续开打消息可补充同场对手。 */
-    synchronized List<PkLookup> beginPk(BilibiliPkBattleEvent event) {
+    synchronized void beginPk(BilibiliPkBattleEvent event, Function<Opponent, CompletableFuture<Profile>> lookup) {
         Instant now = clock.get();
         RoomState room = eventRoom(event);
-        if (room == null) return List.of();
-        syncLive(room, now);
+        if (room == null) return;
+        boolean living = syncLive(room, now);
 
         long broadcast = live.getLiveStartTime(BilibiliPlatform.BILIBILI.id(), room.streamer.uid()).orElse(0L);
         if (room.pkBattles == null) {
@@ -298,9 +315,15 @@ public class AutoDanmakuQueue {
             if (planStart != null && planStart > 0 && planStart < start.getEpochSecond()) start = Instant.ofEpochSecond(planStart);
             battle = new PkBattle(new PkProgress(start.plusSeconds(60), new HashSet<>()));
             room.pkBattles.put(id, battle);
+            Long planEnd = event.getPlanEnd();
+            Instant ends = planEnd != null && planEnd > 0 ? Instant.ofEpochSecond(planEnd) : start.plusSeconds(600);
+            room.activePk = living && now.isBefore(ends) ? new PkFanWelcomes(event.getPkId(), ends, lookup) : null;
         }
 
         List<Opponent> listed = Optional.ofNullable(event.getOpponents()).orElseGet(List::of);
+        PkFanWelcomes active = room.activePk;
+        boolean current = active != null && active.id == event.getPkId();
+        if (current) active.addOpponents(listed);
         List<PkLookup> lookups = List.of();
         if (room.settings.allows(PkAnnouncement.FEATURE) && room.session != null
                 && (room.pause == null || !now.isBefore(room.pause.until())) && now.isBefore(battle.progress.expires())) {
@@ -313,7 +336,15 @@ public class AutoDanmakuQueue {
             log.info("PK 开打，直播间={}，场次={}，平台对手数={}，计划播报数={}",
                     room.streamer.roomId(), id, listed.size(), lookups.size());
         }
-        return lookups;
+        for (var request : lookups) {
+            var profile = current ? active.profile(request.opponent()) : lookup.apply(request.opponent());
+            profile.whenComplete((value, failure) -> request.complete().accept(value));
+        }
+    }
+
+    synchronized void endPk(BilibiliPkBattleEvent event) {
+        RoomState room = eventRoom(event);
+        if (room != null && room.activePk != null && room.activePk.id == event.getPkId()) room.activePk = null;
     }
 
     private List<PkLookup> reservePkOpponents(RoomState room, PkBattle battle, List<Opponent> listed, Instant now) {
@@ -344,30 +375,71 @@ public class AutoDanmakuQueue {
 
     synchronized void welcome(NovaBaseLiveEvent event, Long viewerUid, String viewerName, RoomGuardLevel level) {
         RoomState room = eventRoom(event);
-        if (room == null || !(room.settings.allows(WelcomeSettings.GUARD) || room.settings.allows(WelcomeSettings.LISTED))) return;
+        if (room == null) return;
+        Consumer<Long> visitor = visitorWelcome(room, event);
+        boolean regular = room.settings.allows(WelcomeSettings.GUARD) || room.settings.allows(WelcomeSettings.LISTED);
+        if (!regular && visitor == null) return;
         Instant now = clock.get();
         syncLive(room, now);
         if (room.session == null) return;
+        if (!regular) {
+            visitor.accept(viewerUid);
+            return;
+        }
         if (room.welcomes == null) {
             long start = live.getLiveStartTime(BilibiliPlatform.BILIBILI.id(), room.streamer.uid()).orElse(0L);
             room.welcomes = new RoomWelcomes(store, room.streamer.uid(), start);
         }
-        Instant occurred = Instant.ofEpochMilli(event.getTimestamp());
-        var entry = new RoomWelcomes.Entry(viewerUid, viewerName, level, occurred.isAfter(now) ? now : occurred);
         boolean paused = room.pause != null && now.isBefore(room.pause.until());
+        var entry = new RoomWelcomes.Entry(viewerUid, viewerName, level, eventTime(event, now));
         room.welcomes.accept(entry, event instanceof BilibiliGuardEntryEffectEvent, now, paused, room.settings,
-                ready -> offerWelcome(room, ready));
+                ready -> offerWelcome(room, ready), visitor);
     }
 
-    private void offerWelcome(RoomState room, RoomWelcomes.Entry entry) {
+    private boolean offerWelcome(RoomState room, RoomWelcomes.Entry entry) {
         var greeting = room.welcomes.greeting(room.settings, room.streamer.name(), entry);
-        if (greeting == null) return;
+        if (greeting == null) return false;
         AccountStatus account = sender.automaticAccountStatus();
-        if (entry.identified() && entry.uid().equals(account.uid())) return;
+        if (entry.identified() && entry.uid().equals(account.uid())) return true;
         Instant expires = entry.entered().plusSeconds(30);
         if (offer(room, greeting.feature(), greeting.text(), RoomWelcomes.PRIORITY, expires, null, account) != null) {
             room.welcomes.remember(entry);
         }
+        return true;
+    }
+
+    private Consumer<Long> visitorWelcome(RoomState room, NovaBaseLiveEvent event) {
+        PkFanWelcomes battle = room.activePk;
+        if (battle == null || !room.settings.allows(PkFanWelcomes.FEATURE)) return null;
+        Instant now = clock.get();
+        if (!now.isBefore(battle.ends)) {
+            room.activePk = null;
+            return null;
+        }
+        if (!(event instanceof BilibiliEnterRoomEvent enter) || !(enter.getSender() instanceof BilibiliUserInfo viewer)) return null;
+        var medal = viewer.getFansMedal();
+        if (medal == null || Objects.equals(medal.getUid(), room.streamer.uid())
+                || Objects.equals(medal.getRoomId(), room.streamer.roomId())) return null;
+        Opponent opponent = battle.match(medal);
+        if (opponent == null) return null;
+        String name = viewer.getUname();
+        String medalName = medal.getName();
+        Instant entered = eventTime(enter, now);
+        return uid -> offerVisitor(room, battle, opponent, medalName, new RoomWelcomes.Entry(uid, name, null, entered));
+    }
+
+    private void offerVisitor(RoomState room, PkFanWelcomes battle, Opponent opponent, String medal, RoomWelcomes.Entry entry) {
+        if (room.activePk != battle || !room.settings.allows(PkFanWelcomes.FEATURE) || DanmakuTemplate.blank(entry.name())
+                || !battle.hasSlot(entry.identity(), room.settings.pkFanWelcomeLimit())) return;
+        AccountStatus account = sender.automaticAccountStatus();
+        if (entry.identified() && entry.uid().equals(account.uid())) return;
+        String template = room.settings.pkFanWelcomeTemplate();
+        String streamer = room.streamer.name();
+        String fallback = PkFanWelcomes.render(template, entry.name(), streamer, medal, null);
+        Instant expires = entry.entered().plusSeconds(30);
+        Item item = offer(room, PkFanWelcomes.FEATURE, fallback, RoomWelcomes.PRIORITY,
+                expires.isBefore(battle.ends) ? expires : battle.ends, null, account);
+        if (item != null) item.visitor = battle.reserve(entry, opponent, template, streamer, medal, fallback);
     }
 
     synchronized void activity(NovaBaseLiveEvent event, BiConsumer<RoomActivities, Instant> change) {
@@ -478,6 +550,8 @@ public class AutoDanmakuQueue {
     private String settingsReason(Item item) {
         RoomState room = item.room;
         if (!room.settings.allows(item.feature)) return "自动发弹幕或功能开关已关闭";
+        if (item.visitor != null && item.part == 0 && item.started == null
+                && item.visitor.battle().sentCount >= room.settings.pkFanWelcomeLimit()) return "这场 PK 已达到欢迎上限";
         if (item.keywordRule != null && !room.settings.keywordRules().contains(item.keywordRule)) return "关键词规则已更改或停用";
         if (item.timer != null && (room.session == null || !room.session.current(item.timer))) return "定时计划已更改或停用";
         return null;
@@ -489,6 +563,7 @@ public class AutoDanmakuQueue {
         String settings = settingsReason(item);
         if (settings != null) return settings;
         if (room.pause != null && now.isBefore(room.pause.until())) return room.pause.reason();
+        if (item.visitor != null && item.visitor.battle() != room.activePk) return "这场 PK 已结束";
         if (!now.isBefore(item.expires)) return "已过发送时限";
         if (!account.usable() || account.uid() == null) {
             return account.failure() == null ? "发送账号不可用" : account.failure().description();
@@ -505,8 +580,9 @@ public class AutoDanmakuQueue {
 
     private void drop(Item item, String reason) {
         item.room.pending.remove(item);
+        if (item.visitor != null && item.part == 0 && item.started == null) item.visitor.release();
         if (item.parts == null) {
-            store.drop(item.room.streamer, item.feature, item.text, reason, clock.get());
+            store.drop(item.room.streamer, item.feature, item.message(), reason, clock.get());
         } else {
             for (int i = item.part + (item.started != null ? 1 : 0); i < item.parts.size(); i++) {
                 store.drop(item.room.streamer, item.feature, item.parts.get(i), reason, clock.get());
@@ -536,7 +612,7 @@ public class AutoDanmakuQueue {
                     return;
                 }
                 if (!item.room.pending.contains(item)) return;
-                item.parts = split(item.text.strip(), limit.max());
+                item.parts = split(item.message().strip(), limit.max());
             }
         }
         String text = item.parts.get(item.part);
@@ -548,6 +624,7 @@ public class AutoDanmakuQueue {
     private synchronized Item next() {
         Instant now = clock.get();
         for (RoomState room : rooms.values()) {
+            if (room.activePk != null && !now.isBefore(room.activePk.ends)) room.activePk = null;
             if (!room.settings.enabled()) continue;
             syncLive(room, now);
             if (room.welcomes != null) room.welcomes.flush(now, entry -> offerWelcome(room, entry));
@@ -565,7 +642,8 @@ public class AutoDanmakuQueue {
         purge(status, now);
         if (!sender.intervalElapsed(status)) return null;
         return rooms.values().stream().filter(r -> r.hasCapacity(now))
-                .map(r -> r.pending.stream().min(ROOM_ORDER)).flatMap(Optional::stream).min(NEXT).orElse(null);
+                .map(r -> r.pending.stream().filter(Item::ready).min(ROOM_ORDER))
+                .flatMap(Optional::stream).min(NEXT).orElse(null);
     }
 
     /** 平台字数查询和账号间隔检查之后、真正占用发送名额之前再核对一次。 */
@@ -593,6 +671,10 @@ public class AutoDanmakuQueue {
         if (item.started != null) room.recent.addLast(item.started);
         if ((result.sent() || result.uncertain()) && item.timer != null && item.sendingSession != null) {
             item.sendingSession.sent(item.timer, item.part == 0, item.audienceAtSend);
+        }
+        if (item.visitor != null && item.part == 0) {
+            if (result.sent() || result.uncertain()) item.visitor.battle().sentCount++;
+            else item.visitor.release();
         }
         item.started = null;
         item.part++;
