@@ -6,9 +6,11 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
+import jakarta.servlet.http.HttpServletRequest;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.RestTemplateConfig;
 import org.frostnova.nova.core.config.ui.SensitiveFields;
+import org.frostnova.nova.core.web.TrustedProxyForwardedHeaderFilter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -23,6 +25,7 @@ import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.mock.http.client.MockClientHttpRequest;
 import org.springframework.mock.http.client.MockClientHttpResponse;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockServletContext;
 import org.springframework.web.client.RestTemplate;
 
@@ -49,6 +52,7 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -330,6 +334,34 @@ class OidcClientTest extends OidcTestSupport {
         var authorization = client.startLogin(request);
         assertEquals("https://localhost/app/config/api/oidc/callback",
                 query(authorization.uri().getRawQuery()).get("redirect_uri"));
+    }
+
+    // 抓的故障：开着 framework 时，可信代理原样送来客户端自带的 X-Forwarded-Host，
+    // 留空回调地址时「只在本机地址才推导」按那个头判了，而不是按 Host。
+    @Test
+    void emptyCallbackJudgesLocalAddressByHostBehindTrustedProxy() throws Exception {
+        config.setRedirectUri("");
+        rebuildClient();
+        var filter = new TrustedProxyForwardedHeaderFilter(List.of());
+
+        var outside = request();
+        outside.setRemoteAddr("127.0.0.1");
+        outside.addHeader("Host", "bot.example");
+        outside.addHeader("X-Forwarded-Host", "localhost");
+        outside.addHeader("X-Forwarded-Proto", "https");
+        filter.doFilter(outside, new MockHttpServletResponse(), (seen, ignored) ->
+                assertRejected("redirect-uri", () -> client.startLogin((HttpServletRequest) seen)));
+
+        var local = request();
+        local.setRemoteAddr("127.0.0.1");
+        local.addHeader("Host", "localhost");
+        local.addHeader("X-Forwarded-Host", "bot.example");
+        local.addHeader("X-Forwarded-Proto", "https");
+        var redirect = new AtomicReference<String>();
+        filter.doFilter(local, new MockHttpServletResponse(), (seen, ignored) ->
+                redirect.set(query(client.startLogin((HttpServletRequest) seen).uri().getRawQuery())
+                        .get("redirect_uri")));
+        assertEquals("https://localhost/app/config/api/oidc/callback", redirect.get());
     }
 
     @Test

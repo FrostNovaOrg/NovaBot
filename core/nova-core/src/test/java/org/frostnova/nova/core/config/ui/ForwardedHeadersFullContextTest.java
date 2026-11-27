@@ -157,6 +157,31 @@ class ForwardedHeadersFullContextTest {
         }
     }
 
+    // 抓的故障：客户端自带的 X-Forwarded-Prefix 经可信代理原样送到，改写了请求路径，控制台原样路径里查 // 的那一项被绕过。
+    @Test
+    @DisplayName("控制台：路径里带 // 的请求，客户端自带 X-Forwarded-Prefix 也照样回 400")
+    void doubleSlashRejectedDespiteForwardedPrefix() throws Exception {
+        List<Object[]> rows = List.of(
+                new Object[]{"不带 X-Forwarded-Prefix", new String[]{}},
+                new Object[]{"自带 X-Forwarded-Prefix: /p", new String[]{"X-Forwarded-Prefix", "/p"}},
+                new Object[]{"自带 X-Forwarded-Prefix: /p，代理送 X-Forwarded-Proto: https",
+                        new String[]{"X-Forwarded-Prefix", "/p", "X-Forwarded-Proto", "https"}});
+        for (Object[] row : rows) {
+            MockHttpServletRequestBuilder request = get("/config/api/status").header(HttpHeaders.HOST, "bot.example");
+            String[] headers = (String[]) row[1];
+            for (int i = 0; i < headers.length; i += 2) {
+                request.header(headers[i], headers[i + 1]);
+            }
+            MockHttpServletResponse response = mvc.perform(request.with(raw -> {
+                raw.setRemoteAddr("127.0.0.1");
+                raw.setRequestURI("//config/api/status");
+                return raw;
+            })).andReturn().getResponse();
+            report("控制台 //config/api/status " + row[0], response);
+            assertEquals(400, response.getStatus(), row[0] + " → " + response.getContentAsString());
+        }
+    }
+
     private MockHttpServletResponse perform(MockHttpServletRequestBuilder request) throws Exception {
         return mvc.perform(request.with(peer -> {
             peer.setRemoteAddr("127.0.0.1");
