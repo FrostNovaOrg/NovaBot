@@ -312,10 +312,10 @@ public class AutoDanmakuQueue {
         if (opening) {
             Instant start = eventTime(event, now);
             Long planStart = event.getPlanStart();
+            Instant ends = PkFanWelcomes.deadline(start, planStart, event.getPlanEnd());
             if (planStart != null && planStart > 0 && planStart < start.getEpochSecond()) start = Instant.ofEpochSecond(planStart);
             battle = new PkBattle(new PkProgress(start.plusSeconds(60), new HashSet<>()));
             room.pkBattles.put(id, battle);
-            Instant ends = PkFanWelcomes.deadline(start, event.getPlanEnd());
             room.activePk = living && now.isBefore(ends) ? new PkFanWelcomes(event.getPkId(), ends, lookup) : null;
         }
 
@@ -375,76 +375,75 @@ public class AutoDanmakuQueue {
     synchronized void welcome(NovaBaseLiveEvent event, Long viewerUid, String viewerName, RoomGuardLevel level) {
         RoomState room = eventRoom(event);
         if (room == null) return;
-        PkFanWelcomes battle = activeVisitorBattle(room);
-        boolean effect = event instanceof BilibiliGuardEntryEffectEvent;
-        Consumer<Long> visitor = battle == null ? null : visitorWelcome(room, battle, event);
-        boolean regular = room.settings.allows(WelcomeSettings.GUARD) || room.settings.allows(WelcomeSettings.LISTED);
-        if (!regular && visitor == null && !(effect && battle != null)) return;
+        if (room.settings.allows(WelcomeSettings.GUARD) || room.settings.allows(WelcomeSettings.LISTED)) {
+            regularWelcome(room, event, viewerUid, viewerName, level);
+        }
+        if (room.activePk != null && room.settings.allows(PkFanWelcomes.FEATURE) && event instanceof BilibiliEnterRoomEvent enter) {
+            offerVisitor(room, enter);
+        }
+    }
+
+    private void regularWelcome(RoomState room, NovaBaseLiveEvent event, Long viewerUid, String viewerName, RoomGuardLevel level) {
         Instant now = clock.get();
         syncLive(room, now);
         if (room.session == null) return;
-        if (!regular && visitor != null && viewerUid != null && viewerUid > 0) {
-            visitor.accept(viewerUid);
-            return;
-        }
         if (room.welcomes == null) {
             long start = live.getLiveStartTime(BilibiliPlatform.BILIBILI.id(), room.streamer.uid()).orElse(0L);
             room.welcomes = new RoomWelcomes(store, room.streamer.uid(), start);
         }
         boolean paused = room.pause != null && now.isBefore(room.pause.until());
         var entry = new RoomWelcomes.Entry(viewerUid, viewerName, level, eventTime(event, now));
-        room.welcomes.accept(entry, effect, now, paused, room.settings,
-                ready -> offerWelcome(room, ready), visitor);
+        room.welcomes.accept(entry, event instanceof BilibiliGuardEntryEffectEvent, now, paused, room.settings,
+                ready -> offerWelcome(room, ready));
     }
 
-    private boolean offerWelcome(RoomState room, RoomWelcomes.Entry entry) {
+    private void offerWelcome(RoomState room, RoomWelcomes.Entry entry) {
         var greeting = room.welcomes.greeting(room.settings, room.streamer.name(), entry);
-        if (greeting == null) return false;
+        if (greeting == null) return;
         AccountStatus account = sender.automaticAccountStatus();
-        if (entry.identified() && entry.uid().equals(account.uid())) return true;
+        if (entry.identified() && entry.uid().equals(account.uid())) return;
         Instant expires = entry.entered().plusSeconds(30);
         if (offer(room, greeting.feature(), greeting.text(), RoomWelcomes.PRIORITY, expires, null, account) != null) {
             room.welcomes.remember(entry);
         }
-        return true;
     }
 
-    private PkFanWelcomes activeVisitorBattle(RoomState room) {
+    private void offerVisitor(RoomState room, BilibiliEnterRoomEvent event) {
         PkFanWelcomes battle = room.activePk;
-        if (battle == null || !room.settings.allows(PkFanWelcomes.FEATURE)) return null;
         Instant now = clock.get();
         if (!now.isBefore(battle.ends)) {
             room.activePk = null;
-            return null;
+            return;
         }
-        return battle;
-    }
-
-    private Consumer<Long> visitorWelcome(RoomState room, PkFanWelcomes battle, NovaBaseLiveEvent event) {
-        if (!(event instanceof BilibiliEnterRoomEvent enter) || !(enter.getSender() instanceof BilibiliUserInfo viewer)) return null;
+        if (!(event.getSender() instanceof BilibiliUserInfo viewer)) return;
+        Long uid = viewer.getUid();
+        if (uid == null || uid <= 0 || DanmakuTemplate.blank(viewer.getUname())
+                || !battle.hasSlot(uid, room.settings.pkFanWelcomeLimit())) return;
         var medal = viewer.getFansMedal();
         if (medal == null || Objects.equals(medal.getUid(), room.streamer.uid())
-                || Objects.equals(medal.getRoomId(), room.streamer.roomId())) return null;
+                || Objects.equals(medal.getRoomId(), room.streamer.roomId())) return;
         Opponent opponent = battle.match(medal);
-        if (opponent == null) return null;
-        String name = viewer.getUname();
-        String medalName = medal.getName();
-        Instant entered = eventTime(enter, clock.get());
-        return uid -> offerVisitor(room, battle, opponent, medalName, new RoomWelcomes.Entry(uid, name, null, entered));
-    }
-
-    private void offerVisitor(RoomState room, PkFanWelcomes battle, Opponent opponent, String medal, RoomWelcomes.Entry entry) {
-        if (room.activePk != battle || !room.settings.allows(PkFanWelcomes.FEATURE) || DanmakuTemplate.blank(entry.name())
-                || !battle.hasSlot(entry, room.settings.pkFanWelcomeLimit())) return;
+        if (opponent == null || matchesRegularWelcome(room.settings, uid, event.getRoomGuardLevel())) return;
+        if (!syncLive(room, now) || room.session == null) return;
         AccountStatus account = sender.automaticAccountStatus();
-        if (entry.identified() && entry.uid().equals(account.uid())) return;
+        if (uid.equals(account.uid())) return;
+
         String template = room.settings.pkFanWelcomeTemplate();
         String streamer = room.streamer.name();
-        String fallback = PkFanWelcomes.render(template, entry.name(), streamer, medal, null);
-        Instant expires = entry.entered().plusSeconds(30);
+        String name = viewer.getUname();
+        String fallback = PkFanWelcomes.render(template, name, streamer, medal.getName(), null);
+        Instant expires = eventTime(event, now).plusSeconds(30);
         Item item = offer(room, PkFanWelcomes.FEATURE, fallback, RoomWelcomes.PRIORITY,
                 expires.isBefore(battle.ends) ? expires : battle.ends, null, account);
-        if (item != null) item.visitor = battle.reserve(entry, opponent, template, streamer, medal, fallback);
+        if (item != null) item.visitor = battle.reserve(uid, name, opponent, template, streamer, medal.getName(), fallback);
+    }
+
+    private static boolean matchesRegularWelcome(RoomSettings settings, long uid, RoomGuardLevel level) {
+        WelcomeSettings welcome = settings.welcome();
+        if (settings.allows(WelcomeSettings.GUARD) && level != null && level.compareTo(welcome.minimumLevel()) >= 0) return true;
+        if (!settings.allows(WelcomeSettings.LISTED)) return false;
+        String id = Long.toString(uid);
+        return welcome.people().stream().anyMatch(person -> person.uid().equals(id));
     }
 
     synchronized void activity(NovaBaseLiveEvent event, BiConsumer<RoomActivities, Instant> change) {

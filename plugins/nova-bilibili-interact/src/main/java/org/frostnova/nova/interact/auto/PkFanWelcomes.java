@@ -6,7 +6,6 @@ import org.frostnova.nova.core.event.live.common.PkBattleEvent.Opponent;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -23,9 +22,12 @@ final class PkFanWelcomes {
 
     private static final long MAX_PLAN_SECONDS = Duration.ofDays(1).toSeconds();
 
-    static Instant deadline(Instant start, Long planEnd) {
+    static Instant deadline(Instant opened, Long planStart, Long planEnd) {
+        Instant start = positive(planStart) && planStart <= opened.getEpochSecond() + MAX_PLAN_SECONDS
+                ? Instant.ofEpochSecond(planStart) : opened;
         // 平台给的是秒。先限制单场时长，避免毫秒值或异常大数延长欢迎或使转换失败。
-        if (planEnd != null && planEnd > 0 && planEnd <= start.getEpochSecond() + MAX_PLAN_SECONDS) {
+        if (planEnd != null && planEnd > 0 && planEnd >= start.getEpochSecond()
+                && planEnd <= start.getEpochSecond() + MAX_PLAN_SECONDS) {
             return Instant.ofEpochSecond(planEnd);
         }
         return start.plusSeconds(600);
@@ -33,7 +35,7 @@ final class PkFanWelcomes {
 
     final long id;
     final Instant ends;
-    private final List<Viewer> viewers = new ArrayList<>();
+    private final Set<Long> viewerUids = new HashSet<>();
     int sentCount;
     private final Map<Long, Opponent> byUid = new HashMap<>();
     private final Map<Long, Opponent> byRoom = new HashMap<>();
@@ -64,46 +66,22 @@ final class PkFanWelcomes {
         return profiles.computeIfAbsent(opponent.uid(), uid -> lookup.apply(opponent));
     }
 
-    private static final class Viewer {
-        Long uid;
-        final Set<String> names = new HashSet<>();
-
-        boolean matches(RoomWelcomes.Entry entry) {
-            // 两次都给了 UID 时能分清同名观众。缺 UID 的一次则比较完整名字。
-            if (uid != null && entry.identified()) return uid.equals(entry.uid());
-            return names.contains(entry.name());
-        }
-
-        void remember(RoomWelcomes.Entry entry) {
-            if (entry.identified()) uid = entry.uid();
-            names.add(entry.name());
-        }
+    boolean hasSlot(long uid, int limit) {
+        return viewerUids.size() < limit && !viewerUids.contains(uid);
     }
 
-    boolean hasSlot(RoomWelcomes.Entry entry, int limit) {
-        for (Viewer viewer : viewers) {
-            if (viewer.matches(entry)) {
-                viewer.remember(entry);
-                return false;
-            }
-        }
-        return viewers.size() < limit;
-    }
-
-    record Visit(PkFanWelcomes battle, Viewer viewer, CompletableFuture<String> text) {
+    record Visit(PkFanWelcomes battle, long uid, CompletableFuture<String> text) {
         void release() {
-            battle.viewers.remove(viewer);
+            battle.viewerUids.remove(uid);
         }
     }
 
-    Visit reserve(RoomWelcomes.Entry entry, Opponent opponent, String template, String streamer, String medal, String fallback) {
-        Viewer viewer = new Viewer();
-        viewer.remember(entry);
-        viewers.add(viewer);
+    Visit reserve(long uid, String name, Opponent opponent, String template, String streamer, String medal, String fallback) {
+        viewerUids.add(uid);
         var text = template.contains("{对手}")
-                ? profile(opponent).handle((profile, failure) -> render(template, entry.name(), streamer, medal, profile))
+                ? profile(opponent).handle((profile, failure) -> render(template, name, streamer, medal, profile))
                 : CompletableFuture.completedFuture(fallback);
-        return new Visit(this, viewer, text);
+        return new Visit(this, uid, text);
     }
 
     private static boolean positive(Long id) {
