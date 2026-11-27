@@ -96,6 +96,7 @@ WAITING_TIMEOUT_SECONDS=$(pick_seconds NOVABOT_WAITING_TIMEOUT_SECONDS "${NOVABO
 EARLIER_UNIT=starbot
 OLD=""
 OLD_STOP_ISSUED=0
+OLD_STOP_STATE=""
 TARGET_START_ISSUED=0
 TARGET_READY=0
 SWITCH_DONE=0
@@ -748,6 +749,45 @@ switch_autostart() {
     return 0
 }
 
+stop_old() {
+    local unit attempt stop_failed
+    unit=$(unit_of "$OLD")
+    OLD_STOP_ISSUED=1
+    for attempt in 1 2 3; do
+        if [ "$attempt" -gt 1 ]; then
+            sleep 2
+        fi
+        stop_failed=0
+        systemctl stop "$unit" || stop_failed=1
+        OLD_STOP_STATE=$(systemctl is-active "$unit" 2>/dev/null || true)
+        case "$OLD_STOP_STATE" in
+            inactive|failed)
+                if [ "$attempt" -gt 1 ]; then
+                    say "停旧版 $OLD 时被别的操作打断，第 $attempt 次尝试后旧版已停。"
+                elif [ "$stop_failed" = 1 ]; then
+                    say "停止 $OLD 的命令报错，但旧版已停。"
+                fi
+                return 0
+                ;;
+            "")
+                if [ "$stop_failed" = 0 ]; then
+                    say "查不到旧版状态，按停止命令成功处理。"
+                    return 0
+                fi
+                ;;
+        esac
+    done
+    return 1
+}
+
+old_stop_failure_message() {
+    if [ -z "$OLD_STOP_STATE" ]; then
+        say "停掉 $OLD 失败。查不到旧版状态。"
+    else
+        say "停掉 $OLD 失败。旧版最后状态为 ${OLD_STOP_STATE}。"
+    fi
+}
+
 do_hot() {
     local unit file wait_rc gap
     unit=$(unit_of "$TARGET")
@@ -784,9 +824,8 @@ do_hot() {
     esac
     say "${TARGET} 已在门口等锁，停掉 ${OLD}。"
     GAP_START=$(date +%s)
-    OLD_STOP_ISSUED=1
-    if ! systemctl stop "$(unit_of "$OLD")"; then
-        fail_out "停掉 $OLD 失败。"
+    if ! stop_old; then
+        fail_out "$(old_stop_failure_message)"
     fi
     wait_rc=0
     wait_phase_ready "$unit" "$file" "$READY_TIMEOUT_SECONDS" || wait_rc=$?
@@ -819,9 +858,8 @@ do_hot() {
 do_ordinary() {
     say "不走热交接：${1}改走普通重启。"
     say "先停 ${OLD}，再起 ${TARGET}。"
-    OLD_STOP_ISSUED=1
-    if ! systemctl stop "$(unit_of "$OLD")"; then
-        say "停掉 $OLD 失败。"
+    if ! stop_old; then
+        old_stop_failure_message
         report_running
         exit 1
     fi

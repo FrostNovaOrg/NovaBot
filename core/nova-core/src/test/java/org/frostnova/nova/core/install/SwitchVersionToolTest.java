@@ -278,6 +278,11 @@ class SwitchVersionToolTest {
                 sys.exit(0)
             unit = last_unit(args)
             if verb == "is-active":
+                if (os.environ.get("NOVABOT_STUB_OLD_STOP_QUERY_FAILS") == "true"
+                        and normalize(unit) == normalize(os.environ["NOVABOT_STUB_ACTIVE"])
+                        and os.path.exists(os.path.join(state_dir, "old-stop-attempts"))):
+                    print("Failed to connect to bus", file=sys.stderr)
+                    sys.exit(1)
                 st = get_state(unit)
                 if "--quiet" not in args and "-q" not in args:
                     print(st)
@@ -320,14 +325,29 @@ class SwitchVersionToolTest {
                     with open(flag, "w", encoding="utf-8") as fh:
                         fh.write("1\\n")
                     time.sleep(3)
-                set_state(unit, "inactive")
+                stop_code, stop_state = 0, "inactive"
+                old_stop_results = os.environ.get("NOVABOT_STUB_OLD_STOP_RESULTS", "")
+                if old_stop_results and normalize(unit) == normalize(os.environ["NOVABOT_STUB_ACTIVE"]):
+                    path = os.path.join(state_dir, "old-stop-attempts")
+                    attempts = 0
+                    if os.path.exists(path):
+                        with open(path, encoding="utf-8") as fh:
+                            attempts = int(fh.read())
+                    with open(path, "w", encoding="utf-8") as fh:
+                        fh.write(str(attempts + 1))
+                    results = old_stop_results.split(",")
+                    code, stop_state = results[min(attempts, len(results) - 1)].split()
+                    stop_code = int(code)
+                    if stop_code:
+                        print("Job for " + normalize(unit) + ".service canceled.", file=sys.stderr)
+                set_state(unit, stop_state)
                 remembered_unit, remembered_file = load_remember()
-                if remembered_unit and remembered_unit != normalize(unit):
+                if stop_state in ("inactive", "failed") and remembered_unit and remembered_unit != normalize(unit):
                     if scene == "safe-mode":
                         write_phase(remembered_file, "safe-mode")
                     elif scene == "hot-ok":
                         write_phase(remembered_file, "ready")
-                sys.exit(0)
+                sys.exit(stop_code)
             sys.exit(0)
             """;
 
@@ -348,6 +368,88 @@ class SwitchVersionToolTest {
                 "enable novabot@" + NEW), mutations(world), "a 调用顺序");
         assertFalse(Files.exists(world.runDir.resolve("novabot@" + NEW + ".service.d")),
                 "a 运行时覆盖设置最后应删掉");
+    }
+
+    @Test
+    @DisplayName("热交接停旧被打断，第二次停成后继续换版")
+    void hotHandoverRetriesInterruptedStop(@TempDir Path dir) throws Exception {
+        World world = lay(dir, true, true, true, "hot-ok", OLD);
+        world.oldStopResults = "1 activating,0 inactive";
+        Run run = run(world);
+
+        assertEquals(0, run.code, run.stdout + run.stderr);
+        assertEquals(List.of(
+                "start novabot@" + NEW,
+                "stop novabot@" + OLD,
+                "stop novabot@" + OLD,
+                "disable novabot@" + OLD,
+                "enable novabot@" + NEW), mutations(world));
+        assertTrue(run.stdout.lines().anyMatch(line -> line.contains("打断") && line.contains("第 2 次")),
+                run.stdout);
+        assertEquals("inactive", unitState(world, OLD));
+        assertEquals("active", unitState(world, NEW));
+    }
+
+    @Test
+    @DisplayName("普通重启停旧报错，但旧版已停，继续换版")
+    void ordinarySwitchContinuesWhenStopErrorsAfterExit(@TempDir Path dir) throws Exception {
+        World world = lay(dir, false, true, true, "ordinary", OLD);
+        world.oldStopResults = "1 failed";
+        Run run = run(world);
+
+        assertEquals(0, run.code, run.stdout + run.stderr);
+        assertEquals(List.of(
+                "stop novabot@" + OLD,
+                "start novabot@" + NEW,
+                "disable novabot@" + OLD,
+                "enable novabot@" + NEW), mutations(world));
+        assertTrue(run.stdout.lines().anyMatch(line -> line.contains("报错") && line.contains("已停")),
+                run.stdout);
+        assertEquals("failed", unitState(world, OLD));
+        assertEquals("active", unitState(world, NEW));
+    }
+
+    @Test
+    @DisplayName("普通重启停旧成功，查不到旧版状态时继续换版")
+    void ordinarySwitchContinuesWhenStopSucceedsButStateIsUnavailable(@TempDir Path dir) throws Exception {
+        World world = lay(dir, false, true, true, "ordinary", OLD);
+        world.oldStopResults = "0 inactive";
+        world.oldStopQueryFails = true;
+        Run run = run(world);
+
+        assertEquals(0, run.code, run.stdout + run.stderr);
+        assertEquals(List.of(
+                "stop novabot@" + OLD,
+                "start novabot@" + NEW,
+                "disable novabot@" + OLD,
+                "enable novabot@" + NEW), mutations(world));
+        assertTrue(before(world, "stop novabot@" + OLD, "is-active novabot@" + OLD), calls(world).toString());
+        assertTrue(run.stdout.lines().anyMatch(line -> line.contains("查不到旧版") && line.contains("停止命令成功")),
+                run.stdout);
+        assertEquals("inactive", unitState(world, OLD));
+        assertEquals("active", unitState(world, NEW));
+    }
+
+    @Test
+    @DisplayName("热交接三次停旧后旧版仍在跑，回滚到旧版")
+    void hotHandoverRollsBackWhenOldNeverStops(@TempDir Path dir) throws Exception {
+        World world = lay(dir, true, true, true, "hot-ok", OLD);
+        // 第一次 stop 报成功，但查询时旧版已经被拉起来。
+        world.oldStopResults = "0 active,1 activating,1 active";
+        Run run = run(world);
+
+        assertEquals(1, run.code, run.stdout + run.stderr);
+        assertEquals(List.of(
+                "start novabot@" + NEW,
+                "stop novabot@" + OLD,
+                "stop novabot@" + OLD,
+                "stop novabot@" + OLD,
+                "stop novabot@" + NEW,
+                "start novabot@" + OLD), mutations(world));
+        assertTrue(run.stdout.lines().anyMatch(line -> line.contains("停掉 " + OLD) && line.contains("失败")
+                && line.matches(".*\\bactive\\b.*")), run.stdout);
+        assertEquals("active", unitState(world, OLD));
+        assertEquals("inactive", unitState(world, NEW));
     }
 
     @Test
@@ -1153,6 +1255,8 @@ class SwitchVersionToolTest {
         builder.environment().put("NOVABOT_STUB_MEMORY_HIGH", "1.2G");
         builder.environment().put("NOVABOT_STUB_USER", "starbot");
         builder.environment().put("NOVABOT_STUB_SLOW_STOP", world.slowStop);
+        builder.environment().put("NOVABOT_STUB_OLD_STOP_RESULTS", world.oldStopResults);
+        builder.environment().put("NOVABOT_STUB_OLD_STOP_QUERY_FAILS", Boolean.toString(world.oldStopQueryFails));
         builder.environment().put("NOVABOT_STUB_FAIL", world.fail);
         builder.environment().put("NOVABOT_STUB_SLOW_QUERY", world.slowQuery);
         builder.redirectOutput(world.logs.resolve("stdout.txt").toFile());
@@ -1338,6 +1442,8 @@ class SwitchVersionToolTest {
         String active;
         String target;
         String slowStop;
+        String oldStopResults = "";
+        boolean oldStopQueryFails;
         String fail;
         String slowQuery;
         String enabled;
