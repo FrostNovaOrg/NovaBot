@@ -17,7 +17,6 @@ import org.frostnova.nova.core.api.NovaApiTokenStore;
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiAccess;
 import org.frostnova.nova.core.config.ui.ConfigUiApiTokenController;
-import org.frostnova.nova.core.config.ui.ConsoleAllowList;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccountStore;
 import org.frostnova.nova.core.config.ui.auth.oidc.OidcClient;
@@ -196,7 +195,7 @@ class PushApiTest {
         PushApiProvider push = new PushApiProvider(() -> registered, () -> sender, () -> timeline::add,
                 new PushSendQuota(PushSendQuota.PER_MINUTE, PushSendQuota.WINDOW, clock));
         registry = new NovaApiRegistry(List.of(new ParcelApi(), push));
-        NovaApiFilter filter = new NovaApiFilter(new ConsoleAllowList(properties.getConfigUi()),
+        NovaApiFilter filter = new NovaApiFilter(
                 new NovaApiOpenGroups(properties.getConfigUi()::getApiAnySourceGroups, registry), tokens, accounts,
                 () -> true, registry, new NovaApiThrottle(), () -> List.of("bilibili"), List::of);
         mvc = MockMvcBuilders.standaloneSetup().addFilters(filter).build();
@@ -215,7 +214,7 @@ class PushApiTest {
         return sender;
     }
 
-    // 抓的故障：升级之后什么都没做，旧令牌就能发消息；或者推送组默认就对名单以外的地址开着。
+    // 抓的故障：升级之后什么都没做，旧令牌就能发消息；或者推送组默认就对本机以外的地址开着。
     @Test
     void afterUpgradeNoTokenCanSendAndThePushGroupIsNotOpen() throws Exception {
         String old = issue(ConfigUiAccount.LOCAL_ID, "parcel:read");
@@ -364,7 +363,7 @@ class PushApiTest {
         properties.getConfigUi().setApiAnySourceGroups(List.of("push"));
         assertEquals(200, perform(send(token, groupMessage("开放之后")).with(peer(OUTSIDER))).getStatus());
         assertEquals(401, perform(post(API + "messages").contentType(MediaType.APPLICATION_JSON)
-                .content(groupMessage("没带令牌")).with(peer(OUTSIDER))).getStatus(), "开放只免来源名单这一道");
+                .content(groupMessage("没带令牌")).with(peer(OUTSIDER))).getStatus(), "开放只免「只许本机」这一道");
         assertEquals(1, delivered.size());
     }
 

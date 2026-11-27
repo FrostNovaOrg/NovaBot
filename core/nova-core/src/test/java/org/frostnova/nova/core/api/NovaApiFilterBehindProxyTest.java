@@ -27,7 +27,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 程序接口放在本机的反向代理后面时，来访者怎么认
  * <p>
- * 这里只用「一组也不对名单以外开放」的那种装配：量的是来访者判定本身，与按组开放无关。
+ * 经本机反向代理进来的（对端是回环、带了转发头）一律不算本机：没打开开关时都是 403，
+ * 认得出地址的与认不出的只在回包说明、限速那一格与日志上不同，这几处另用 {@link NovaApiVisitor#of} 直接核。
  */
 class NovaApiFilterBehindProxyTest {
     @TempDir
@@ -68,13 +69,13 @@ class NovaApiFilterBehindProxyTest {
     }
 
     private void rebuild(NovaApiThrottle throttle, NovaStateStore state) {
-        NovaApiFilter filter = new NovaApiFilter(new ConsoleAllowList(properties.getConfigUi()), tokens,
-                new ConfigUiAccountStore(state), () -> true, new NovaApiRegistry(List.of(new ProbeApi())), throttle,
-                () -> List.of("bilibili"), List::of);
+        NovaApiRegistry registry = new NovaApiRegistry(List.of(new ProbeApi()));
+        NovaApiFilter filter = new NovaApiFilter(new NovaApiOpenGroups(properties.getConfigUi()::getApiAnySourceGroups, registry),
+                tokens, new ConfigUiAccountStore(state), () -> true, registry, throttle, () -> List.of("bilibili"), List::of);
         mvc = MockMvcBuilders.standaloneSetup().addFilters(filter).build();
     }
 
-    // 抓的故障：没打开任何开关，外网的人经本机反向代理进来就能拿令牌调接口——代理连进来的永远是本机，默认名单就把它放了。
+    // 抓的故障：没打开任何开关，外网的人经本机反向代理进来就能拿令牌调接口——代理连进来的永远是本机回环，就被当成本机放了。
     @Test
     void outsiderThroughTheLocalProxyIsRefusedLikeADirectOutsider() throws Exception {
         String token = issue();
@@ -96,23 +97,37 @@ class NovaApiFilterBehindProxyTest {
         assertEquals(403, perform(me(token).with(peer("::1")).header("Forwarded", "for=203.0.113.9;proto=https")).getStatus());
     }
 
-    // 抓的故障：经本机反向代理进来的人明明在名单里（或者就是本机上的浏览器），也被挡在外面；本机直连的程序也跟着被挡。
+    // 抓的故障：本机直连的程序被挡；或者经本机反向代理进来的人只因为在控制台名单里（或转发头写着本机），
+    // 没打开开关就调得了接口；或者打开开关之后，认得出地址的代理来访反而进不来。
     @Test
-    void listedVisitorsThroughTheProxyAndPlainLocalCallersStillPass() throws Exception {
+    void plainLocalCallersPassAndProxiedVisitorsNeedTheSwitch() throws Exception {
         String token = issue();
-        assertEquals(200, perform(me(token)).getStatus(), "本机直连、不带转发头，与改动之前一样");
+        assertEquals(200, perform(me(token)).getStatus(), "本机直连、不带转发头");
         assertEquals(200, perform(me(token).with(peer("::1"))).getStatus());
-        assertEquals(200, perform(me(token).with(peer("127.0.0.1")).header("X-Forwarded-For", "127.0.0.1")).getStatus(),
-                "本机上的浏览器经代理进来，代理看到的就是本机");
+        assertEquals(403, perform(me(token).with(peer("127.0.0.1")).header("X-Forwarded-For", "127.0.0.1")).getStatus(),
+                "经代理进来的，转发头写着本机也不算本机");
 
         properties.getConfigUi().setAllowIps(List.of("127.0.0.1/32", "::1/128", "203.0.113.0/24", "2001:db8::/32"));
-        // 客户端自己写在最左边的那一段不算数，取的是代理接在最右边的那一段
-        assertEquals(200, perform(me(token).with(peer("127.0.0.1"))
-                .header("X-Forwarded-For", "198.51.100.77, 203.0.113.9").header("X-Real-IP", "203.0.113.9")).getStatus());
-        assertEquals(200, perform(me(token).with(peer("127.0.0.1")).header("X-Forwarded-For", "203.0.113.9:51515")).getStatus());
-        assertEquals(200, perform(me(token).with(peer("127.0.0.1"))
-                .header("Forwarded", "for=198.51.100.1, for=\"[2001:db8::5]:4711\";proto=https")).getStatus());
-        assertEquals(200, perform(me(token).with(peer("127.0.0.1")).header("X-Forwarded-For", "2001:db8::5")).getStatus());
+        List<MockHttpServletRequestBuilder> proxied = List.of(
+                // 客户端自己写在最左边的那一段不算数，取的是代理接在最右边的那一段
+                me(token).with(peer("127.0.0.1")).header("X-Forwarded-For", "198.51.100.77, 203.0.113.9")
+                        .header("X-Real-IP", "203.0.113.9"),
+                me(token).with(peer("127.0.0.1")).header("X-Forwarded-For", "203.0.113.9:51515"),
+                me(token).with(peer("127.0.0.1")).header("Forwarded", "for=198.51.100.1, for=\"[2001:db8::5]:4711\";proto=https"),
+                me(token).with(peer("127.0.0.1")).header("X-Forwarded-For", "2001:db8::5"));
+        for (MockHttpServletRequestBuilder request : proxied) {
+            assertEquals(403, perform(request).getStatus(), "在控制台名单里也不算数");
+        }
+        assertEquals(new NovaApiVisitor("203.0.113.9", NovaApiVisitor.Kind.PROXIED),
+                visitor("X-Forwarded-For", "198.51.100.77, 203.0.113.9", "X-Real-IP", "203.0.113.9"));
+        assertEquals(new NovaApiVisitor("203.0.113.9", NovaApiVisitor.Kind.PROXIED), visitor("X-Forwarded-For", "203.0.113.9:51515"));
+        assertEquals(new NovaApiVisitor("2001:db8:0:0:0:0:0:5", NovaApiVisitor.Kind.PROXIED),
+                visitor("Forwarded", "for=198.51.100.1, for=\"[2001:db8::5]:4711\";proto=https"));
+
+        properties.getConfigUi().setApiAnySourceGroups(List.of("probe"));
+        for (MockHttpServletRequestBuilder request : proxied) {
+            assertEquals(200, perform(request).getStatus(), "打开开关之后才过");
+        }
     }
 
     // 抓的故障：客户端在最左边写一个 127.0.0.1、或在代理不写的那个头里写一个名单里的地址，就冒充成了本机或名单里的机器。
@@ -156,11 +171,10 @@ class NovaApiFilterBehindProxyTest {
         }
     }
 
-    // 抓的故障：有人用写得古怪的转发头（末尾多个逗号、越界端口、引号里藏分隔符），被当成了名单里的地址或本机。
+    // 抓的故障：有人用写得古怪的转发头（末尾多个逗号、越界端口、引号里藏分隔符），被当成了另一段地址或本机。
     @Test
     void oddlyWrittenForwardingHeadersNeverFallBackToAnotherHop() throws Exception {
         String token = issue();
-        properties.getConfigUi().setAllowIps(List.of("127.0.0.1/32", "::1/128", "203.0.113.0/24"));
         List<String[]> odd = List.of(
                 new String[]{"X-Forwarded-For", "203.0.113.9,"},
                 new String[]{"X-Forwarded-For", "203.0.113.9, "},
@@ -185,11 +199,14 @@ class NovaApiFilterBehindProxyTest {
             MockHttpServletResponse response = perform(me(token).with(peer("127.0.0.1")).header(header[0], header[1]));
             assertEquals(403, response.getStatus(), header[0] + ": " + header[1] + " → " + response.getContentAsString());
             assertError(response, "source_not_allowed");
+            assertEquals(new NovaApiVisitor(null, NovaApiVisitor.Kind.UNKNOWN), visitor(header[0], header[1]),
+                    "整个当作认不出来访地址: " + header[0] + ": " + header[1]);
+            assertTrue(message(response).contains("转发头"), message(response));
         }
         // 对照：同一地址写规矩了照常认得出
         for (String[] header : List.of(new String[]{"X-Forwarded-For", "203.0.113.9:65535"},
                 new String[]{"Forwarded", "for=\"203.0.113.9:8080\""}, new String[]{"Forwarded", "for=203.0.113.9"})) {
-            assertEquals(200, perform(me(token).with(peer("127.0.0.1")).header(header[0], header[1])).getStatus(),
+            assertEquals(new NovaApiVisitor("203.0.113.9", NovaApiVisitor.Kind.PROXIED), visitor(header[0], header[1]),
                     header[0] + ": " + header[1]);
         }
     }
@@ -203,16 +220,21 @@ class NovaApiFilterBehindProxyTest {
             MockHttpServletResponse forged = perform(me(token).with(peer("198.51.100.7")).header(header[0], header[1]));
             assertEquals(403, forged.getStatus(), header[0]);
         }
-        properties.getConfigUi().setAllowIps(List.of("198.51.100.7/32"));
-        assertEquals(200, perform(me(token).with(peer("198.51.100.7")).header("X-Forwarded-For", "203.0.113.9")).getStatus(),
-                "对端不是本机回环时只看对端，名单里的对端不会因为一个乱写的头被挡");
+        MockHttpServletRequest direct = new MockHttpServletRequest("GET", "/nova/api/v1/me");
+        direct.setRemoteAddr("198.51.100.7");
+        direct.addHeader("X-Forwarded-For", "garbage");
+        assertEquals(new NovaApiVisitor("198.51.100.7", NovaApiVisitor.Kind.DIRECT), NovaApiVisitor.of(direct),
+                "对端不是本机回环时只看对端，乱写的头不让它变成认不出的来访者");
+        properties.getConfigUi().setApiAnySourceGroups(List.of("probe"));
+        assertEquals(200, perform(me(token).with(peer("198.51.100.7")).header("X-Forwarded-For", "127.0.0.1")).getStatus(),
+                "开关开着时，直连的别的机器带什么头都照常过");
     }
 
     // 抓的故障：一个人乱试令牌，把同一个反向代理后面的所有人都限速了。
     @Test
     void invalidTokensAreCountedPerVisitorBehindTheSameProxy() throws Exception {
         rebuild(new NovaApiThrottle(3, Duration.ofMinutes(1), clock), new NovaStateStore(properties));
-        properties.getConfigUi().setAllowIps(List.of("127.0.0.1/32", "203.0.113.0/24", "198.51.100.0/24"));
+        properties.getConfigUi().setApiAnySourceGroups(List.of("probe"));
         String valid = issue();
         for (int i = 0; i < 3; i++) {
             assertEquals(401, perform(me("nvb_wrong-" + i).with(peer("127.0.0.1"))
@@ -239,6 +261,19 @@ class NovaApiFilterBehindProxyTest {
 
     private String issue() {
         return tokens.issue(ConfigUiAccount.LOCAL_ID, "脚本", List.of("probe:read"), null).plaintext();
+    }
+
+    /**
+     * 对端是 127.0.0.1、带着这几个头的请求，在程序接口看来是哪位来访者
+     * @param headers 头名与值，成对
+     */
+    private static NovaApiVisitor visitor(String... headers) {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/nova/api/v1/me");
+        request.setRemoteAddr("127.0.0.1");
+        for (int i = 0; i < headers.length; i += 2) {
+            request.addHeader(headers[i], headers[i + 1]);
+        }
+        return NovaApiVisitor.of(request);
     }
 
     private static MockHttpServletRequestBuilder me(String token) {

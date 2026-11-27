@@ -2,7 +2,6 @@ package org.frostnova.nova.core.api;
 
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.core.config.NovaCoreProperties;
-import org.frostnova.nova.core.config.ui.ConsoleAllowList;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccountStore;
 import org.frostnova.nova.core.config.ui.auth.oidc.OidcClient;
@@ -27,7 +26,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
- * 按接口组对任何来源地址开放：开放只免去来源名单这一道
+ * 按接口组对任何来源地址开放：开放只免去「只许本机」这一道
  */
 class NovaApiOpenGroupsFilterTest {
     private static final String OUTSIDER = "203.0.113.9";
@@ -100,13 +99,13 @@ class NovaApiOpenGroupsFilterTest {
 
     private void rebuild(NovaApiThrottle throttle) {
         NovaApiRegistry registry = new NovaApiRegistry(List.of(new OutboxLike(), new Ops()));
-        NovaApiFilter filter = new NovaApiFilter(new ConsoleAllowList(properties.getConfigUi()),
+        NovaApiFilter filter = new NovaApiFilter(
                 new NovaApiOpenGroups(properties.getConfigUi()::getApiAnySourceGroups, registry), tokens, accounts,
                 () -> true, registry, throttle, () -> List.of("bilibili"), List::of);
         mvc = MockMvcBuilders.standaloneSetup().addFilters(filter).build();
     }
 
-    // 抓的故障：新装或升级后什么都没改，名单以外的地址就能调接口；或者被拒时只回一句「不在名单里」，使用者不知道该去哪里打开。
+    // 抓的故障：新装或升级后什么都没改，本机以外的地址就能调接口；或者被拒时只回一句「来源不许」，使用者不知道该去哪里打开。
     @Test
     void nothingIsOpenByDefaultAndTheRefusalSaysWhereToOpenIt() throws Exception {
         assertTrue(properties.getConfigUi().getApiAnySourceGroups().isEmpty(), "默认清单为空");
@@ -117,7 +116,7 @@ class NovaApiOpenGroupsFilterTest {
         assertEquals(403, refused.getStatus());
         assertError(refused, "source_not_allowed");
         String message = message(refused);
-        assertTrue(message.contains("没有对名单以外的地址开放") && message.contains("「访问令牌」页"), message);
+        assertTrue(message.contains("没有对本机以外的地址开放") && message.contains("「访问令牌」页"), message);
         assertTrue(message.contains("parcel"), "已登记的组名写出来，好对上页面上那一行: " + message);
 
         // 请求路径里没登记的东西不回显
@@ -239,7 +238,7 @@ class NovaApiOpenGroupsFilterTest {
         assertEquals(403, perform(call(token, "/nova/api/v1/ops/status").header("X-Forwarded-For", OUTSIDER)).getStatus());
 
         assertEquals(200, perform(call(token, "/nova/api/v1/parcel/items").header("X-Forwarded-For", "garbage")).getStatus(),
-                "认不出来访地址的当作名单以外的来访者：组开放着，凭有效令牌可用");
+                "认不出来访地址的当作本机以外的来访者：组开放着，凭有效令牌可用");
         assertEquals(401, perform(get("/nova/api/v1/parcel/items").header("X-Forwarded-For", "garbage")).getStatus());
         assertEquals(403, perform(call(token, "/nova/api/v1/ops/status").header("X-Forwarded-For", "garbage")).getStatus());
     }

@@ -113,7 +113,7 @@ class EventStreamAccessTokenConsoleTest extends OidcTestSupport {
         var interceptor = new ConfigUiApiInterceptor(auth, properties, platforms);
         var security = new ConfigUiSecurityFilter("test-operator-token", new IpMatcher(List.of("127.0.0.0/8")), auth,
                 properties.getConfigUi().getAuth(), properties.getConfigUi().getAgreement(), () -> { });
-        var api = new NovaApiFilter(new ConsoleAllowList(properties.getConfigUi()),
+        var api = new NovaApiFilter(
                 new NovaApiOpenGroups(properties.getConfigUi()::getApiAnySourceGroups, registry), tokens, accounts,
                 auth::memberSignInOpen, registry, new NovaApiThrottle(), platforms::platforms, List::of);
         mvc = MockMvcBuilders.standaloneSetup(

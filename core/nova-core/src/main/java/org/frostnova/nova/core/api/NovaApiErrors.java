@@ -13,7 +13,7 @@ public final class NovaApiErrors {
     /** 401 没带令牌、令牌不存在、已吊销、已过期，或所属账号已停用／删除 */
     public static final String UNAUTHENTICATED = "unauthenticated";
 
-    /** 403 来源地址不在控制台「允许访问的来源 IP」名单里 */
+    /** 403 请求不是从本机直接发来的，请求的这组接口也没有对本机以外的地址开放 */
     public static final String SOURCE_NOT_ALLOWED = "source_not_allowed";
 
     /** 403 令牌有效，但没勾这个接口要求的范围 */

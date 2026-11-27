@@ -8,7 +8,6 @@ import org.frostnova.nova.core.alert.AlertChannel;
 import org.frostnova.nova.core.alert.AlertService;
 import org.frostnova.nova.core.alert.HealthAlertMonitor;
 import org.frostnova.nova.core.config.NovaCoreProperties;
-import org.frostnova.nova.core.config.ui.ConsoleAllowList;
 import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplier;
 import org.frostnova.nova.core.config.ui.RuntimeConfigurationApplierContributor;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccount;
@@ -112,7 +111,7 @@ class OutboxApiTest {
     @AfterEach void close() { context.close(); }
 
     private void useRegistry(NovaApiRegistry registry) {
-        var filter = new NovaApiFilter(new ConsoleAllowList(properties.getConfigUi()), tokens, accounts, () -> true,
+        var filter = new NovaApiFilter(tokens, accounts, () -> true,
                 registry, new NovaApiThrottle(), () -> List.of("live", "other"), List::of);
         mvc = MockMvcBuilders.standaloneSetup()
                 .addFilters(new SecurityHeadersFilter(List.of("/nova")), filter).build();

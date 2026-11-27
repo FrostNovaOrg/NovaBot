@@ -124,7 +124,7 @@ class ConfigUiApiRemoteAccessControllerTest extends OidcTestSupport {
         var interceptor = new ConfigUiApiInterceptor(auth, properties, platforms);
         var security = new ConfigUiSecurityFilter("test-operator-token", new IpMatcher(List.of("127.0.0.0/8")), auth,
                 properties.getConfigUi().getAuth(), properties.getConfigUi().getAgreement(), () -> { });
-        var api = new NovaApiFilter(new ConsoleAllowList(properties.getConfigUi()),
+        var api = new NovaApiFilter(
                 new NovaApiOpenGroups(properties.getConfigUi()::getApiAnySourceGroups, registry), tokens, accounts,
                 auth::memberSignInOpen, registry, new NovaApiThrottle(), platforms::platforms, List::of);
         mvc = MockMvcBuilders.standaloneSetup(
@@ -159,7 +159,7 @@ class ConfigUiApiRemoteAccessControllerTest extends OidcTestSupport {
     void adminTogglesTakeEffectOnTheNextRequestAndAreSaved() throws Exception {
         ConfigUiSession admin = auth.issueForPassword("127.0.0.1");
         String token = tokens.issue(ConfigUiAccount.LOCAL_ID, "取件机", List.of("parcel:read"), null).plaintext();
-        assertEquals(403, outsider(token).getStatus(), "什么都没改时名单外的来访者被拒");
+        assertEquals(403, outsider(token).getStatus(), "什么都没改时本机以外的来访者被拒");
 
         JSONObject state = body(console(get("/config/api/api-tokens/remote-access"), admin));
         JSONObject parcel = state.getJSONArray("groups").getJSONObject(0);
@@ -171,6 +171,7 @@ class ConfigUiApiRemoteAccessControllerTest extends OidcTestSupport {
         MockHttpServletResponse opened = console(toggle("parcel", true), admin);
         assertEquals(200, opened.getStatus(), opened.getContentAsString());
         assertTrue(body(opened).getJSONArray("groups").getJSONObject(0).getBooleanValue("open"), "回包里看得出已生效");
+        assertTrue(body(opened).getString("message").startsWith("已打开：本机以外的地址"), body(opened).getString("message"));
         assertEquals(List.of("parcel"), properties.getConfigUi().getApiAnySourceGroups());
         assertEquals(200, outsider(token).getStatus(), "不用重启，下一个请求就放行");
         String file = Files.readString(directory.resolve("application.yml"));
@@ -181,7 +182,10 @@ class ConfigUiApiRemoteAccessControllerTest extends OidcTestSupport {
         MockHttpServletResponse closed = console(toggle("parcel", false), admin);
         assertEquals(200, closed.getStatus(), closed.getContentAsString());
         assertFalse(body(closed).getJSONArray("groups").getJSONObject(0).getBooleanValue("open"));
-        assertEquals(403, outsider(token).getStatus(), "关掉后名单外的来访者立即回到 403");
+        assertTrue(body(closed).getString("message").startsWith("已关上：本机以外的地址"), body(closed).getString("message"));
+        String again = body(console(toggle("parcel", false), admin)).getString("message");
+        assertEquals("这组接口本来就没有对本机以外的地址开放", again);
+        assertEquals(403, outsider(token).getStatus(), "关掉后本机以外的来访者立即回到 403");
         assertTrue(properties.getConfigUi().getApiAnySourceGroups().isEmpty());
         assertFalse(Files.readString(directory.resolve("application.yml")).contains("parcel"));
     }
@@ -254,7 +258,7 @@ class ConfigUiApiRemoteAccessControllerTest extends OidcTestSupport {
         }
     }
 
-    // 抓的故障：页面写的连法与实际不符——监听地址只限本机时说内网连得上，或者名单只有本机时说来访机器在名单里。
+    // 抓的故障：页面写的连法与实际不符——监听地址只限本机时说内网连得上，或者端口、只听的那个地址写错。
     @Test
     void connectionFactsComeFromTheRunningValues() throws Exception {
         ConfigUiSession admin = auth.issueForPassword("127.0.0.1");
@@ -263,65 +267,37 @@ class ConfigUiApiRemoteAccessControllerTest extends OidcTestSupport {
         assertEquals("/nova/api/v1/", state.getString("apiPath"));
         assertEquals("loopback", state.getJSONObject("listen").getString("scope"));
         assertEquals(List.of("192.168.1.20"), state.getList("lan", String.class));
-        assertFalse(state.getBooleanValue("allowListBeyondLocal"));
         assertTrue(state.getString("consequence").contains("全靠访问令牌把关"));
 
         environment.setProperty("server.address", "10.1.2.3");
         environment.setProperty("local.server.port", "8899");
-        properties.getConfigUi().setAllowIps(List.of("127.0.0.1/32", "10.9.8.0/24"));
         state = body(console(get("/config/api/api-tokens/remote-access"), admin));
         assertEquals(8899, state.getIntValue("port"), "端口取实际在听的那个");
         assertEquals("specific", state.getJSONObject("listen").getString("scope"));
         assertEquals(List.of("10.1.2.3"), state.getList("lan", String.class), "只听一个地址时只列它");
-        assertTrue(state.getBooleanValue("allowListBeyondLocal"));
-        assertFalse(state.toJSONString().contains("10.9.8.0"), "名单原文不进回包");
-        assertFalse(state.getJSONObject("listen").getBooleanValue("allowListed"), "只听的那个地址不在名单里");
-        properties.getConfigUi().setAllowIps(List.of("127.0.0.1/32", "10.1.2.0/24"));
-        assertTrue(body(console(get("/config/api/api-tokens/remote-access"), admin))
-                .getJSONObject("listen").getBooleanValue("allowListed"), "只听的那个地址在名单里");
 
         assertEquals("all", ConfigUiApiRemoteAccessController.listenScope("0.0.0.0"));
         assertEquals("all", ConfigUiApiRemoteAccessController.listenScope("::"));
         assertEquals("loopback", ConfigUiApiRemoteAccessController.listenScope("::1"));
         assertEquals("loopback", ConfigUiApiRemoteAccessController.listenScope("localhost"));
-        assertFalse(ConfigUiApiRemoteAccessController.beyondLoopback(List.of("127.0.0.0/8", "::1/128", "::1")));
-        assertTrue(ConfigUiApiRemoteAccessController.beyondLoopback(List.of("0.0.0.0/0")));
-        assertTrue(ConfigUiApiRemoteAccessController.beyondLoopback(List.of("::/0")));
-        assertTrue(ConfigUiApiRemoteAccessController.beyondLoopback(List.of("127.0.0.1/1")));
     }
 
-    // 抓的故障：来源名单已经放行所有地址（例如里面有 0.0.0.0/0），外面的人凭令牌照样调得通，
-    // 页面上的开关却还显示关着，管理员以为没对外开。回包要如实带出这一位，名单原文仍不进回包。
+    // 抓的故障：控制台放在公网上、「允许访问的来源 IP」只好放行所有地址的人，接口各组跟着被动全开，
+    // 外面的人凭令牌就调得通；或者回包还在报那份名单，页面据此叫他去收窄名单。
     @Test
-    void allowListThatAdmitsEveryAddressIsReported() throws Exception {
+    void consoleAllowListDoesNotOpenTheApi() throws Exception {
         ConfigUiSession admin = auth.issueForPassword("127.0.0.1");
         String token = tokens.issue(ConfigUiAccount.LOCAL_ID, "取件机", List.of("parcel:read"), null).plaintext();
-        assertFalse(body(console(get("/config/api/api-tokens/remote-access"), admin)).getBooleanValue("allowListAdmitsAll"),
-                "默认名单不算放行所有地址");
-
-        properties.getConfigUi().setAllowIps(List.of("127.0.0.1/32", "::1/128", "198.51.100.7", "10.0.0.0/8"));
-        assertFalse(body(console(get("/config/api/api-tokens/remote-access"), admin)).getBooleanValue("allowListAdmitsAll"),
-                "加了一个具体地址和一个内网网段也不算");
-
-        properties.getConfigUi().setAllowIps(List.of("127.0.0.1/32", "0.0.0.0/0"));
-        assertEquals(200, outsider(token).getStatus(), "开关全关着，名单外的来访者照样调得通");
-        JSONObject state = body(console(get("/config/api/api-tokens/remote-access"), admin));
-        assertTrue(state.getBooleanValue("allowListAdmitsAll"), "IPv4 全放");
-        assertFalse(state.getJSONArray("groups").getJSONObject(0).getBooleanValue("open"), "开关本身仍如实是关着的");
-        assertFalse(state.toJSONString().contains("0.0.0.0/0"), "名单原文不进回包");
-
-        properties.getConfigUi().setAllowIps(List.of("::1/128", "::/0"));
-        assertTrue(body(console(get("/config/api/api-tokens/remote-access"), admin)).getBooleanValue("allowListAdmitsAll"),
-                "IPv6 全放");
-
-        properties.getConfigUi().setAllowIps(List.of("0.0.0.0/1", "128.0.0.0/1"));
-        assertEquals(200, outsider(token).getStatus());
-        assertTrue(body(console(get("/config/api/api-tokens/remote-access"), admin)).getBooleanValue("allowListAdmitsAll"),
-                "两半拼起来也是全放");
-        assertTrue(IpMatcher.admitsEveryAddress(List.of("8.8.8.8/0")), "前缀为 0 时地址写什么都是全放");
-        assertFalse(IpMatcher.admitsEveryAddress(List.of("0.0.0.0/1", "128.0.0.0/2")), "差一块就不算");
-        assertFalse(IpMatcher.admitsEveryAddress(List.of("0.0.0.0/0x", "::/0/0", "*")), "写错的条目本来就不起作用，不算");
-        assertFalse(IpMatcher.admitsEveryAddress(null));
+        for (List<String> list : List.<List<String>>of(List.of("127.0.0.1/32", "0.0.0.0/0"), List.of("::1/128", "::/0"),
+                List.of("0.0.0.0/1", "128.0.0.0/1"), List.of("127.0.0.1/32", OUTSIDER))) {
+            properties.getConfigUi().setAllowIps(list);
+            assertEquals(403, outsider(token).getStatus(), list + "：开关全关着，本机以外的来访者被拒");
+            JSONObject state = body(console(get("/config/api/api-tokens/remote-access"), admin));
+            assertFalse(state.containsKey("allowListAdmitsAll") || state.containsKey("allowListBeyondLocal")
+                    || state.getJSONObject("listen").containsKey("allowListed"), "回包不再报控制台名单: " + state);
+        }
+        assertEquals(200, console(toggle("parcel", true), admin).getStatus());
+        assertEquals(200, outsider(token).getStatus(), "打开这一组才过");
     }
 
     // 抓的故障：在设置页上把接口组加进清单，一句提醒也没有就对外开了；或者写错的组名被存下来，让人以为开了。

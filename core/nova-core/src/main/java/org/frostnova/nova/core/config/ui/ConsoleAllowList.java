@@ -12,7 +12,7 @@ import java.util.function.Supplier;
  * 名单每个请求现读：设置页上保存之后，从下一个请求起就按新名单放行。
  * 名单没变时用上一次建好的匹配器，不每个请求都重新解析一遍。
  * <p>
- * 统一接口面 {@code /nova/api/v1/} 也照这份名单放行，控制台关着时同样如此。
+ * 只管控制台。程序接口 {@code /nova/api/v1/} 不看这份名单：它只分本机与别的机器（见 {@code NovaApiFilter}）。
  */
 public final class ConsoleAllowList implements Supplier<IpMatcher> {
     private final NovaCoreProperties.ConfigUi configUi;

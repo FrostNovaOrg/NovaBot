@@ -2,7 +2,6 @@ package org.frostnova.nova.core.api;
 
 import org.frostnova.nova.core.config.NovaCoreProperties;
 import org.frostnova.nova.core.config.ui.ConfigUiRegistrar;
-import org.frostnova.nova.core.config.ui.ConsoleAllowList;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAccountStore;
 import org.frostnova.nova.core.config.ui.auth.ConfigUiAuthService;
 import org.frostnova.nova.core.config.ui.auth.oidc.OidcClient;
@@ -99,7 +98,7 @@ public class NovaApiConfiguration {
             ObjectProvider<AbstractDataSource> dataSource) {
         ConfigUiAccountStore accountStore = accounts.getIfAvailable(() -> new ConfigUiAccountStore(state));
         NovaApiOpenGroups openGroups = new NovaApiOpenGroups(properties.getConfigUi()::getApiAnySourceGroups, registry);
-        NovaApiFilter filter = new NovaApiFilter(new ConsoleAllowList(properties.getConfigUi()), openGroups, tokens,
+        NovaApiFilter filter = new NovaApiFilter(openGroups, tokens,
                 accountStore, memberSignIn, registry, throttle,
                 () -> {
                     DataSourceServiceRegistry registered = platforms.getIfAvailable();

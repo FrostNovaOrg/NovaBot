@@ -8,7 +8,6 @@ import org.frostnova.nova.core.api.NovaApiFilter;
 import org.frostnova.nova.core.api.NovaApiOpenGroups;
 import org.frostnova.nova.core.api.NovaApiRegistry;
 import org.frostnova.nova.core.config.NovaCoreProperties;
-import org.frostnova.nova.core.util.IpMatcher;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
@@ -37,14 +36,16 @@ import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 /**
- * 「访问令牌」页上「从别的机器访问」那一块：哪几组程序接口对任何来源地址开放，以及从本机、内网、公网各该怎么连
+ * 「访问令牌」页上「从别的机器访问」那一块：哪几组程序接口对本机以外的地址开放，以及从本机、内网、公网各该怎么连
+ * <p>
+ * 程序接口默认只许本机（对端是回环、不带转发头）调；控制台的「允许访问的来源 IP」不参与，这里也就不报它。
  * <p>
  * 两条都只给管理员（{@link ConfigUiPermissions}）。成员在这一页照旧只看得到、签得了自己的令牌。
  * <p>
  * 开关存的是设置项 {@value RuntimeConfigurationApplier#API_ANY_SOURCE_GROUPS}：写进配置文件，
  * 再经设置页保存同一条路落到运行中的程序上，保存即生效，时间线与「待重启」那本账也照常记。
  * <p>
- * 回包里没有令牌、凭据，也没有名单的原文；连法里用到的只有端口、监听地址与这台机器的内网地址。
+ * 回包里没有令牌、凭据；连法里用到的只有端口、监听地址与这台机器的内网地址。
  */
 @Slf4j
 @RestController
@@ -133,7 +134,7 @@ public class ConfigUiApiRemoteAccessController {
             String dropped = cleaned.dropped() == 0 ? ""
                     : "；清单里另有 " + cleaned.dropped() + " 条没登记或写法不合规的组名，已一并清掉";
             if (next.equals(current)) {
-                message = open ? "这组接口本来就对任何地址开放" : "这组接口本来就没有对名单以外的地址开放";
+                message = open ? "这组接口本来就对任何地址开放" : "这组接口本来就没有对本机以外的地址开放";
             } else {
                 Map<String, String> change = new HashMap<>();
                 change.put(RuntimeConfigurationApplier.API_ANY_SOURCE_GROUPS, next.isEmpty() ? null : String.join("\n", next));
@@ -162,13 +163,13 @@ public class ConfigUiApiRemoteAccessController {
                             cleaned.dropped());
                 }
                 if (!toggled) {
-                    message = (open ? "这组接口本来就对任何地址开放" : "这组接口本来就没有对名单以外的地址开放") + dropped;
+                    message = (open ? "这组接口本来就对任何地址开放" : "这组接口本来就没有对本机以外的地址开放") + dropped;
                 } else if (open) {
                     log.warn("{} 把程序接口组 {} 设为对任何来源地址开放（仍须有效的访问令牌）", ConfigUiAccess.actor(), segment);
-                    message = "已打开：名单以外的地址从下一个请求起可以凭有效令牌调这组接口" + dropped;
+                    message = "已打开：本机以外的地址从下一个请求起可以凭有效令牌调这组接口" + dropped;
                 } else {
-                    log.info("{} 关上了程序接口组 {} 对名单以外地址的开放", ConfigUiAccess.actor(), segment);
-                    message = "已关上：名单以外的地址从下一个请求起调这组接口会被拒绝（403）" + dropped;
+                    log.info("{} 关上了程序接口组 {} 对本机以外地址的开放", ConfigUiAccess.actor(), segment);
+                    message = "已关上：本机以外的地址从下一个请求起调这组接口会被拒绝（403）" + dropped;
                 }
             }
         }
@@ -226,8 +227,6 @@ public class ConfigUiApiRemoteAccessController {
         listen.put("address", address);
         listen.put("scope", scope);
         listen.put("restartPending", applier.getPendingRestart().contains("server.address"));
-        // 只听某一个地址时，本机来访在程序看来就是这个地址、不是回环：它在不在来源名单里决定本机与隧道连不连得通
-        listen.put("allowListed", "specific".equals(scope) && new IpMatcher(configUi.getAllowIps()).matches(address));
 
         JSONObject result = new JSONObject();
         result.put("groups", groups);
@@ -236,9 +235,6 @@ public class ConfigUiApiRemoteAccessController {
         result.put("apiPath", NovaApiFilter.V1 + "/");
         result.put("listen", listen);
         result.put("lan", new JSONArray(new ArrayList<>("specific".equals(scope) ? List.of(address) : lanAddresses.get())));
-        result.put("allowListBeyondLocal", beyondLoopback(configUi.getAllowIps()));
-        // 名单放行所有地址时，下面的开关关着也不拦人：页面要如实说出来，只给这一位，不给名单原文
-        result.put("allowListAdmitsAll", IpMatcher.admitsEveryAddress(configUi.getAllowIps()));
         result.put("consequence", RuntimeConfigurationApplier.OPENING_CONSEQUENCE);
         result.put("setting", RuntimeConfigurationApplier.API_ANY_SOURCE_GROUPS);
         return result;
@@ -275,37 +271,6 @@ public class ConfigUiApiRemoteAccessController {
             return "all";
         }
         return parsed.isLoopbackAddress() ? "loopback" : "specific";
-    }
-
-    /**
-     * 来源名单里有没有本机以外的地址
-     * <p>
-     * 只为页面上「内网那一条现在通不通」那句话：名单里只有本机两条时，来访的机器只能靠开关进来。
-     * @param entries 名单
-     * @return 有一条管得到本机以外的地址时为 true
-     */
-    static boolean beyondLoopback(List<String> entries) {
-        if (entries == null) {
-            return false;
-        }
-        for (String entry : entries) {
-            if (entry == null || entry.isBlank() || IpMatcher.problemOf(entry) != null) {
-                continue;
-            }
-            String rule = entry.strip();
-            int slash = rule.indexOf('/');
-            InetAddress address = literal(slash < 0 ? rule : rule.substring(0, slash).strip());
-            if (address == null) {
-                continue;
-            }
-            int full = address.getAddress().length * 8;
-            int prefix = slash < 0 ? full : Integer.parseInt(rule.substring(slash + 1).strip());
-            boolean onlyLoopback = address.isLoopbackAddress() && (address instanceof Inet4Address ? prefix >= 8 : prefix == full);
-            if (!onlyLoopback) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /** 严格的点分十进制 IPv4，每段 0-255：写成别的样子的串交给 getByName 会去查 DNS */
