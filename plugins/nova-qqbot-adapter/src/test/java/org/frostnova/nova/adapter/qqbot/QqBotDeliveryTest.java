@@ -25,6 +25,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
@@ -41,6 +42,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -52,6 +54,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Random;
@@ -1382,6 +1385,81 @@ class QqBotDeliveryTest {
         });
     }
 
+    @Test
+    @DisplayName("HTTP/2 下图床的跳转带着一段正文，照样跟三跳取到图片")
+    void followsRedirectsCarryingBodiesOverHttp2() {
+        byte[] png = Base64.getDecoder().decode(PNG);
+        byte[] note = "<html><body>Moved</body></html>".getBytes(StandardCharsets.UTF_8);
+        List<URI> requested = new ArrayList<>();
+        List<URI> cancelled = new ArrayList<>();
+        HttpClient client = http2ScriptedClient(requested, cancelled, Map.of(
+                "https://203.0.113.10/a.png", new Reply(302, "https://198.51.100.20/b.png", note, true),
+                "https://198.51.100.20/b.png", new Reply(301, "/c.png", note),
+                "https://198.51.100.20/c.png", new Reply(307, "https://[2001:db8::10]/d.png", note, true),
+                "https://[2001:db8::10]/d.png", new Reply(200, null, png, true)));
+        withSender(new QqBotImageDownloader(client), rig -> {
+            rig.exchange = path -> path.equals("files") ? json("file_info", FILE_INFO) : json("id", "message-1");
+            JSONObject result = rig.send("{image_url=https://203.0.113.10/a.png}");
+            assertEquals(0, result.getIntValue("code"), result.getString("message"));
+            assertEquals(List.of("files", "messages"), rig.endpoints());
+            assertEquals(PNG, rig.body(0).getString("file_data"));
+        });
+        assertEquals(List.of("https://203.0.113.10/a.png", "https://198.51.100.20/b.png",
+                "https://198.51.100.20/c.png", "https://[2001:db8::10]/d.png"),
+                requested.stream().map(URI::toString).toList());
+        assertEquals(List.of(), cancelled);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @DisplayName("跳转的正文超过小上限就不再收，这张图按下载失败算")
+    void stopsReadingAnOversizedRedirectBody(boolean declaresSize) {
+        byte[] page = new byte[4 * MIB];
+        List<URI> requested = new ArrayList<>();
+        List<URI> cancelled = new ArrayList<>();
+        HttpClient client = http2ScriptedClient(requested, cancelled, Map.of(
+                "https://203.0.113.10/a.png", new Reply(302, "https://198.51.100.20/b.png", page, declaresSize)));
+        withSender(new QqBotImageDownloader(client), rig -> {
+            JSONObject result = rig.send("{image_url=https://203.0.113.10/a.png}");
+            assertEquals(-1, result.getIntValue("code"));
+            assertEquals("图片下载失败，请稍后再试", result.getString("message"));
+            assertEquals("图片下载失败，请稍后再试", rig.group().lastFailure().reason());
+            assertTrue(rig.endpoints().isEmpty());
+        });
+        assertEquals(List.of(URI.create("https://203.0.113.10/a.png")), requested);
+        assertEquals(List.of(URI.create("https://203.0.113.10/a.png")), cancelled);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    @DisplayName("HTTP/2 下图片超过 20 MB，推送记录照样写图片太大")
+    void reportsOversizedImagesAsTooLargeOverHttp2(boolean declaresSize) {
+        byte[] bytes = new byte[QqBotImageDownloader.MAX_BYTES + 1];
+        byte[] png = Base64.getDecoder().decode(PNG);
+        System.arraycopy(png, 0, bytes, 0, png.length);
+        List<URI> requested = new ArrayList<>();
+        List<URI> cancelled = new ArrayList<>();
+        HttpClient client = http2ScriptedClient(requested, cancelled, Map.of(
+                "https://198.51.100.20/big.png", new Reply(200, null, bytes, declaresSize)));
+        withSender(new QqBotImageDownloader(client), rig -> {
+            JSONObject result = rig.send("{image_url=https://198.51.100.20/big.png}");
+            assertEquals(-1, result.getIntValue("code"));
+            assertEquals("图片超过 20 MB，没有发出", result.getString("message"));
+            assertEquals("图片超过 20 MB，没有发出", rig.group().lastFailure().reason());
+            assertTrue(rig.endpoints().isEmpty());
+        });
+        assertEquals(List.of(URI.create("https://198.51.100.20/big.png")), requested);
+        assertEquals(List.of(URI.create("https://198.51.100.20/big.png")), cancelled);
+    }
+
+    @Test
+    @DisplayName("正式装配的下载器不让客户端自己跟跳转：跳到内网的那一跳也要先过地址检查")
+    void productionDownloaderNeverLetsTheClientFollowRedirects() {
+        var downloader = new QqBotImageDownloader(
+                new DefaultListableBeanFactory().getBeanProvider(MessageImageAddressPolicy.class));
+        assertEquals(HttpClient.Redirect.NEVER, downloader.client().followRedirects());
+    }
+
     @ParameterizedTest
     @CsvSource(delimiter = '|', textBlock = """
             40054010 | 链接被平台拦了（example.invalid）
@@ -1603,10 +1681,29 @@ class QqBotDeliveryTest {
         }));
     }
 
-    private record Reply(int status, String location, byte[] body) {}
+    /** @param declaresSize 响应头里写不写 Content-Length */
+    private record Reply(int status, String location, byte[] body, boolean declaresSize) {
+        Reply(int status, String location, byte[] body) {
+            this(status, location, body, false);
+        }
+    }
 
     /** 按请求地址回包的假客户端，记下每一跳请求的地址；没写回包的地址一律不该被请求 */
     private static HttpClient scriptedClient(List<URI> requested, Map<String, Reply> replies) {
+        return scriptedClient(requested, new ArrayList<>(), replies, false);
+    }
+
+    /**
+     * 照 HTTP/2 下真客户端的做法回包：正文按 16 KB 一帧送；订阅一被取消就不再送，
+     * 这次请求以 IOException 失败，而且先于正文的结果生效
+     * @param cancelled 记下订阅被取消的那几跳
+     */
+    private static HttpClient http2ScriptedClient(List<URI> requested, List<URI> cancelled, Map<String, Reply> replies) {
+        return scriptedClient(requested, cancelled, replies, true);
+    }
+
+    private static HttpClient scriptedClient(List<URI> requested, List<URI> cancelledHops, Map<String, Reply> replies,
+                                             boolean http2) {
         HttpClient client = mock(HttpClient.class);
         when(client.<byte[]>sendAsync(any(HttpRequest.class), any())).thenAnswer(call -> {
             HttpRequest request = call.getArgument(0);
@@ -1616,33 +1713,50 @@ class QqBotDeliveryTest {
             assertTrue(request.headers().map().isEmpty());
             Reply reply = replies.get(request.uri().toString());
             if (reply == null) throw new AssertionError("不该请求 " + request.uri());
-            HttpHeaders headers = HttpHeaders.of(reply.location() == null ? Map.of()
-                    : Map.of("Location", List.of(reply.location())), (name, value) -> true);
+            Map<String, List<String>> fields = new HashMap<>();
+            if (reply.location() != null) fields.put("Location", List.of(reply.location()));
+            if (reply.declaresSize()) fields.put("Content-Length", List.of(Integer.toString(reply.body().length)));
+            HttpHeaders headers = HttpHeaders.of(fields, (name, value) -> true);
             HttpResponse.BodyHandler<byte[]> handler = call.getArgument(1);
             HttpResponse.ResponseInfo info = mock(HttpResponse.ResponseInfo.class);
             when(info.statusCode()).thenReturn(reply.status());
             when(info.headers()).thenReturn(headers);
             var subscriber = handler.apply(info);
             AtomicBoolean cancelled = new AtomicBoolean();
+            CompletableFuture<HttpResponse<byte[]>> exchange = new CompletableFuture<>();
             subscriber.onSubscribe(new Flow.Subscription() {
                 @Override
                 public void request(long n) {}
 
                 @Override
                 public void cancel() {
-                    cancelled.set(true);
+                    if (cancelled.getAndSet(true)) return;
+                    cancelledHops.add(request.uri());
+                    if (http2) exchange.completeExceptionally(new IOException("Stream 1 cancelled"));
                 }
             });
-            if (!cancelled.get()) subscriber.onNext(List.of(ByteBuffer.wrap(reply.body())));
+            byte[] bytes = reply.body();
+            if (http2) {
+                for (int offset = 0; offset < bytes.length && !cancelled.get(); offset += 16 * 1024) {
+                    subscriber.onNext(List.of(ByteBuffer.wrap(bytes, offset, Math.min(16 * 1024, bytes.length - offset))));
+                }
+            } else if (!cancelled.get()) {
+                subscriber.onNext(List.of(ByteBuffer.wrap(bytes)));
+            }
             if (!cancelled.get()) subscriber.onComplete();
             HttpResponse<byte[]> response = mock();
             when(response.statusCode()).thenReturn(reply.status());
             when(response.headers()).thenReturn(headers);
             when(response.uri()).thenReturn(request.uri());
-            return subscriber.getBody().thenApply(body -> {
+            subscriber.getBody().whenComplete((body, error) -> {
+                if (error != null) {
+                    exchange.completeExceptionally(error);
+                    return;
+                }
                 when(response.body()).thenReturn(body);
-                return response;
-            }).toCompletableFuture();
+                exchange.complete(response);
+            });
+            return exchange;
         });
         return client;
     }

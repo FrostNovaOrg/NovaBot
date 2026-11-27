@@ -13,7 +13,6 @@ import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Flow;
@@ -27,6 +26,10 @@ import java.util.concurrent.TimeoutException;
  * 客户端不自动跟随跳转，这里一跳一跳地跟，最多 {@link #MAX_REDIRECTS} 跳，每一跳的新地址重新判；
  * 从 https 跳到 http 的不跟。
  * <p>
+ * 跳转响应的正文照常收下丢掉，最多收 {@link #MAX_REDIRECT_BODY_BYTES}，超过就断开、这一跳按下载失败算。
+ * 不在收正文之前就断开：HTTP/2 下断开会让这次响应直接失败，连状态码和新地址都拿不到。
+ * 图片超过 {@link #MAX_BYTES} 时断开，不管协议层把这次响应报成什么错，都按图片太大报。
+ * <p>
  * 判地址时解析了一次主机名，客户端连接时会再解析一次；两次之间解析结果变了，这一道看不出来，本程序不处理这个窗口。
  */
 @NovaComponent
@@ -34,6 +37,8 @@ class QqBotImageDownloader {
     static final int MAX_BYTES = 20 * 1024 * 1024;
     /** 最多跟几跳：图床、CDN 常见一两跳 */
     static final int MAX_REDIRECTS = 3;
+    /** 跳转响应的正文最多收这么多：正常的跳转正文只有一小段说明 */
+    static final int MAX_REDIRECT_BODY_BYTES = 64 * 1024;
     static final String BLOCKED = "图片地址指向本机或内网，未下载";
     private static final Duration TIMEOUT = Duration.ofSeconds(15);
 
@@ -45,8 +50,12 @@ class QqBotImageDownloader {
      */
     @Autowired
     QqBotImageDownloader(ObjectProvider<MessageImageAddressPolicy> policy) {
-        this(HttpClient.newBuilder().connectTimeout(TIMEOUT).followRedirects(HttpClient.Redirect.NEVER).build(),
-                policy.getIfAvailable(MessageImageAddressPolicy::new));
+        this(policy.getIfAvailable(MessageImageAddressPolicy::new));
+    }
+
+    /** 正式用的客户端，按给定的地址规则判 */
+    QqBotImageDownloader(MessageImageAddressPolicy policy) {
+        this(newClient(), policy);
     }
 
     QqBotImageDownloader(HttpClient client) {
@@ -56,6 +65,15 @@ class QqBotImageDownloader {
     QqBotImageDownloader(HttpClient client, MessageImageAddressPolicy policy) {
         this.client = client;
         this.policy = policy;
+    }
+
+    /** 客户端不自动跟跳转：每一跳都要先过地址检查 */
+    private static HttpClient newClient() {
+        return HttpClient.newBuilder().connectTimeout(TIMEOUT).followRedirects(HttpClient.Redirect.NEVER).build();
+    }
+
+    HttpClient client() {
+        return client;
     }
 
     byte[] download(String url) throws IOException, InterruptedException {
@@ -102,14 +120,14 @@ class QqBotImageDownloader {
         } catch (IllegalArgumentException e) {
             throw new IOException("图片地址无效");
         }
-        var exchange = client.sendAsync(request, response -> redirect(response.statusCode())
-                ? new Skipped()
-                : new LimitedBody(response.headers().firstValueAsLong("Content-Length").orElse(0)));
+        var body = new Body();
+        var exchange = client.sendAsync(request, body);
         try {
             return exchange.get(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
         } catch (ExecutionException e) {
-            if (e.getCause() instanceof TooLarge tooLarge) {
-                throw tooLarge;
+            // 图片超限时这边断开了：HTTP/2 下协议层会因断开另报一个错，而且常常先到，所以看这边记下的
+            if (body.tooLarge()) {
+                throw new TooLarge();
             }
             throw new IOException("图片下载失败");
         } catch (TimeoutException e) {
@@ -160,37 +178,45 @@ class QqBotImageDownloader {
         }
     }
 
-    /** 跳转的正文不要：不收，直接断开 */
-    private static final class Skipped implements HttpResponse.BodySubscriber<byte[]> {
+    /**
+     * 一跳的响应正文怎么收：跳转的正文收下丢掉，最多 {@link #MAX_REDIRECT_BODY_BYTES}；
+     * 别的照收，最多 {@link #MAX_BYTES}
+     */
+    private static final class Body implements HttpResponse.BodyHandler<byte[]> {
+        private volatile Limited image;
+
         @Override
-        public CompletionStage<byte[]> getBody() {
-            return CompletableFuture.completedFuture(null);
+        public HttpResponse.BodySubscriber<byte[]> apply(HttpResponse.ResponseInfo response) {
+            long declared = response.headers().firstValueAsLong("Content-Length").orElse(0);
+            if (redirect(response.statusCode())) {
+                return new Limited(HttpResponse.BodySubscribers.<byte[]>replacing(null), MAX_REDIRECT_BODY_BYTES,
+                        declared);
+            }
+            Limited body = new Limited(HttpResponse.BodySubscribers.ofByteArray(), MAX_BYTES, declared);
+            image = body;
+            return body;
         }
 
-        @Override
-        public void onSubscribe(Flow.Subscription subscription) {
-            subscription.cancel();
+        /** 图片超过上限、这边断开了 */
+        boolean tooLarge() {
+            Limited body = image;
+            return body != null && body.exceeded;
         }
-
-        @Override
-        public void onNext(List<ByteBuffer> item) {}
-
-        @Override
-        public void onError(Throwable throwable) {}
-
-        @Override
-        public void onComplete() {}
     }
 
-    private static final class LimitedBody implements HttpResponse.BodySubscriber<byte[]> {
-        private final HttpResponse.BodySubscriber<byte[]> body = HttpResponse.BodySubscribers.ofByteArray();
-        private final long contentLength;
+    /** 正文超过上限就断开，不再收；没超过的交给 {@code body} */
+    private static final class Limited implements HttpResponse.BodySubscriber<byte[]> {
+        private final HttpResponse.BodySubscriber<byte[]> body;
+        private final long limit;
+        private final long declared;
         private Flow.Subscription subscription;
-        private long remaining = MAX_BYTES;
-        private boolean tooLarge;
+        private long received;
+        private volatile boolean exceeded;
 
-        LimitedBody(long contentLength) {
-            this.contentLength = contentLength;
+        Limited(HttpResponse.BodySubscriber<byte[]> body, long limit, long declared) {
+            this.body = body;
+            this.limit = limit;
+            this.declared = declared;
         }
 
         @Override
@@ -202,22 +228,22 @@ class QqBotImageDownloader {
         public void onSubscribe(Flow.Subscription subscription) {
             this.subscription = subscription;
             body.onSubscribe(subscription);
-            if (contentLength > MAX_BYTES) {
-                reject();
+            if (declared > limit) {
+                stop();
             }
         }
 
         @Override
         public void onNext(List<ByteBuffer> buffers) {
-            if (tooLarge) {
+            if (exceeded) {
                 return;
             }
             for (ByteBuffer buffer : buffers) {
-                remaining -= buffer.remaining();
-                if (remaining < 0) {
-                    reject();
-                    return;
-                }
+                received += buffer.remaining();
+            }
+            if (received > limit) {
+                stop();
+                return;
             }
             body.onNext(buffers);
         }
@@ -229,13 +255,16 @@ class QqBotImageDownloader {
 
         @Override
         public void onComplete() {
-            body.onComplete();
+            if (!exceeded) {
+                body.onComplete();
+            }
         }
 
-        private void reject() {
-            tooLarge = true;
+        /** 先记下超限再断开：断开时这次响应可能当场就判成失败了 */
+        private void stop() {
+            exceeded = true;
             subscription.cancel();
-            body.onError(new TooLarge());
+            body.onError(new IOException("正文超过上限"));
         }
     }
 }
