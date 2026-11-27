@@ -433,7 +433,7 @@ public class AutoDanmakuQueue {
         String name = viewer.getUname();
         String fallback = PkFanWelcomes.render(template, name, streamer, medal.getName(), null);
         Instant expires = eventTime(event, now).plusSeconds(30);
-        Item item = offer(room, PkFanWelcomes.FEATURE, fallback, RoomWelcomes.PRIORITY,
+        Item item = offer(room, PkFanWelcomes.FEATURE, fallback, PkFanWelcomes.PRIORITY,
                 expires.isBefore(battle.ends) ? expires : battle.ends, null, account);
         if (item != null) item.visitor = battle.reserve(uid, name, opponent, template, streamer, medal.getName(), fallback);
     }

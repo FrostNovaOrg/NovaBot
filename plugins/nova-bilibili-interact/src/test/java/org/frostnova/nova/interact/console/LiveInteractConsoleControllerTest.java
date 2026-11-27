@@ -292,7 +292,7 @@ class LiveInteractConsoleControllerTest {
         String route = "/config/api/interact/danmaku/settings";
         var defaults = body(mvc.perform(get(route).param("uid", "501")).andReturn());
         assertEquals("欢迎 {用户} 来串门", defaults.getString("defaultPkFanWelcomeTemplate"));
-        assertEquals(5, defaults.getJSONObject("settings").getIntValue("pkFanWelcomeLimit"));
+        assertEquals(3, defaults.getJSONObject("settings").getIntValue("pkFanWelcomeLimit"));
         var options = JSONObject.of("enabled", true, "features", JSONObject.of("pkFanWelcome", true),
                 "pkFanWelcomeTemplate", "{用户}戴着{对手}的{牌子}来看{主播}", "pkFanWelcomeLimit", 20);
         var payload = JSONObject.of("uid", "501", "settings", options);

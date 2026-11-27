@@ -119,10 +119,10 @@ class PkFanWelcomeTest extends RoomInteractionFixture {
     }
 
     @ParameterizedTest
-    @ValueSource(ints = {1, 5, 20})
+    @ValueSource(ints = {1, 3, 20})
     void capsUniqueVisitorsAndResetsOnlyOnANewBattle(int limit) {
         var options = JSONObject.of("perMinute", 20);
-        if (limit != 5) options.put("pkFanWelcomeLimit", limit);
+        if (limit != 3) options.put("pkFanWelcomeLimit", limit);
         configure(options, FEATURE);
         pk(1, 201, null, 102);
         for (int i = 0; i <= limit; i++) {
@@ -416,16 +416,17 @@ class PkFanWelcomeTest extends RoomInteractionFixture {
     }
 
     @Test
-    void sendsRegularAndVisitorWelcomesInQueueOrder() {
-        configure(JSONObject.of("welcome", JSONObject.of("minimumLevel", "GOVERNOR")), FEATURE, "guardWelcome");
+    void sendsQueuedGuardAndListedWelcomesBeforeVisitorWelcome() {
+        var welcome = JSONObject.of("people", List.of(JSONObject.of("uid", "3", "alias", "熟客")));
+        configure(JSONObject.of("welcome", welcome), FEATURE, "guardWelcome", "listedWelcome");
         pk(1, 201, null, 102);
+        fan(2, "乙");
         enter(1, "甲", null, RoomGuardLevel.GOVERNOR);
-        enter(2, "乙", MEDAL, RoomGuardLevel.CAPTAIN);
-        enter(3, "丙", null, RoomGuardLevel.GOVERNOR);
+        enter(3, "丙", null, RoomGuardLevel.NONE);
         tick(0);
         tick(3);
         tick(6);
-        assertEquals(List.of("欢迎总督 甲 进入直播间", "欢迎 乙 来串门", "欢迎总督 丙 进入直播间"), sent);
+        assertEquals(List.of("欢迎总督 甲 进入直播间", "欢迎 熟客 进入直播间", "欢迎 乙 来串门"), sent);
     }
 
     @Test

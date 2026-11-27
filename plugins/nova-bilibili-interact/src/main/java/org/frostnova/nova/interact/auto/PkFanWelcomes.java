@@ -18,7 +18,8 @@ import java.util.function.Function;
 final class PkFanWelcomes {
     static final String FEATURE = "pkFanWelcome";
     static final DanmakuTemplate TEXT = new DanmakuTemplate("PK 串门欢迎", "欢迎 {用户} 来串门", "对手", "牌子");
-    static final int DEFAULT_LIMIT = 5;
+    static final int PRIORITY = 1;
+    static final int DEFAULT_LIMIT = 3;
 
     private static final long MAX_PLAN_SECONDS = Duration.ofDays(1).toSeconds();
 

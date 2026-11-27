@@ -55,7 +55,7 @@ const defaultThanksTemplates = {gift: '感谢 {用户} 赠送的 {礼物}', memb
 const defaultWelcomeTemplates = {guardWelcome: '欢迎{等级} {用户} 进入直播间', listedWelcome: '欢迎 {用户} 进入直播间'};
 const defaultPkTemplate = '本场PK对手：{对手}，粉丝 {粉丝}，大航海 {舰队}，高能 {高能}';
 const defaultPkFanWelcomeTemplate = '欢迎 {用户} 来串门';
-const blankSettings = {pkFanWelcomeLimit: 5, pkFanWelcomeTemplate: '', keywordRules: [], pkTemplate: '', welcome: {minimumLevel: 'CAPTAIN', guardTemplate: '', listedTemplate: '', people: []},enabled: false, perMinute: 6, features: {}, plans: [], thanks: {
+const blankSettings = {pkFanWelcomeLimit: 3, pkFanWelcomeTemplate: '', keywordRules: [], pkTemplate: '', welcome: {minimumLevel: 'CAPTAIN', guardTemplate: '', listedTemplate: '', people: []},enabled: false, perMinute: 6, features: {}, plans: [], thanks: {
   giftWindowSeconds: 8, giftIncludeFree: false, giftMinYuan: 0, followWindowSeconds: 30, shareWindowSeconds: 30, templates: {},
 }};
 const settingsByRoom = {};
@@ -365,8 +365,8 @@ if (byId('li-rule-add')) {
 }
 
 const visitorSwitch = byId('li-pkFanWelcome');
-check('PK 串门欢迎默认关闭，每场五位', visitorSwitch && !visitorSwitch.checked
-  && Number(byId('li-pkFanWelcomeLimit').value) === 5
+check('PK 串门欢迎默认关闭，每场三位', visitorSwitch && !visitorSwitch.checked
+  && Number(byId('li-pkFanWelcomeLimit').value) === 3
   && byId('li-pkFanWelcome-preview').textContent === '欢迎 小明 来串门');
 check('记录显示 PK 串门欢迎', byId('li-history').textContent.includes('PK 串门欢迎'));
 if (visitorSwitch) {
@@ -382,7 +382,7 @@ if (visitorSwitch) {
   byId('li-settings-room').dispatchEvent({type: 'change'});
   await flush();
   check('另一位主播保留默认串门设置', !byId('li-pkFanWelcome').checked
-    && Number(byId('li-pkFanWelcomeLimit').value) === 5 && !byId('li-pkFanWelcome-template').value);
+    && Number(byId('li-pkFanWelcomeLimit').value) === 3 && !byId('li-pkFanWelcome-template').value);
   byId('li-settings-room').value = '502';
   byId('li-settings-room').dispatchEvent({type: 'change'});
   await flush();
