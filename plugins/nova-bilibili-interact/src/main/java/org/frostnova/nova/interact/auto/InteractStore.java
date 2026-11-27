@@ -78,18 +78,20 @@ public class InteractStore {
             Map<String, PkProgress> battles = new HashMap<>();
             JSONObject session = root.getJSONObject(key);
             if (session.getLongValue("start") != start) return battles;
+            PkProgress alreadyAnnounced = new PkProgress(Instant.MIN, Set.of());
             JSONObject saved = session.getJSONObject(PK_BATTLES);
             if (saved != null) {
                 for (String id : saved.keySet()) {
                     JSONObject battle = saved.getJSONObject(id);
-                    battles.put(id, new PkProgress(Instant.ofEpochMilli(battle.getLongValue("expires")),
-                            new HashSet<>(battle.getJSONArray("opponents").toList(Long.class))));
+                    JSONArray opponents = battle == null ? null : battle.getJSONArray("opponents");
+                    battles.put(id, opponents == null ? alreadyAnnounced : new PkProgress(
+                            Instant.ofEpochMilli(battle.getLongValue("expires")), new HashSet<>(opponents.toList(Long.class))));
                 }
             }
             // 旧记录只记场次号，整场都已经处理过。
             JSONArray legacy = session.getJSONArray(PkAnnouncement.FEATURE);
             if (legacy != null) {
-                for (String id : legacy.toList(String.class)) battles.put(id, new PkProgress(Instant.MIN, Set.of()));
+                for (String id : legacy.toList(String.class)) battles.put(id, alreadyAnnounced);
             }
             return battles;
         }).orElseGet(HashMap::new);

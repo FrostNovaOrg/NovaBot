@@ -19,9 +19,12 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Files;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -285,6 +288,18 @@ class KeywordAndPkTest extends RoomInteractionFixture {
                 .anyMatch(r -> RED_ANNOUNCEMENT.equals(r.getString("text")) && r.getString("reason").contains("时限")));
     }
 
+    @Test
+    void skipsOpeningReceivedAfterPlatformSendDeadline() {
+        enablePk();
+        stubPkProfiles(35);
+        at(61);
+        events.publishEvent(new BilibiliPkBattleEvent(ROOM, 35L, 8, Stage.OPEN, 3,
+                START.getEpochSecond(), null, null, null, null, null, null, List.of(OTHER, RED), now));
+        tick(61);
+        tick(64);
+        assertTrue(sent.isEmpty(), sent::toString);
+    }
+
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
     void skipsOnlyTheOpponentWithMissingOrLateProfile(boolean late) {
@@ -302,6 +317,37 @@ class KeywordAndPkTest extends RoomInteractionFixture {
         tick(11);
         tick(14);
         assertEquals(List.of(ANNOUNCEMENT, GREEN_ANNOUNCEMENT), sent);
+    }
+
+    @Test
+    void announcesNextOpponentWhenLookupNeverReturns() {
+        events.close();
+        start(Duration.ofMillis(250));
+        enablePk();
+        stubPkProfiles(36);
+        when(opponents.lookup(36L, OTHER)).thenReturn(new CompletableFuture<>());
+        pk(36, Stage.OPEN, OTHER, RED);
+
+        await().pollInSameThread().atMost(Duration.ofSeconds(5)).until(() -> {
+            queue.tick();
+            return !sent.isEmpty();
+        });
+        assertEquals(1, sent.size(), sent::toString);
+        assertTrue(sent.get(0).contains("小红"), sent::toString);
+    }
+
+    @Test
+    void announcesNextOpponentWhenLookupFails() {
+        enablePk();
+        stubPkProfiles(37);
+        var failed = new CompletableFuture<Profile>();
+        when(opponents.lookup(37L, OTHER)).thenReturn(failed);
+        pk(37, Stage.OPEN, OTHER, RED);
+        failed.completeExceptionally(new IllegalStateException());
+        tick(0);
+
+        assertEquals(1, sent.size(), sent::toString);
+        assertTrue(sent.get(0).contains("小红"), sent::toString);
     }
 
     @Test
@@ -349,6 +395,39 @@ class KeywordAndPkTest extends RoomInteractionFixture {
         tick(6);
         assertTrue(sent.isEmpty());
         verifyNoInteractions(opponents);
+    }
+
+    @Test
+    void restoresPkProgressAlongsideIncompleteBattles() throws Exception {
+        events.close();
+        long expires = START.plusSeconds(60).toEpochMilli();
+        Files.writeString(dir.resolve("state.json"), """
+                {"LiveInteractThanked": {"101": {
+                    "start": %d,
+                    "pkOpponent": ["39"],
+                    "pkBattles": {
+                        "38": {"expires": %d},
+                        "40": {"expires": %d, "opponents": null},
+                        "41": {"expires": %d, "opponents": [102]}
+                    }
+                }}}
+                """.formatted(broadcastStart, expires, expires, expires));
+        start();
+        enablePk();
+        for (long id : List.of(38L, 39L, 40L, 41L)) stubPkProfiles(id);
+
+        pk(38, Stage.OPEN, OTHER, RED);
+        pk(39, Stage.OPEN, OTHER, RED);
+        pk(40, Stage.OPEN, OTHER, RED);
+        tick(0);
+        tick(3);
+        assertTrue(sent.isEmpty(), sent::toString);
+
+        pk(41, Stage.OPEN, OTHER, RED);
+        tick(6);
+        tick(9);
+        assertEquals(1, sent.size(), sent::toString);
+        assertTrue(sent.get(0).contains("小红"), sent::toString);
     }
 
     @Test
