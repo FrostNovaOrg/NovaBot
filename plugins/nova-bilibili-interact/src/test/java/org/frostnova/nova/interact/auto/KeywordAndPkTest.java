@@ -1,5 +1,9 @@
 package org.frostnova.nova.interact.auto;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.alibaba.fastjson2.JSONObject;
 import org.frostnova.nova.bilibili.event.live.*;
 import org.frostnova.nova.bilibili.service.BilibiliPkOpponentService.Profile;
@@ -12,6 +16,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -21,8 +27,13 @@ import static org.mockito.Mockito.*;
 
 class KeywordAndPkTest extends RoomInteractionFixture {
     private static final Opponent OTHER = new Opponent(502L, 102L, null, null);
+    private static final Opponent RED = new Opponent(503L, 103L, null, null);
+    private static final Opponent GREEN = new Opponent(504L, 104L, null, null);
+    private static final Opponent WHITE = new Opponent(505L, 105L, null, null);
     private static final Profile PROFILE = new Profile("小蓝", 123456L, 0, null);
     private static final String ANNOUNCEMENT = "本场PK对手：小蓝，粉丝 12.3万，大航海 0";
+    private static final String RED_ANNOUNCEMENT = "本场PK对手：小红";
+    private static final String GREEN_ANNOUNCEMENT = "本场PK对手：小绿";
 
     private JSONObject rule(String word, String... replies) {
         return JSONObject.of("keywords", List.of(word), "replies", List.of(replies));
@@ -41,9 +52,21 @@ class KeywordAndPkTest extends RoomInteractionFixture {
         events.publishEvent(new BilibiliDanmuEvent(ROOM, viewer, text, text, now));
     }
 
-    private void pk(long id, Stage stage) {
-        events.publishEvent(new BilibiliPkBattleEvent(ROOM, id, 1, stage, 2, null, null,
-                null, null, null, null, null, List.of(OTHER), now));
+    private void pk(long id, Stage stage, Opponent... listed) {
+        List<Opponent> lineup = listed.length == 0 ? List.of(OTHER) : List.of(listed);
+        int type = lineup.size() == 1 ? 6 : 8;
+        events.publishEvent(new BilibiliPkBattleEvent(ROOM, id, type, stage, lineup.size() + 1, null, null,
+                null, null, null, null, null, lineup, now));
+    }
+
+    private void enablePk() {
+        configure(true, JSONObject.of("pkOpponent", true), List.of(), "");
+    }
+
+    private void stubPkProfiles(long id) {
+        when(opponents.lookup(id, OTHER)).thenReturn(CompletableFuture.completedFuture(PROFILE));
+        when(opponents.lookup(id, RED)).thenReturn(CompletableFuture.completedFuture(new Profile("小红", null, null, null)));
+        when(opponents.lookup(id, GREEN)).thenReturn(CompletableFuture.completedFuture(new Profile("小绿", null, null, null)));
     }
 
     @Test
@@ -158,6 +181,233 @@ class KeywordAndPkTest extends RoomInteractionFixture {
         verify(opponents).lookup(13L, OTHER);
         verify(opponents).lookup(14L, OTHER);
         verifyNoMoreInteractions(opponents);
+    }
+
+    @Test
+    void announcesOneOpponentAsBefore() {
+        enablePk();
+        stubPkProfiles(20);
+        pk(20, Stage.OPEN, OTHER);
+        tick(0);
+        tick(3);
+        assertEquals(List.of(ANNOUNCEMENT), sent);
+    }
+
+    @Test
+    void announcesBothOpponentsInPlatformOrder() {
+        enablePk();
+        stubPkProfiles(21);
+        var first = new CompletableFuture<Profile>();
+        when(opponents.lookup(21L, OTHER)).thenReturn(first);
+        pk(21, Stage.OPEN, OTHER, RED);
+        tick(0);
+        assertTrue(sent.isEmpty());
+        at(1);
+        first.complete(PROFILE);
+        tick(1);
+        tick(4);
+        assertEquals(List.of(ANNOUNCEMENT, RED_ANNOUNCEMENT), sent);
+    }
+
+    @Test
+    void announcesOnlyTheFirstThreeListedOpponents() {
+        enablePk();
+        stubPkProfiles(22);
+        pk(22, Stage.OPEN, OTHER, GREEN, RED, WHITE);
+        for (int seconds : List.of(0, 3, 6, 9)) tick(seconds);
+        assertEquals(List.of(ANNOUNCEMENT, GREEN_ANNOUNCEMENT, RED_ANNOUNCEMENT), sent);
+        verify(opponents, never()).lookup(22L, WHITE);
+    }
+
+    @Test
+    void ignoresRepeatedLineupEvenWhileLookingUpProfiles() {
+        enablePk();
+        stubPkProfiles(23);
+        var first = new CompletableFuture<Profile>();
+        when(opponents.lookup(23L, OTHER)).thenReturn(first);
+        pk(23, Stage.OPEN, OTHER, RED);
+        pk(23, Stage.OPEN, OTHER, RED);
+        first.complete(PROFILE);
+        tick(0);
+        tick(3);
+        pk(23, Stage.OPEN, OTHER, RED);
+        tick(6);
+        assertEquals(List.of(ANNOUNCEMENT, RED_ANNOUNCEMENT), sent);
+        verify(opponents).lookup(23L, OTHER);
+        verify(opponents).lookup(23L, RED);
+    }
+
+    @Test
+    void addsNewOpponentsInOrderUpToThreePerBattle() {
+        enablePk();
+        stubPkProfiles(24);
+        var first = new CompletableFuture<Profile>();
+        when(opponents.lookup(24L, OTHER)).thenReturn(first);
+        pk(24, Stage.OPEN, OTHER);
+        pk(24, Stage.OPEN, OTHER, RED);
+        tick(0);
+        assertTrue(sent.isEmpty());
+        first.complete(PROFILE);
+        tick(1);
+        tick(4);
+        pk(24, Stage.OPEN, RED, GREEN, OTHER);
+        tick(7);
+        pk(24, Stage.OPEN, WHITE, GREEN, RED);
+        tick(10);
+        assertEquals(List.of(ANNOUNCEMENT, RED_ANNOUNCEMENT, GREEN_ANNOUNCEMENT), sent);
+        verify(opponents).lookup(24L, OTHER);
+        verify(opponents).lookup(24L, RED);
+        verify(opponents).lookup(24L, GREEN);
+        verifyNoMoreInteractions(opponents);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void supplementUsesOriginalSendDeadline(boolean restart) {
+        enablePk();
+        stubPkProfiles(25);
+        pk(25, Stage.OPEN, OTHER);
+        tick(0);
+        if (restart) {
+            events.close();
+            state.save();
+            start();
+        }
+        at(59);
+        pk(25, Stage.OPEN, OTHER, RED);
+        tick(60);
+        pk(25, Stage.OPEN, OTHER, RED, GREEN);
+        tick(63);
+        assertEquals(List.of(ANNOUNCEMENT), sent);
+        verify(opponents).lookup(25L, RED);
+        verify(opponents, never()).lookup(25L, GREEN);
+        assertTrue(store.history(101, InteractStore.Outcome.DROPPED, 1, now).rows().stream()
+                .anyMatch(r -> RED_ANNOUNCEMENT.equals(r.getString("text")) && r.getString("reason").contains("时限")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void skipsOnlyTheOpponentWithMissingOrLateProfile(boolean late) {
+        enablePk();
+        stubPkProfiles(26);
+        var unavailable = new CompletableFuture<Profile>();
+        when(opponents.lookup(26L, RED)).thenReturn(unavailable);
+        pk(26, Stage.OPEN, RED, OTHER, GREEN);
+        if (late) {
+            at(11);
+            unavailable.complete(new Profile("过时", null, null, null));
+        } else {
+            unavailable.complete(new Profile("　", null, null, null));
+        }
+        tick(11);
+        tick(14);
+        assertEquals(List.of(ANNOUNCEMENT, GREEN_ANNOUNCEMENT), sent);
+    }
+
+    @Test
+    void ignoresMultiplayerSettlement() {
+        enablePk();
+        stubPkProfiles(27);
+        pk(27, Stage.SETTLE, OTHER, RED);
+        tick(0);
+        tick(3);
+        assertTrue(sent.isEmpty());
+        verifyNoInteractions(opponents);
+    }
+
+    @Test
+    void restoresIndividualOpponentsAfterRestart() {
+        enablePk();
+        stubPkProfiles(28);
+        pk(28, Stage.OPEN, OTHER, RED);
+        tick(0);
+        tick(3);
+        events.close();
+        state.save();
+        start();
+        pk(28, Stage.OPEN, OTHER, RED, GREEN);
+        tick(6);
+        tick(9);
+        tick(12);
+        assertEquals(List.of(ANNOUNCEMENT, RED_ANNOUNCEMENT, GREEN_ANNOUNCEMENT), sent);
+        verify(opponents).lookup(28L, OTHER);
+        verify(opponents).lookup(28L, RED);
+        verify(opponents).lookup(28L, GREEN);
+    }
+
+    @Test
+    void treatsLegacyBattleIdAsEntireBattleAnnounced() {
+        enablePk();
+        state.write("LiveInteractThanked", root -> root.put("101",
+                JSONObject.of("start", broadcastStart, "pkOpponent", List.of("29"))));
+        events.close();
+        state.save();
+        start();
+        pk(29, Stage.OPEN, OTHER, RED, GREEN);
+        tick(0);
+        tick(3);
+        tick(6);
+        assertTrue(sent.isEmpty());
+        verifyNoInteractions(opponents);
+    }
+
+    @Test
+    void skipsAllOpponentsWhenDisabledPausedOrOffline() {
+        stubPkProfiles(30);
+        stubPkProfiles(31);
+        stubPkProfiles(32);
+        configure(true, new JSONObject(), List.of(), "");
+        pk(30, Stage.OPEN, OTHER, RED);
+        enablePk();
+        queue.pauseRoom(501, null, now.plusSeconds(60));
+        pk(31, Stage.OPEN, OTHER, RED);
+        queue.pauseRoom(501, null, now);
+        living = false;
+        pk(32, Stage.OPEN, OTHER, RED);
+        tick(0);
+        tick(3);
+        assertTrue(sent.isEmpty());
+        verifyNoInteractions(opponents);
+    }
+
+    @Test
+    void logsListedAndPlannedCountsOncePerBattle() {
+        enablePk();
+        stubPkProfiles(33);
+        var logger = (Logger) LoggerFactory.getLogger(AutoDanmakuQueue.class);
+        var logs = new ListAppender<ILoggingEvent>();
+        logs.start();
+        logger.addAppender(logs);
+        try {
+            pk(33, Stage.OPEN, OTHER, RED, GREEN, WHITE);
+            pk(33, Stage.OPEN, OTHER, RED, GREEN, WHITE);
+            pk(33, Stage.SETTLE, OTHER, RED, GREEN, WHITE);
+            var openings = logs.list.stream().filter(log -> log.getFormattedMessage().contains("PK 开打")).toList();
+            assertEquals(1, openings.size());
+            var opening = openings.get(0);
+            assertEquals(Level.INFO, opening.getLevel());
+            for (String field : List.of("直播间=501", "场次=33", "平台对手数=4", "计划播报数=3")) {
+                assertTrue(opening.getFormattedMessage().contains(field), opening::getFormattedMessage);
+            }
+        } finally {
+            logger.detachAppender(logs);
+            logs.stop();
+        }
+    }
+
+    @Test
+    void countsEachOpponentAgainstRoomSendLimit() {
+        queue.save(101, RoomSettings.parse(JSONObject.of("enabled", true, "perMinute", 1,
+                "features", JSONObject.of("pkOpponent", true))));
+        stubPkProfiles(34);
+        pk(34, Stage.OPEN, OTHER, RED, GREEN);
+        for (int seconds : List.of(0, 3, 6, 60)) tick(seconds);
+        assertEquals(List.of(ANNOUNCEMENT), sent);
+        var expired = store.history(101, InteractStore.Outcome.DROPPED, 1, now).rows().stream()
+                .filter(r -> r.getString("reason").contains("时限"))
+                .map(r -> r.getString("text")).toList();
+        assertEquals(2, expired.size());
+        assertTrue(expired.containsAll(List.of(RED_ANNOUNCEMENT, GREEN_ANNOUNCEMENT)));
     }
 
     @Test
