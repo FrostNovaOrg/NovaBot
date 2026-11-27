@@ -231,21 +231,26 @@ proxy_set_header Host $http_host;
 `proxy_set_header X-Forwarded-For $remote_addr;` 覆写该头。
 
 **⚠️ 还有一处取的是最左侧：开着 `server.forward-headers-strategy: framework` 时的来源地址。**
-开着它时，本程序用自己的转发头过滤器顶替 Spring 装的 `ForwardedHeaderFilter`，按转发头**改写 `getRemoteAddr()`**、
-主机名与协议。配置控制台的来源名单、按来源的登录锁定、通行密钥的登录挑战与只读口令代签发的来源 IP 都来自这个方法。
+开着它时，本程序用自己的转发头过滤器顶替 Spring 装的 `ForwardedHeaderFilter`，按转发头**改写 `getRemoteAddr()`**
+与协议。配置控制台的来源名单、按来源的登录锁定、通行密钥的登录挑战与只读口令代签发的来源 IP 都来自这个方法。
 它这样认转发头：
 
 - **`Forwarded` 头一律不认**：不拿它改写地址、主机名或协议，排在后面的各环也看不到它。
   Spring 那一道原本优先认这个头、而且不看是谁送来的——反代只覆写了 `X-Forwarded-For` 而没清 `Forwarded` 时，
   客户端自带一个 `Forwarded: for=<任意地址>`，程序就把那个地址当成来源。现在这条路不通了。
-- **只认可信代理送来的 `X-Forwarded-*`**：直接连进来的那一端在可信网段里，才按它送来的 `X-Forwarded-For`、
-  `X-Forwarded-Proto`、`X-Forwarded-Host`、`X-Forwarded-Prefix` 改写，取法与 Spring 一样；不在的，这几个头不认，
+- **只认可信代理送来的 `X-Forwarded-For`、`X-Forwarded-Proto`、`X-Forwarded-Ssl`**：直接连进来的那一端在可信网段里，
+  才按它送来的这几个头改写来源地址与协议，取法与 Spring 一样；不在的，这几个头不认，
   也从请求里去掉。可信网段以外的人直接连到后端端口，自带什么转发头都改不了来源。
   可信网段默认是本机回环与私有网段，与 Tomcat `RemoteIpValve` 默认的 internal-proxies 同一套
   （`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、`169.254.0.0/16`、`100.64.0.0/10`、`127.0.0.0/8`、`::1`、`fe80::/10`、`fc00::/7`）；
   另外的网段写在 `novabot.core.config-ui.trusted-proxies`（每行一个 IP 或 CIDR 网段，重启生效，写错的那条启动时跳过）。
   因为私有网段默认可信，后端端口若对局域网开放，同一网段里的机器能直接连上来自称代理，带一个 `X-Forwarded-For`
   改写程序看到的来源。所以后端应只监听本机回环，或用防火墙只放行反向代理那一台机器连后端端口。
+- **`X-Forwarded-Host`、`X-Forwarded-Port`、`X-Forwarded-Prefix` 一律不认**，可信代理送来的也一样，并从请求里去掉：
+  主机名以 `Host` 头为准，端口跟着可信代理送来的协议取默认端口（没送协议时以 `Host` 为准），请求路径与上下文前缀保持原样。
+  反向代理多半只覆写 `X-Forwarded-For` 与 `X-Forwarded-Proto`，客户端自带的这三种头会被原样送到；
+  程序自己的判断也不靠它们：跨站请求防护比的是原样的 `Host`，通行密钥用 `Host`，页面前缀与 Cookie 的 Path 只取配置里的前缀。
+  所以反向代理要把浏览器送来的原始 `Host` 传给后端（Nginx 写 `proxy_set_header Host $http_host;`）。
 - 可信代理送来的 `X-Forwarded-For` 取的是**最左侧**。
 
 于是在「**开着 framework + 反代是追加式**」这个组合下，
@@ -266,7 +271,8 @@ proxy_set_header Host $http_host;
 
 **从旧版升级、开着 framework 的部署要核两件事**：反代只发 `Forwarded`、不发 `X-Forwarded-*` 的，要改成发 `X-Forwarded-*`，
 否则程序看到的来源一律是反代自己；反代不在本机回环或私有网段里的，要把它的网段写进 `novabot.core.config-ui.trusted-proxies`，
-否则它送来的 `X-Forwarded-*` 不被采信。`native`（交给 Tomcat 处理）与不开这一项时，行为不变。
+否则它送来的 `X-Forwarded-*` 不被采信。靠 `X-Forwarded-Host` 告诉程序对外主机名的，要改成把原始 `Host` 传给后端，
+否则程序看到的主机名是反代转发时写的那个。`native`（交给 Tomcat 处理）与不开这一项时，行为不变。
 
 **程序接口 `/nova/api/v1/` 自己认转发头，不靠 `forward-headers-strategy`。** 只在直接连进来的那一端是本机回环、
 请求又带了转发头时才看它们：`X-Forwarded-For` 取最右一段，`X-Real-IP` 只认一行、一个值，`Forwarded` 取最后一项的 `for=`；

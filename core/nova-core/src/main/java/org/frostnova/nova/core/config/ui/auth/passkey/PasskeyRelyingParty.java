@@ -23,7 +23,13 @@ import org.springframework.http.HttpHeaders;
  * <h2>反向代理</h2>
  * 代理之后，{@code Host} 里是代理转给我们的那个（多半是 {@code 127.0.0.1:7827}），
  * 而浏览器看到的是代理对外的域名。这两者一旦不同，签名里那个 rpId 哈希就永远对不上，
- * 因此这里优先认 {@code X-Forwarded-Host} 与 {@code X-Forwarded-Proto}。
+ * 因此反向代理要把浏览器送来的原始 {@code Host} 传给后端（Nginx 写 {@code proxy_set_header Host $http_host;}）。
+ * <p>
+ * 这里读请求上还在的 {@code X-Forwarded-Host} 与 {@code X-Forwarded-Proto}，读不到时退回 {@code Host} 与
+ * {@link HttpServletRequest#isSecure()}。开着 {@code server.forward-headers-strategy=framework} 时，
+ * 转发头过滤器已把这两个头从请求里去掉：{@code X-Forwarded-Host} 谁送来的都不认，主机名只看 {@code Host}；
+ * 可信代理送来的 {@code X-Forwarded-Proto} 已体现在 {@code isSecure()} 上。不开这一项、或用 {@code native} 时，
+ * 请求上的 {@code X-Forwarded-Host} 仍会先被读到。
  * <p>
  * 🔴 <b>这两个头是代理写的，不是使用者能定的。</b>直接暴露端口（没有代理）时，
  * 任何人都能自己带上这两个头——但那样做只能让他自己那一趟的 rpId 变成别的值，

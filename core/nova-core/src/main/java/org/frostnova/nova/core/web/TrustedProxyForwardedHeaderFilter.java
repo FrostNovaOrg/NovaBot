@@ -35,8 +35,12 @@ import java.util.stream.Stream;
  * <ul>
  *   <li>{@code Forwarded} 一律不拿来改写地址、主机名或协议，后面的各环也看不到它；</li>
  *   <li>直接对端不在可信代理的网段里：{@code X-Forwarded-*} 也不认，不改写，并从请求里去掉；</li>
- *   <li>直接对端是可信代理：{@code X-Forwarded-For}、{@code X-Forwarded-Proto}、{@code X-Forwarded-Host}、
- *       {@code X-Forwarded-Prefix} 等交给框架那一套照原样处理，取法一点不变（{@code X-Forwarded-For} 仍取最左一段）。</li>
+ *   <li>直接对端是可信代理：{@code X-Forwarded-For}、{@code X-Forwarded-Proto}、{@code X-Forwarded-Ssl}
+ *       交给框架那一套照原样处理，取法一点不变（{@code X-Forwarded-For} 仍取最左一段）；</li>
+ *   <li>{@code X-Forwarded-Host}、{@code X-Forwarded-Port}、{@code X-Forwarded-Prefix} 谁送来的都不认，
+ *       不改写主机名、端口与路径前缀，并从请求里去掉：主机名以 {@code Host} 头为准。反向代理多半只覆写前两种头，
+ *       客户端自带的这几种会被原样送到；程序自己的判断也不靠它们（跨站请求防护与通行密钥看 {@code Host}，
+ *       页面前缀与 Cookie 的 Path 只取配置里的前缀）。</li>
  * </ul>
  * 可信代理的缺省网段与 Tomcat {@code RemoteIpValve} 缺省的 internal-proxies 同一套（{@link #DEFAULT_TRUSTED_PROXIES}），
  * 另外的网段写在 {@code novabot.core.config-ui.trusted-proxies}。拿不准的一律往挡的方向走：
@@ -70,6 +74,14 @@ public class TrustedProxyForwardedHeaderFilter extends ForwardedHeaderFilter {
     /** 框架那一道认、并从请求里删掉的 {@code X-Forwarded-*} 那几个 */
     static final List<String> X_FORWARDED = List.of("X-Forwarded-Proto", "X-Forwarded-Ssl", "X-Forwarded-Host",
             "X-Forwarded-Port", X_FORWARDED_FOR, "X-Forwarded-Prefix");
+
+    /**
+     * 可信代理送来也不认的那几个：主机名、端口、路径前缀
+     * <p>
+     * 反向代理多半只覆写 {@code X-Forwarded-For} 与 {@code X-Forwarded-Proto}，客户端自带的这几个会被原样送到；
+     * 程序自己的判断也不靠它们（主机名看 {@code Host}，前缀只取配置里的）。
+     */
+    static final List<String> NEVER_TRUSTED = List.of("X-Forwarded-Host", "X-Forwarded-Port", "X-Forwarded-Prefix");
 
     /** 程序接口判「本机」时看的那三种转发头 */
     static final List<String> FORWARDING = List.of(FORWARDED, X_FORWARDED_FOR, X_REAL_IP);
@@ -141,9 +153,11 @@ public class TrustedProxyForwardedHeaderFilter extends ForwardedHeaderFilter {
                     response);
             return;
         }
-        HttpServletRequest withoutForwarded = new HiddenHeaders(request, List.of(FORWARDED));
+        HttpServletRequest withoutForwarded = new HiddenHeaders(request,
+                Stream.concat(Stream.of(FORWARDED), NEVER_TRUSTED.stream()).toList());
         if (X_FORWARDED.stream().noneMatch(name -> withoutForwarded.getHeader(name) != null)) {
-            // 只带了 Forwarded（或只带了 X-Real-IP）：框架那一道对这样的请求本来就原样放过
+            // 剩下的转发头一个也没有（只带了 Forwarded、X-Real-IP 或不认的那几个）：
+            // 框架那一道对这样的请求本来就原样放过
             chain.doFilter(withoutForwarded, response);
             return;
         }

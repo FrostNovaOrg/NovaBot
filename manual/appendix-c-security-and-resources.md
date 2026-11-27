@@ -145,9 +145,13 @@ novabot:
 控制台放在反向代理后面、要按真实来访地址判来源名单、登录锁定与 https 时，
 在 `application.yml` 里设 `server.forward-headers-strategy: framework`。开着它时，NovaBot 这样认转发头：
 
-- **只认可信代理送来的 `X-Forwarded-*`。** 直接连进来的那一端是可信代理时，才按它送来的 `X-Forwarded-For`、
-  `X-Forwarded-Proto`、`X-Forwarded-Host`、`X-Forwarded-Prefix` 认来访地址、协议与主机名（`X-Forwarded-For` 取最左一段）。
+- **只认可信代理送来的 `X-Forwarded-For`、`X-Forwarded-Proto`、`X-Forwarded-Ssl`。** 直接连进来的那一端是可信代理时，
+  才按它送来的这几个头认来访地址与协议（`X-Forwarded-For` 取最左一段）。
   别的机器直接连到 NovaBot 的端口、自己带上这几个头，一概不认，这几个头也从请求里去掉。
+- **`X-Forwarded-Host`、`X-Forwarded-Port`、`X-Forwarded-Prefix` 谁送来的都不认**，也从请求里去掉：
+  主机名以 `Host` 头为准；端口在代理送了 `X-Forwarded-Proto` 时取那个协议的默认端口，否则也以 `Host` 为准；
+  路径前缀只取 `server.servlet.context-path`。
+  所以反向代理要把浏览器送来的原始 `Host` 传给后端，Nginx 写 `proxy_set_header Host $http_host;`（下文的样板都这样写了）。
 - **`Forwarded` 头一律不认**，谁送来的都一样。只发 `Forwarded`、不发 `X-Forwarded-*` 的反向代理，要改成发 `X-Forwarded-*`。
 - **可信代理默认是本机回环与私有网段**：`127.0.0.0/8`、`::1`、`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、
   `169.254.0.0/16`、`100.64.0.0/10`、`fe80::/10`、`fc00::/7`，与 Tomcat 默认信任的是同一套。
