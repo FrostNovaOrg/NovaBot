@@ -1035,6 +1035,74 @@ class VersionedReleaseInstallTest {
     }
 
     @Test
+    @DisplayName("有 needrestart 配置目录时，即使带 --no-packages 也排除 NovaBot 的自动重启")
+    void needrestartRuleWrittenWhenConfigDirExists(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.8.0");
+        Files.createDirectories(world.needrestart);
+        Run run = run(world, "", "", Map.of(), "--no-packages");
+
+        assertEquals(0, run.code, "应装完。标准错误:\n" + run.stderr);
+        Path rule = world.needrestart.resolve("novabot.conf");
+        assertNeedrestartRule(rule);
+        assertTrue(run.stdout.indexOf("安装完成") >= 0
+                && run.stdout.indexOf("不会自动重启 NovaBot") > run.stdout.indexOf("安装完成"), run.stdout);
+        assertTrue(run.stdout.contains("重启或换版"), run.stdout);
+        assertTrue(run.stdout.contains("删除 " + rule), run.stdout);
+    }
+
+    @Test
+    @DisplayName("needrestart 规则内容相同，重装时不改文件")
+    void needrestartRuleUnchangedIsNotRewritten(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.8.0");
+        Files.createDirectories(world.needrestart);
+        Run first = run(world, "", "");
+        assertEquals(0, first.code, "第一次应装完。标准错误:\n" + first.stderr);
+        Path rule = world.needrestart.resolve("novabot.conf");
+        assertNeedrestartRule(rule);
+        FileTime past = FileTime.from(Instant.parse("2026-01-01T00:00:00Z"));
+        Files.setLastModifiedTime(rule, past);
+
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "重装应成功。标准错误:\n" + run.stderr);
+        assertEquals(past, Files.getLastModifiedTime(rule), "内容没变时不该重写");
+        assertNeedrestartRule(rule);
+    }
+
+    @Test
+    @DisplayName("needrestart 规则内容不同，安装时覆盖")
+    void differentNeedrestartRuleIsReplaced(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.8.0");
+        Path rule = world.needrestart.resolve("novabot.conf");
+        write(rule, "$nrconf{override_rc}{qr(^novabot\\.service$)} = 0;\n");
+
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "应装完。标准错误:\n" + run.stderr);
+        assertNeedrestartRule(rule);
+    }
+
+    @Test
+    @DisplayName("没有 needrestart 配置目录时，安装不创建目录也不提示")
+    void missingNeedrestartDirIsSilent(@TempDir Path dir) throws Exception {
+        World world = world(dir, "5.8.0");
+
+        Run run = run(world, "", "");
+
+        assertEquals(0, run.code, "应装完。标准错误:\n" + run.stderr);
+        assertFalse(Files.exists(world.needrestart), "不该创建 needrestart 配置目录");
+        assertFalse((run.stdout + run.stderr).contains("needrestart"), run.stdout + run.stderr);
+    }
+
+    private static void assertNeedrestartRule(Path rule) throws IOException {
+        assertTrue(Files.isRegularFile(rule), "应写出 " + rule.getFileName());
+        List<String> lines = Files.readAllLines(rule, StandardCharsets.UTF_8);
+        assertEquals(2, lines.size(), "应只有一行注释和一行规则");
+        assertTrue(lines.get(0).startsWith("#") && lines.get(0).contains("install.sh"), lines.get(0));
+        assertEquals("$nrconf{override_rc}{qr(^novabot\\@.+\\.service$)} = 0;", lines.get(1));
+    }
+
+    @Test
     @DisplayName("E 支那条起法：版本目录里的 start.sh 自己 cd 回安装目录，java 拿到的是版本目录里的 jar")
     void startScriptInVersionDirLaunchesFromInstallDir(@TempDir Path dir) throws Exception {
         // 工作目录要落在安装目录（锁、配置、日志才不会各拿一份），-jar 要指着版本目录里的那份。
@@ -1471,6 +1539,7 @@ class VersionedReleaseInstallTest {
         world.sbin = Files.createDirectories(dir.resolve("sbin"));
         // 缺省不建：本机真有 /etc/rsyslog.d 时，各格也不去碰它；要 rsyslog 的格自己建
         world.rsyslog = world.etc.resolve("rsyslog.d");
+        world.needrestart = world.etc.resolve("needrestart/conf.d");
         Files.copy(repoRoot().resolve("install.sh"), world.pkg.resolve("install.sh"),
                 StandardCopyOption.REPLACE_EXISTING);
         write(world.pkg.resolve("NovaBot.jar"), "new-jar");
@@ -1561,6 +1630,7 @@ class VersionedReleaseInstallTest {
         builder.environment().put("NOVABOT_STUB_ENABLED", enabled);
         builder.environment().put("NOVABOT_SYSTEM_SBIN_DIR", world.sbin.toString());
         builder.environment().put("NOVABOT_RSYSLOG_DIR", world.rsyslog.toString());
+        builder.environment().put("NOVABOT_NEEDRESTART_DIR", world.needrestart.toString());
         extra.forEach(builder.environment()::put);
         builder.redirectOutput(world.logs.resolve("stdout.txt").toFile());
         builder.redirectError(world.logs.resolve("stderr.txt").toFile());
@@ -1718,6 +1788,7 @@ class VersionedReleaseInstallTest {
         Path logs;
         Path sbin;
         Path rsyslog;
+        Path needrestart;
     }
 
     private static final class Run {
