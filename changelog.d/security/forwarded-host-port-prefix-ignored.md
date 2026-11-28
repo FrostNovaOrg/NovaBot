@@ -1,1 +1,0 @@
-开着 `server.forward-headers-strategy: framework` 时，反向代理送来的 `X-Forwarded-Host`、`X-Forwarded-Port`、`X-Forwarded-Prefix` 不再采信：主机名以 `Host` 头为准，请求路径和前缀保持原样，来源地址与协议照旧按 `X-Forwarded-For`、`X-Forwarded-Proto` 认。升级提示：反向代理要把浏览器送来的原始 `Host` 传给 NovaBot，Nginx 写 `proxy_set_header Host $http_host;`。
